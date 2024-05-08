@@ -20,6 +20,20 @@ conda activate madness
 python src/main.py
 ```
 
+# Initial 2D Dynamics
+
+We will be modeling our manipulator-arm drone with quadrotor dynamics sourced from AA274A and AA203
+
+<img src="readme_assets/planar_quadrotor.png" height="300"/>
+
+The dynamic model for this quadrotor is given by
+
+<img src="readme_assets/dynamics.png" height="200"/>
+
+After linearizing, we get
+
+<img src="readme_assets/linearization.png" height="200"/>
+
 # Links
 
 For 3D visualization:
