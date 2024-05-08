@@ -1,45 +1,53 @@
-import os 
-
-def dynamics_true(x, u):
-    """
-    Compute the true next state (with disturbances)
-    """
-
-    return next_u
-
-def dynamics_model(x, u):
-    """
-    Compute next state given current state and action
-    based on our model of the world (no disturbances)
-    """
-
-    # TODO
-
-    return next_u
-
-def opt_control(path):
-
-    # TODO: get nominal controls and trajectories through state space
-
-    # TODO: do (i)LQR to produce control sequence with dynamics model
-
-    # TODO: execute control (on actual simuation) with true dynamics
-
-    pass
-
+import mapping 
+import planning
+import control 
+import dynamics
+import visuals
+import utils 
 
 if __name__ == "__main__":
-    # There()
 
-    # IRW - load image map and return as occupancy grid (2d)
-    occ_grid = get_occ_grid()
+    # Get the map that we'll be using
+    metres_per_pixel = 0.01
+    occupancy_grid = mapping.load_map_file_as_occupancy_grid(
+        filepath=f"{utils.get_assets_dir()}/3x7.png",
+        metres_per_pixel=metres_per_pixel
+    )
+    # Downscale to allow for easier path planning computation
+    # 20% of the original resolution
+    scale_factor = 0.2
+    occupancy_grid = mapping.reduce_occupancy_grid_resolution(
+        occupancy_grid, 
+        scale_factor=scale_factor
+    )
+    # Note that the metres per pixel has now changed
+    metres_per_pixel /= scale_factor
 
-    done = False
-    while not done:
+    # Visualize the occupancy grid with a few points marked
+    visuals.vis_occupancy_grid(
+        occupancy_grid=occupancy_grid,
+        metres_per_pixel=metres_per_pixel,
+        # start and finish points (in metres)
+        points_metres=[(0, 0), (1, 2), (6, 2)],
+        plot_coordinates=True
+    )
+    
+    # --------------------------------
+    # there 
 
-        # MWP - A*, RRT, RRT* w/ bounds
-        path = pathPlanning(start, finish, occ_grid)
+    # Generate a path from start to finish
+    path = planning.compute_path_over_occupancy_grid(
+        occupancy_grid=occupancy_grid,
+        start_metres=(0, 0),
+        finish_metres=(0, 7),
+        agent_radius_metres=0.5
+    )
 
-        opt_control(path)
+    # TODO
+    # Some sort of control loop 
+    control.optimal_control(path)
+    
+    # --------------------------------
+    # and back again
 
-        # TODO: some done condition
+    # TODO
