@@ -32,6 +32,9 @@ def load_map_file_as_occupancy_grid(filepath, metres_per_pixel=0.01):
     
     # Convert from pixels to meters based on the given scale
     occupancy_grid = occupancy_grid * metres_per_pixel
+
+    # Horizontal will be correct, but will be upside down, so flip
+    occupancy_grid = np.flipud(occupancy_grid)
     
     return occupancy_grid
 
