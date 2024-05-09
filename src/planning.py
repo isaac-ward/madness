@@ -35,26 +35,6 @@ def dilate_grid(occupancy_grid, metres_per_pixel, agent_radius_metres):
 
     return dilated_grid
 
-def create_graph_from_occupancy_grid(occupancy_grid):
-    G = nx.Graph()
-    cols, rows = len(occupancy_grid), len(occupancy_grid[0])
-    
-    # Add nodes to the graph
-    for i in range(rows):
-        for j in range(cols):
-            G.add_node((i, j))  # Node represents the grid element
-    
-    # Connect adjacent pixels
-    for i in range(rows):
-        for j in range(cols):
-            # Check neighbors
-            neighbors = [(i-1, j), (i+1, j), (i, j-1), (i, j+1)]  # Assuming 4-connectivity
-            for neighbor in neighbors:
-                if neighbor in G.nodes:  # Check if neighbor is a valid node
-                    G.add_edge((i, j), neighbor)  # Add edge if neighbor exists
-    
-    return G
-
 def compute_path_over_occupancy_grid(
         occupancy_grid, 
         metres_per_pixel, 
