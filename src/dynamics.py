@@ -2,7 +2,7 @@ import numpy as np
 
 class Quadrotor2D:
 
-    def __init__(self):
+    def __init__(self,dt):
         # Dynamics constants (sourced from AA274A)
         self.n = 6 # state dimension
         self.m = 2 # control dimension
@@ -12,6 +12,7 @@ class Quadrotor2D:
         self.Iyy = 1.0 # moment of inertia about the out-of-plane axis (kg * m**2)
         self.CD_v = 0.25 # translational drag coefficient
         self.CD_phi = 0.02255 # rotational drag coefficient
+        self.dt = dt # time interval between steps
 
         # Control constraints (sourced from AA274A)
         self.max_thrust_per_prop = 0.75 * self.m * self.g  # total thrust-to-weight ratio = 1.5
@@ -21,7 +22,7 @@ class Quadrotor2D:
         self.wx = 0 # wind velocity in x-dir #TODO Implement Dryden wind model
         self.wy = 0 # wind velocity in y-dir
     
-    def wind_model():
+    def wind_model(self,x):
         """
         model wind disturbances using the Dryden model for low altitude with gusts
         sourced from "Small Unmanned Aircraft" by Randal W. Beard and Timothy W. McLain
@@ -34,67 +35,72 @@ class Quadrotor2D:
         sigv = sigu
         sigw = 1.4 # (m/s)
 
-    def dynamics_true(self, x, u):
+    def dynamics_true(self, xk, uk):
         """
         Compute the true next state with nonlinear dynamics
         """
         # Breakup state x(k) and control vector u(k)
-        x = x[0]
-        vx = x[1]
-        y = x[2]
-        vy = x[3]
-        phi = x[4]
-        om = x[5]
-        T1 = u[0]
-        T2 = u[1]
+        x = xk[0]
+        vx = xk[1]
+        y = xk[2]
+        vy = xk[3]
+        phi = xk[4]
+        om = xk[5]
+        T1 = uk[0]
+        T2 = uk[1]
 
         # Compute x(k+1)
         x_next = np.zeros((6,1))
-        x_next[0] = vx
-        x_next[1] = (-(T1+T2)*np.sin(phi) - self.CD_v*vx)/self.m + self.wx
-        x_next[2] = vy
-        x_next[3] = ((T1+T2)*np.cos(phi) - self.CD_v*vy)/self.m - self.g + self.wy
-        x_next[4] = om
-        x_next[5] = ((T2-T1)*self.l - self.CD_phi*om)/self.Iyy
+        x_next[0] = x + self.dt*vx
+        x_next[1] = vx + self.dt * ((-(T1+T2)*np.sin(phi) - self.CD_v*vx)/self.m + self.wx)
+        x_next[2] = y + self.dt*vy
+        x_next[3] = vy + self.dt*(((T1+T2)*np.cos(phi) - self.CD_v*vy)/self.m - self.g + self.wy)
+        x_next[4] = phi + self.dt*om
+        x_next[5] = om + self.dt*((T2-T1)*self.l - self.CD_phi*om)/self.Iyy
 
         return x_next
     
-    def linearize(self, x, u):
+    def linearize(self, x_bar, u_bar):
         """
         Linearize dynamics about nominal state and control vectors
         Sourced from AA274A
         """
         # Breakup state x(k) and control vector u(k)
-        x = x[0]
-        vx = x[1]
-        y = x[2]
-        vy = x[3]
-        phi = x[4]
-        om = x[5]
-        T1 = u[0]
-        T2 = u[1]
+        x = x_bar[0]
+        vx = x_bar[1]
+        y = x_bar[2]
+        vy = x_bar[3]
+        phi = x_bar[4]
+        om = x_bar[5]
+        T1 = u_bar[0]
+        T2 = u_bar[1]
         
         # Compute A and B
-        A = np.array([[0., 1., 0., 0., 0., 0.],
-                      [0., -self.CD_v/self.m, 0., 0., -(T1 + T2)*np.cos(phi)/self.m, 0.],
-                      [0., 0., 0., 1., 0., 0.],
-                      [0., 0., 0., -self.CD_v/self.m, -(T1+T2)*np.sin(phi)/self.m, 0.],
-                      [0., 0., 0., 0., 0., 1.],
-                      [0., 0., 0., 0., 0., -self.CD_phi/self.Iyy]])
+        A = np.array([[1., self.dt, 0., 0., 0., 0.],
+                      [0., 1.-self.dt*self.CD_v/self.m, 0., 0., -self.dt*(T1+T2)*np.cos(phi)/self.m, 0.],
+                      [0., 0., 1., self.dt, 0., 0.],
+                      [0., 0., 0., 1.-self.dt*self.CD_v/self.m, -self.dt*(T1+T2)*np.sin(phi)/self.m, 0.],
+                      [0., 0., 0., 0., 1., self.dt],
+                      [0., 0., 0., 0., 0., 1.-self.dt*self.CD_phi/self.Iyy]])
         
         B = np.array([[0., 0.],
-                      [-np.sin(phi)/self.m, -np.sin(phi)/self.m],
+                      [-self.dt*np.sin(phi)/self.m, -self.dt*np.sin(phi)/self.m],
                       [0., 0.],
-                      [np.cos(phi)/self.m, np.cos(phi)/self.m],
+                      [self.dt*np.cos(phi)/self.m, self.dt*np.cos(phi)/self.m],
                       [0., 0.],
-                      [-self.l/self.Iyy, self.l/self.Iyy]])
+                      [-self.dt*self.l/self.Iyy, self.dt*self.l/self.Iyy]])
+        
+        return A,B
 
-    def dynamics_model(x, u):
+    def dynamics_model(self, x, u, x_bar, u_bar):
         """
         Compute next state given current state and action
         based on our model of the world (no disturbances)
         """
+        # Get linearized jacobians
+        A,B = self.linearize(x_bar, u_bar)
 
-        # TODO
+        # Compute x(k+1)
+        x_next = self.dynamics_true(x_bar, u_bar) + A@(x-x_bar) + B@(u-u_bar)
 
-        return next_u
+        return x_next
