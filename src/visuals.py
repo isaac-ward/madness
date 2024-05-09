@@ -4,7 +4,7 @@ import numpy as np
 
 import utils
 
-def vis_occupancy_grid(occupancy_grid, metres_per_pixel, points_metres=[], plot_coordinates=True):
+def vis_occupancy_grid(occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], plot_coordinates=True):
     """
     Draws the occupancy grid (matrix) with matplotlib, and draws
     in the bottom right corner a scale bar that is one metre long
@@ -34,13 +34,21 @@ def vis_occupancy_grid(occupancy_grid, metres_per_pixel, points_metres=[], plot_
             string = f'  ({point[0]:.2f}, {point[1]:.2f}) metres\n  ({x:.2f}, {y:.2f}) pixels'
             ax.text(x, y, string, color='red', fontsize=6)
 
+    # Plot path
+    if len(path_metres) > 0:
+        path_pixels = np.array(path_metres) / metres_per_pixel
+        ax.plot(path_pixels[:, 0], path_pixels[:, 1], color='blue', linewidth=1, linestyle='--')
+        # And plot points with xs
+        # for point in path_pixels:
+        #     ax.scatter(point[0], point[1], color='blue', marker='x') 
+
     # Calculate scale bar length dynamically based on 1 meter length
     scale_bar_length = int(1 / metres_per_pixel)  # Length of scale bar in pixels
     scale_bar_text = f'1m = {scale_bar_length} pixels'
 
     # Plot a bar
-    ax.plot([width - 1 - scale_bar_length, width - 1], [1, 1], color='orange', linewidth=5)
-    ax.text(width - 1, 100*metres_per_pixel, scale_bar_text, color='orange', ha='right')    
+    ax.plot([width - 1 - scale_bar_length, width - 1], [1, 1], color='orange', linewidth=1)
+    ax.text(width - 1, 120*metres_per_pixel, scale_bar_text, color='orange', ha='right', fontsize=16 * (0.01/metres_per_pixel))
 
     # Hide axes
     ax.axis('off')

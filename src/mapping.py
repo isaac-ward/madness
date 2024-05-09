@@ -3,7 +3,35 @@ import numpy as np
 import scipy
 from PIL import Image
 
-def load_map_file_as_occupancy_grid(filepath, metres_per_pixel=0.01):
+METRES_PER_PIXEL = 0.01
+MAP_CONFIGS = {
+    "3x7": {
+        "filename": "3x7.png",
+        "metres_per_pixel": METRES_PER_PIXEL,
+        "start_coord_metres": (1, 2),
+        "finish_coord_metres": (7, 2),
+    },
+    "3x28": {
+        "filename": "3x28.png",
+        "metres_per_pixel": METRES_PER_PIXEL,
+        "start_coord_metres": (1, 2),
+        "finish_coord_metres": (28, 2),
+    },
+    "downup": {
+        "filename": "downup.png",
+        "metres_per_pixel": METRES_PER_PIXEL,
+        "start_coord_metres": (1, 8),
+        "finish_coord_metres": (28, 8),
+    },
+    "downup-obstacles": {
+        "filename": "downup-obstacles.png",
+        "metres_per_pixel": METRES_PER_PIXEL,
+        "start_coord_metres": (1, 8),
+        "finish_coord_metres": (28, 8),
+    },
+}
+
+def load_map_file_as_occupancy_grid(filepath, metres_per_pixel=METRES_PER_PIXEL):
     """
     A map file is a png with only black and white pixels. Black represents
     obstacles and white represents free space. This function reads the map
@@ -29,9 +57,6 @@ def load_map_file_as_occupancy_grid(filepath, metres_per_pixel=0.01):
     
     # Threshold the image to get binary values (0 for obstacles, 1 for free space)
     occupancy_grid = (occupancy_grid < 128).astype(int)
-    
-    # Convert from pixels to meters based on the given scale
-    occupancy_grid = occupancy_grid * metres_per_pixel
 
     # Horizontal will be correct, but will be upside down, so flip
     occupancy_grid = np.flipud(occupancy_grid)
@@ -62,6 +87,7 @@ def reduce_occupancy_grid_resolution(occupancy_grid, scale_factor):
             orig_i = int(i / scale_factor)
             orig_j = int(j / scale_factor)
             # Assign the value from the original grid to the corresponding position in the resized grid
+            # TODO should be the max value in the region
             resized_grid[i, j] = occupancy_grid[orig_i, orig_j]
 
     return resized_grid
