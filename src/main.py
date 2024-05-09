@@ -4,11 +4,12 @@ import control
 import dynamics
 import visuals
 import utils 
+import globals
 
 if __name__ == "__main__":
 
     # Get the map info for the map that we'll be using
-    map_config = mapping.MAP_CONFIGS["downup"]
+    map_config = globals.MAP_CONFIGS["downup-o"]
     metres_per_pixel    = map_config["metres_per_pixel"]
     filename            = map_config["filename"]
     start_coord_metres  = map_config["start_coord_metres"]
@@ -37,7 +38,7 @@ if __name__ == "__main__":
         metres_per_pixel=metres_per_pixel,
         start_coord_metres=start_coord_metres,
         finish_coord_metres=finish_coord_metres,
-        agent_radius_metres=0.0
+        agent_radius_metres=globals.AGENT_RADIUS_METRES
     )
 
     # Visualize the occupancy grid with a few points marked
