@@ -64,6 +64,7 @@ class Quadrotor2D:
         """
         Linearize dynamics about nominal state and control vectors
         Sourced from AA274A
+        TODO Optional rewrite with jax for more efficiency
         """
         # Breakup state x(k) and control vector u(k)
         x = x_bar[0]
