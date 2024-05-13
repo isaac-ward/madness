@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.interpolate import BarycentricInterpolator
+import matplotlib.pyplot as plt
 
 class Quadrotor2D:
 
@@ -21,6 +23,51 @@ class Quadrotor2D:
         # Wind variables
         self.wx = 0 # wind velocity in x-dir #TODO Implement Dryden wind model
         self.wy = 0 # wind velocity in y-dir
+    
+    def dynamics_test(self):
+        """
+        Function to perform simple diagnostic tests on the dynamics
+        Check if trajectory extrapolation works
+        Check if dynamics propigation works
+        """
+        # Generate a sample trajectory
+        T = 100
+        xtrue = np.linspace(0,np.pi,T)
+        ytrue = np.zeros((T,1))
+        for i in range(T):
+            ytrue[i] = np.sin(xtrue[i])
+
+        # Extrapolate state and control data from trajectory
+        xnom = np.zeros((T,1))
+        ynom = np.zeros((T,1))
+        state,control = self.nominal_trajectory(xtrue,ytrue)
+        for i in range(T):
+            xnom[i] = state[i,0]
+            ynom[i] = state[i,2]
+
+        # Test controls on true dynamic model
+        print(control)
+        print(state)
+        xcont = np.zeros((T,1))
+        ycont = np.zeros((T,1))
+        x_next = state[0]
+        xcont[0] = state[0,0]
+        ycont[0] = state[0,2]
+        for i in range(1,T-1):
+            x_next = self.dynamics_true(x_next, control[i])
+            xcont[i] = x_next[0]
+            ycont[i] = x_next[2]
+
+        fig, ax = plt.subplots()
+        ax.plot(xtrue,ytrue,label='True Path')
+        ax.plot(xnom,ynom,label='Nominal Path')
+        ax.plot(xcont,ycont,label='Controlled Path')
+        ax.grid()
+        ax.legend()
+        ax.set_ylabel('y')
+        ax.set_xlabel('x')
+        ax.set_title("Dynamics Verification")
+        plt.show()
     
     def wind_model(self,x):
         """
@@ -105,3 +152,67 @@ class Quadrotor2D:
         x_next = self.dynamics_true(x_bar, u_bar) + A@(x-x_bar) + B@(u-u_bar)
 
         return x_next
+    
+    def nominal_trajectory(self,x,y):
+        """
+        Compute the nominal trajectory from the planned path
+        taking advantage of the differential flatness of the
+        model
+        """
+        # Create nominal state and control vectors
+        T = len(x)
+        state = np.zeros((T,6))
+        control = np.zeros((T-1,2))
+        X = BarycentricInterpolator(np.array(np.linspace(0,T,T)),x)
+        Y = BarycentricInterpolator(np.array(np.linspace(0,T,T)),y)
+
+        for k in range(0,T-1):
+            # TODO: Fix this so it's interpolating between more than just 2 points
+
+            #X = BarycentricInterpolator(np.array([self.dt*(k),self.dt*(k+1)]),x[k:k+2])
+            xd = X.derivative(x[k],der=1)
+            xdd = X.derivative(x[k],der=2)
+            xddd = X.derivative(x[k],der=3)
+            xdddd = X.derivative(x[k],der=4)
+
+            #Y = BarycentricInterpolator(np.array([self.dt*(k),self.dt*(k+1)]),y[k:k+2])
+            yd = Y.derivative(y[k],der=1)
+            ydd = Y.derivative(y[k],der=2)
+            yddd = Y.derivative(y[k],der=3)
+            ydddd = Y.derivative(y[k],der=4)
+
+            phi = np.arctan(-xdd/(ydd+self.g))
+            sin_phi = (-xdd/(ydd+self.g))/np.sqrt(1+(-xdd/(ydd+self.g))**2)
+
+            omega = (yddd*xdd-(ydd+self.g)*xddd)/((ydd+self.g)**2+xdd**2)
+            omega_dot = (ydddd*xdd-xdddd*(ydd+self.g))/((ydd+self.g)**2+xdd**2) - (2*xdd*yddd**2*(ydd+self.g)+2*xdd**2*xddd*yddd-2*xddd*yddd*(ydd+self.g)**2-2*xdd*xddd**2*(ydd+self.g))/(xdd**4+2*xdd**2*(ydd+self.g)**2+(ydd+self.g)**4)
+            
+            state[k,0] = x[k]
+            state[k,1] = xd
+            state[k,2] = y[k]
+            state[k,3] = yd
+            state[k,4] = phi
+            state[k,5] = omega
+            
+            control[k,0] = -(self.CD_v*self.l*xd+self.l*self.m*xdd+self.CD_phi*omega*sin_phi+self.Iyy*omega_dot*sin_phi)/(2*self.l*sin_phi)
+            control[k,1] = (-self.l*self.m*xdd-self.CD_v*self.l*xd+self.CD_phi*omega*sin_phi+self.Iyy*omega_dot*sin_phi)/(2*self.l*sin_phi)
+            
+            # Control within bounds
+            if control[k,0] > self.max_thrust_per_prop:
+                control[k,0] = self.max_thrust_per_prop
+            elif control[k,0] < self.min_thrust_per_prop:
+                control[k,0] = self.min_thrust_per_prop
+            
+            if control[k,1] > self.max_thrust_per_prop:
+                control[k,1] = self.max_thrust_per_prop
+            elif control[k,1] < self.min_thrust_per_prop:
+                control[k,1] = self.min_thrust_per_prop
+            
+        state[T-1,0] = x[T-1]
+        state[T-1,1] = 0
+        state[T-1,2] = y[T-1]
+        state[T-1,3] = 0
+        state[T-1,4] = 0
+        state[T-1,5] = 0
+        
+        return state,control
