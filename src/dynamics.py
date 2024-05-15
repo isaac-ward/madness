@@ -1,5 +1,7 @@
 import numpy as np
 import scipy.interpolate
+import visuals
+import utils
 import matplotlib.pyplot as plt
 
 class Quadrotor2D:
@@ -47,6 +49,7 @@ class Quadrotor2D:
             ynom[i] = state[i,2]
 
         # Test controls on true dynamic model
+        truestate = np.array([state[0]])
         xcont = np.zeros((T,1))
         ycont = np.zeros((T,1))
         x_next = state[0]
@@ -56,8 +59,9 @@ class Quadrotor2D:
             x_next = self.dynamics_true_no_disturbances(x_next, control[i-1])
             xcont[i] = x_next[0]
             ycont[i] = x_next[2]
+            np.append(truestate,x_next)
 
-        fig, ax = plt.subplots()
+        """fig, ax = plt.subplots()
         ax.plot(xtrue,ytrue,label='True Path')
         ax.plot(xnom,ynom,label='Nominal Path')
         ax.plot(xcont,ycont,label='Controlled Path')
@@ -66,7 +70,16 @@ class Quadrotor2D:
         ax.set_ylabel('y')
         ax.set_xlabel('x')
         ax.set_title("Dynamics Verification")
-        plt.show()
+        plt.show()"""
+        log_folder = utils.make_log_folder(name="run")
+        visuals.plot_trajectory(
+                filepath=f"{log_folder}/dynamicstest.mp4",
+                state_trajectory=truestate,
+                state_element_labels=[],
+                action_trajectory=control,
+                action_element_labels=[],
+                dt=self.dt
+            )
     
     def wind_model(self,x):
         """
