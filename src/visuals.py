@@ -85,8 +85,8 @@ def plot_trajectory(
     os.makedirs(frames_folder, exist_ok=True)
 
     # Box to plot in
-    x_limit = [-50, 50]
-    y_limit = [-50, 50]
+    x_limit = [-20, 20]
+    y_limit = [-20, 20]
 
     # Expand limits to fit full trajectory
     x_limit = [min(x_limit[0], np.min(state_trajectory[:, 0])), max(x_limit[1], np.max(state_trajectory[:, 0]))]
@@ -127,7 +127,7 @@ def plot_trajectory(
 
         # Plot the drone as a rectangle, centered at the drone's position
         # which is state[0] and state[2], rotated by state[4]
-        visualization_scale = 3
+        visualization_scale = 1
         drone_length = visualization_scale*2 # in metres
         drone_width = visualization_scale*1
         angle = state[4]
@@ -153,8 +153,8 @@ def plot_trajectory(
         rectangle = plt.Polygon(
             corners_world_Frame, 
             edgecolor='black', 
-            facecolor='black',
-            hatch='//',
+            # Transparent face
+            facecolor='none',
         )
         ax.add_patch(rectangle)
 
@@ -165,7 +165,7 @@ def plot_trajectory(
         # and the second from the right rotor. The vector should be scaled by
         # the action value and perpendicular to the drone's orientation, and
         # should be a little arrow        
-        def plot_vector(drone_frame_offset, rotation, translation, length, color):
+        def plot_vector(drone_frame_offset, rotation, translation, length, color, x_offset, y_offset, ha):
             world_frame_offset = rotation @ drone_frame_offset + translation
             world_frame_vector = rotation @ np.array([0, length])
             ax.arrow(
@@ -178,6 +178,18 @@ def plot_trajectory(
                 fc=color,
                 ec=color
             )
+
+            # Plot the text of the action value
+            ax.text(
+                world_frame_offset[0] + x_offset,
+                world_frame_offset[1] + y_offset,
+                f"{length:.2f}", 
+                color=color,
+                fontsize=12,
+                ha=ha,
+                va='center',
+            )
+
         # Plot left then right
         plot_vector(
             corners[-1], 
@@ -185,6 +197,10 @@ def plot_trajectory(
             translation, 
             action[0],
             'green',
+            -1,
+            0,
+            'left',
+            
         )
         plot_vector(
             corners[-2],
@@ -192,6 +208,9 @@ def plot_trajectory(
             translation, 
             action[1],
             'red',
+            1,
+            0,
+            'right',
         )
 
         # Set the dpi to 600

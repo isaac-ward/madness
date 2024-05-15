@@ -26,21 +26,17 @@ class Quadrotor2D:
         self.wx = 0 # wind velocity in x-dir #TODO Implement Dryden wind model
         self.wy = 0 # wind velocity in y-dir
     
-    def dynamics_test(self):
+    def dynamics_test(self, log_folder, xtrue, ytrue):
         """
         Function to perform simple diagnostic tests on the dynamics
         Check if trajectory extrapolation works
         Check if dynamics propigation works
         """
-        # Generate a sample trajectory
-        T = 100
-        xtrue = np.linspace(0,2*np.pi,T)
-        ytrue = np.zeros((T,1))
-        for i in range(T):
-            ytrue[i] = np.sin(xtrue[i])
+        
+        T = np.shape(xtrue)[0]
 
         # Extrapolate state and control data from trajectory
-        state,control = self.nominal_trajectory(xtrue,ytrue)
+        state,control = self.nominal_trajectory(xtrue,ytrue,v_desired=1)
         T = np.shape(state)[0]
         xnom = np.zeros((T,1))
         ynom = np.zeros((T,1))
@@ -59,7 +55,9 @@ class Quadrotor2D:
             x_next = self.dynamics_true_no_disturbances(x_next, control[i-1])
             xcont[i] = x_next[0]
             ycont[i] = x_next[2]
-            np.append(truestate,x_next)
+            truestate = np.append(truestate,x_next)
+
+        truestate = np.reshape(truestate,(T,6))
 
         """fig, ax = plt.subplots()
         ax.plot(xtrue,ytrue,label='True Path')
@@ -71,7 +69,6 @@ class Quadrotor2D:
         ax.set_xlabel('x')
         ax.set_title("Dynamics Verification")
         plt.show()"""
-        log_folder = utils.make_log_folder(name="run")
         visuals.plot_trajectory(
                 filepath=f"{log_folder}/dynamicstest.mp4",
                 state_trajectory=truestate,
@@ -190,7 +187,7 @@ class Quadrotor2D:
 
         return path_x_spline, path_y_spline, ts[-1]
     
-    def nominal_trajectory(self,x,y):
+    def nominal_trajectory(self,x,y, v_desired=0.15):
         """
         Compute the nominal trajectory from the planned path
         taking advantage of the differential flatness of the
@@ -199,7 +196,7 @@ class Quadrotor2D:
         """
         # Smooth given trajectory and gather derivatives
         path = np.column_stack((x,y))
-        x_spline,y_spline,duration = self.smooth_trajectory(path,v_desired=0.15,spline_alpha=0.05)
+        x_spline,y_spline,duration = self.smooth_trajectory(path,v_desired=v_desired,spline_alpha=0.05)
         ts = np.arange(0.,duration,self.dt)
 
         x_smooth = scipy.interpolate.splev(ts,x_spline,der=0)
