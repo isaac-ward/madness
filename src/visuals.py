@@ -218,6 +218,7 @@ def plot_trajectory(
         # Save the figure to the frames directory
         frame_filepath = f"{frames_folder}/{i}.png"
         fig.savefig(frame_filepath)
+        plt.close()
         return frame_filepath
     
     # Plot all the frames
