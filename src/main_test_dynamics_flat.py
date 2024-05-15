@@ -1,3 +1,6 @@
+import numpy as np
+from tqdm import tqdm
+
 import mapping 
 import planning
 import control 
@@ -7,12 +10,12 @@ import utils
 import globals
 
 if __name__ == "__main__":
-    
+
     # Will log everything to here
     log_folder = utils.make_log_folder(name="run")
 
     # Get the map info for the map that we'll be using
-    map_config = globals.MAP_CONFIGS["downup-o"]
+    map_config = globals.MAP_CONFIGS["downup"]
     metres_per_pixel    = map_config["metres_per_pixel"]
     filename            = map_config["filename"]
     start_coord_metres  = map_config["start_coord_metres"]
@@ -58,13 +61,13 @@ if __name__ == "__main__":
         plot_coordinates=True
     )
 
-    # TODO
-    # Some sort of control loop 
-    control.optimal_control(path_metres)
+    # Subsample
+    path_metres = path_metres[::50]
 
-    # Oh sick I got a sample!
-    
-    # --------------------------------
-    # and back again
+    # Generate a sample trajectory
+    xtrue = np.array(path_metres[:,0])
+    ytrue = np.array(path_metres[:,1])
 
-    # TODO
+    # Verify dynamics code
+    quad = dynamics.Quadrotor2D(0.1)
+    quad.dynamics_test(log_folder, xtrue, ytrue)
