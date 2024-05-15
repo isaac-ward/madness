@@ -6,7 +6,7 @@ We use [conda](https://docs.anaconda.com/free/miniconda/miniconda-install/) to m
 
 For creating an environment from the environment file:
 ```
-conda env create --file env.yaml
+conda env create --name madness --file env.yaml
 ```
 
 For updating the environment file after making changes:
@@ -18,6 +18,16 @@ Can then run any of the main files like so:
 ```
 conda activate madness
 python src/main.py
+```
+
+Remove the environment:
+```
+conda remove -n madness --all
+```
+
+Update the environment:
+```
+conda env update --name madness --file env.yaml
 ```
 
 # Initial 2D Dynamics

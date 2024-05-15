@@ -19,13 +19,13 @@ def policy_hover_left(xk):
     """
     Hover more on the left than right
     """
-    return 1.5 * 9.81 * np.array([1, 0.98])
+    return 1.5 * 9.81 * np.array([1, 0.999])
 
 def policy_hover_right(xk):
     """
     Hover more on the right than left
     """
-    return 1.5 * 9.81 * np.array([0.98, 1])
+    return 1.5 * 9.81 * np.array([0.999, 1])
 
 def policy_hover(xk):
     """
