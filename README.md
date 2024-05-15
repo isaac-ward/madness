@@ -30,6 +30,11 @@ Update the environment:
 conda env update --name madness --file env.yaml
 ```
 
+Alternatively, you can use pip:
+```
+pip install scipy numpy matplotlib tqdm networkx moviepy
+```
+
 # Initial 2D Dynamics
 
 We will be modeling our manipulator-arm drone with quadrotor dynamics sourced from AA274A and AA203.

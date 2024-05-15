@@ -32,11 +32,11 @@ class Quadrotor2D:
         Check if trajectory extrapolation works
         Check if dynamics propigation works
         """
-        
+        # Get dimensions
         T = np.shape(xtrue)[0]
 
         # Extrapolate state and control data from trajectory
-        state,control = self.nominal_trajectory(xtrue,ytrue,v_desired=1)
+        state,control = self.nominal_trajectory(xtrue,ytrue,v_desired=1,spline_alpha=0.00001)
         T = np.shape(state)[0]
         xnom = np.zeros((T,1))
         ynom = np.zeros((T,1))
@@ -59,16 +59,6 @@ class Quadrotor2D:
 
         truestate = np.reshape(truestate,(T,6))
 
-        """fig, ax = plt.subplots()
-        ax.plot(xtrue,ytrue,label='True Path')
-        ax.plot(xnom,ynom,label='Nominal Path')
-        ax.plot(xcont,ycont,label='Controlled Path')
-        ax.grid()
-        ax.legend()
-        ax.set_ylabel('y')
-        ax.set_xlabel('x')
-        ax.set_title("Dynamics Verification")
-        plt.show()"""
         visuals.plot_trajectory(
                 filepath=f"{log_folder}/dynamicstest.mp4",
                 state_trajectory=truestate,
@@ -187,7 +177,7 @@ class Quadrotor2D:
 
         return path_x_spline, path_y_spline, ts[-1]
     
-    def nominal_trajectory(self,x,y, v_desired=0.15):
+    def nominal_trajectory(self,x,y,v_desired=0.15,spline_alpha=0.05):
         """
         Compute the nominal trajectory from the planned path
         taking advantage of the differential flatness of the
@@ -196,7 +186,7 @@ class Quadrotor2D:
         """
         # Smooth given trajectory and gather derivatives
         path = np.column_stack((x,y))
-        x_spline,y_spline,duration = self.smooth_trajectory(path,v_desired=v_desired,spline_alpha=0.05)
+        x_spline,y_spline,duration = self.smooth_trajectory(path,v_desired,spline_alpha)
         ts = np.arange(0.,duration,self.dt)
 
         x_smooth = scipy.interpolate.splev(ts,x_spline,der=0)
