@@ -85,11 +85,22 @@ def plot_trajectory(
     os.makedirs(frames_folder, exist_ok=True)
 
     # Box to plot in
-    # TODO adaptive
-    # x_limit = [np.min(state_trajectory[:, 0]), np.max(state_trajectory[:, 0])]
-    # y_limit = [np.min(state_trajectory[:, 2]), np.max(state_trajectory[:, 2])]
-    x_limit = [-25, 25]
-    y_limit = [-25, 25]
+    x_limit = [-50, 50]
+    y_limit = [-50, 50]
+
+    # Expand limits to fit full trajectory
+    x_limit = [min(x_limit[0], np.min(state_trajectory[:, 0])), max(x_limit[1], np.max(state_trajectory[:, 0]))]
+    y_limit = [min(y_limit[0], np.min(state_trajectory[:, 2])), max(y_limit[1], np.max(state_trajectory[:, 2]))]
+
+    # But the limits must be the same for the aspect ratio to be correct
+    x_range = x_limit[1] - x_limit[0]
+    y_range = y_limit[1] - y_limit[0]
+    if x_range > y_range:
+        y_limit[0] -= (x_range - y_range) / 2
+        y_limit[1] += (x_range - y_range) / 2
+    else:
+        x_limit[0] -= (y_range - x_range) / 2
+        x_limit[1] += (y_range - x_range) / 2
 
     def plot_frame(i):
         # We'll plot the state and action at this time step
@@ -116,13 +127,15 @@ def plot_trajectory(
 
         # Plot the drone as a rectangle, centered at the drone's position
         # which is state[0] and state[2], rotated by state[4]
-        drone_length = 2 # in metres
-        drone_width = 0.1
+        visualization_scale = 3
+        drone_length = visualization_scale*2 # in metres
+        drone_width = visualization_scale*1
         angle = state[4]
         center_x, center_y = state[0], state[2]
 
         # Compute the rectangle corners relative to the center and rotated by the angle
         corners = np.array([
+            # The order is bottom left, bottom right, top right, top left
             [-drone_length / 2, -drone_width / 2],
             [drone_length / 2, -drone_width / 2],
             [drone_length / 2, drone_width / 2],
@@ -136,7 +149,13 @@ def plot_trajectory(
         translation = np.array([center_x, center_y])
         
         corners_world_Frame = (rotation_matrix @ corners.T).T + translation
-        rectangle = plt.Polygon(corners_world_Frame, edgecolor='black', facecolor='black')
+        # Plot with hatching
+        rectangle = plt.Polygon(
+            corners_world_Frame, 
+            edgecolor='black', 
+            facecolor='black',
+            hatch='//',
+        )
         ax.add_patch(rectangle)
 
         # Plot the positions thus far
@@ -161,18 +180,18 @@ def plot_trajectory(
             )
         # Plot left then right
         plot_vector(
-            np.array([-drone_length / 2, 0]), 
+            corners[-1], 
             rotation_matrix, 
             translation, 
             action[0],
-            'green'
+            'green',
         )
         plot_vector(
-            np.array([+drone_length / 2, 0]), 
+            corners[-2],
             rotation_matrix, 
             translation, 
             action[1],
-            'red'
+            'red',
         )
 
         # Set the dpi to 600
