@@ -9,10 +9,13 @@ import globals
 if __name__ == "__main__":
 
     """# Verify dynamics code
+    # Verify dynamics code
     quad = dynamics.Quadrotor2D(0.1)
     quad.dynamics_test()
 
     exit()"""
+    # Will log everything to here
+    log_folder = utils.make_log_folder(name="run")
 
     # Get the map info for the map that we'll be using
     map_config = globals.MAP_CONFIGS["downup-o"]
@@ -49,6 +52,7 @@ if __name__ == "__main__":
 
     # Visualize the occupancy grid with a few points marked
     visuals.vis_occupancy_grid(
+        filepath=f"{log_folder}/occupancy_grid.png",
         occupancy_grid=occupancy_grid,
         metres_per_pixel=metres_per_pixel,
         # start and finish points (in metres)

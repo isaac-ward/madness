@@ -14,3 +14,9 @@ def get_assets_dir():
 
 def get_logs_dir():
     return os.path.join(get_project_dir(), 'logs')
+
+def make_log_folder(name="run"):
+    folder_name = f"{name}_{get_timestamp()}"
+    log_folder = os.path.join(get_logs_dir(), folder_name)
+    os.makedirs(log_folder)
+    return log_folder
