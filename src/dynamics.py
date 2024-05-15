@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.interpolate import BarycentricInterpolator
+import scipy.interpolate
 import matplotlib.pyplot as plt
 
 class Quadrotor2D:
@@ -32,29 +32,28 @@ class Quadrotor2D:
         """
         # Generate a sample trajectory
         T = 100
-        xtrue = np.linspace(0,np.pi,T)
+        xtrue = np.linspace(0,2*np.pi,T)
         ytrue = np.zeros((T,1))
         for i in range(T):
             ytrue[i] = np.sin(xtrue[i])
 
         # Extrapolate state and control data from trajectory
+        state,control = self.nominal_trajectory(xtrue,ytrue)
+        T = np.shape(state)[0]
         xnom = np.zeros((T,1))
         ynom = np.zeros((T,1))
-        state,control = self.nominal_trajectory(xtrue,ytrue)
         for i in range(T):
             xnom[i] = state[i,0]
             ynom[i] = state[i,2]
 
         # Test controls on true dynamic model
-        print(control)
-        print(state)
         xcont = np.zeros((T,1))
         ycont = np.zeros((T,1))
         x_next = state[0]
         xcont[0] = state[0,0]
         ycont[0] = state[0,2]
-        for i in range(1,T-1):
-            x_next = self.dynamics_true(x_next, control[i])
+        for i in range(1,T):
+            x_next = self.dynamics_true_no_disturbances(x_next, control[i-1])
             xcont[i] = x_next[0]
             ycont[i] = x_next[2]
 
@@ -82,9 +81,10 @@ class Quadrotor2D:
         sigv = sigu
         sigw = 1.4 # (m/s)
 
-    def dynamics_true(self, xk, uk):
+    def dynamics_true_no_disturbances(self, xk, uk):
         """
         Compute the true next state with nonlinear dynamics
+        TODO: Add wind and drag into model. Will likely also entail rederiving differential flatness terms
         """
         # Breakup state x(k) and control vector u(k)
         x = xk[0]
@@ -99,11 +99,11 @@ class Quadrotor2D:
         # Compute x(k+1)
         x_next = np.zeros((6,1))
         x_next[0] = x + self.dt*vx
-        x_next[1] = vx + self.dt * ((-(T1+T2)*np.sin(phi) - self.CD_v*vx)/self.m + self.wx)
+        x_next[1] = vx + self.dt*((-(T1+T2)*np.sin(phi))/self.m) # - self.CD_v*vx + self.wx
         x_next[2] = y + self.dt*vy
-        x_next[3] = vy + self.dt*(((T1+T2)*np.cos(phi) - self.CD_v*vy)/self.m - self.g + self.wy)
+        x_next[3] = vy + self.dt*(((T1+T2)*np.cos(phi))/self.m - self.g) # - self.CD_v*vy + self.wy
         x_next[4] = phi + self.dt*om
-        x_next[5] = om + self.dt*((T2-T1)*self.l - self.CD_phi*om)/self.Iyy
+        x_next[5] = om + self.dt*((T2-T1)*self.l)/self.Iyy # - self.CD_phi*om
 
         return x_next
     
@@ -149,55 +149,90 @@ class Quadrotor2D:
         A,B = self.linearize(x_bar, u_bar)
 
         # Compute x(k+1)
-        x_next = self.dynamics_true(x_bar, u_bar) + A@(x-x_bar) + B@(u-u_bar)
+        x_next = self.dynamics_true_no_disturbances(x_bar, u_bar) + A@(x-x_bar) + B@(u-u_bar)
 
         return x_next
+    
+    def smooth_trajectory(self,path,v_desired=0.15,spline_alpha=0.05):
+        """
+        Use a 5th order spline to smooth the desired trajectory
+        Sourced from AA274A
+        """
+        ts = np.array([0])
+        path_x = np.array([])
+        path_y = np.array([])
+        
+        # Separate path into x and y components
+        for i in range(0, len(path)):
+            path_x = np.append(path_x,path[i][0])
+            path_y = np.append(path_y,path[i][1])
+        
+        # Calculate cumulative time for each waypoint
+        for i in range(0,len(path)-1):
+            ts = np.append(ts,(np.linalg.norm(path[i+1]-path[i])/v_desired)+ts[-1])
+        
+        # Fit 5th degree polynomial splines for x and y
+        path_x_spline = scipy.interpolate.splrep(ts, path_x, k=5, s=spline_alpha)
+        path_y_spline = scipy.interpolate.splrep(ts, path_y, k=5, s=spline_alpha)
+
+        return path_x_spline, path_y_spline, ts[-1]
     
     def nominal_trajectory(self,x,y):
         """
         Compute the nominal trajectory from the planned path
         taking advantage of the differential flatness of the
         model
+        TODO: Discuss initial state not being static and not at initial location??
         """
+        # Smooth given trajectory and gather derivatives
+        path = np.column_stack((x,y))
+        x_spline,y_spline,duration = self.smooth_trajectory(path,v_desired=0.15,spline_alpha=0.05)
+        ts = np.arange(0.,duration,self.dt)
+
+        x_smooth = scipy.interpolate.splev(ts,x_spline,der=0)
+        xd_smooth = scipy.interpolate.splev(ts,x_spline,der=1)
+        xdd_smooth = scipy.interpolate.splev(ts,x_spline,der=2)
+        xddd_smooth = scipy.interpolate.splev(ts,x_spline,der=3)
+        xdddd_smooth = scipy.interpolate.splev(ts,x_spline,der=4)#np.zeros(np.shape(x_smooth))
+
+        y_smooth = scipy.interpolate.splev(ts,y_spline,der=0)
+        yd_smooth = scipy.interpolate.splev(ts,y_spline,der=1)
+        ydd_smooth = scipy.interpolate.splev(ts,y_spline,der=2)
+        yddd_smooth = scipy.interpolate.splev(ts,y_spline,der=3)
+        ydddd_smooth = scipy.interpolate.splev(ts,y_spline,der=4)#np.zeros(np.shape(x_smooth))
+
         # Create nominal state and control vectors
-        T = len(x)
+        T = len(ts)
         state = np.zeros((T,6))
         control = np.zeros((T-1,2))
-        X = BarycentricInterpolator(np.array(np.linspace(0,T,T)),x)
-        Y = BarycentricInterpolator(np.array(np.linspace(0,T,T)),y)
 
+        # Calc state and control vectors given differential flatness
         for k in range(0,T-1):
-            # TODO: Fix this so it's interpolating between more than just 2 points
+            xd = xd_smooth[k]
+            xdd = xdd_smooth[k]
+            xddd = xddd_smooth[k]
+            xdddd = xdddd_smooth[k]
 
-            #X = BarycentricInterpolator(np.array([self.dt*(k),self.dt*(k+1)]),x[k:k+2])
-            xd = X.derivative(x[k],der=1)
-            xdd = X.derivative(x[k],der=2)
-            xddd = X.derivative(x[k],der=3)
-            xdddd = X.derivative(x[k],der=4)
-
-            #Y = BarycentricInterpolator(np.array([self.dt*(k),self.dt*(k+1)]),y[k:k+2])
-            yd = Y.derivative(y[k],der=1)
-            ydd = Y.derivative(y[k],der=2)
-            yddd = Y.derivative(y[k],der=3)
-            ydddd = Y.derivative(y[k],der=4)
+            yd = yd_smooth[k]
+            ydd = ydd_smooth[k]
+            yddd = yddd_smooth[k]
+            ydddd = ydddd_smooth[k]
 
             phi = np.arctan(-xdd/(ydd+self.g))
-            sin_phi = (-xdd/(ydd+self.g))/np.sqrt(1+(-xdd/(ydd+self.g))**2)
 
             omega = (yddd*xdd-(ydd+self.g)*xddd)/((ydd+self.g)**2+xdd**2)
-            omega_dot = (ydddd*xdd-xdddd*(ydd+self.g))/((ydd+self.g)**2+xdd**2) - (2*xdd*yddd**2*(ydd+self.g)+2*xdd**2*xddd*yddd-2*xddd*yddd*(ydd+self.g)**2-2*xdd*xddd**2*(ydd+self.g))/(xdd**4+2*xdd**2*(ydd+self.g)**2+(ydd+self.g)**4)
             
-            state[k,0] = x[k]
+            state[k,0] = x_smooth[k]
             state[k,1] = xd
-            state[k,2] = y[k]
+            state[k,2] = y_smooth[k]
             state[k,3] = yd
             state[k,4] = phi
             state[k,5] = omega
             
-            control[k,0] = -(self.CD_v*self.l*xd+self.l*self.m*xdd+self.CD_phi*omega*sin_phi+self.Iyy*omega_dot*sin_phi)/(2*self.l*sin_phi)
-            control[k,1] = (-self.l*self.m*xdd-self.CD_v*self.l*xd+self.CD_phi*omega*sin_phi+self.Iyy*omega_dot*sin_phi)/(2*self.l*sin_phi)
-            
-            # Control within bounds
+            control[k,0] = -0.5*(self.Iyy/self.l*((xdd*ydddd-xdddd*(ydd+self.g))*((ydd+self.g)**2+xdd**2)+2*(xddd*(ydd+self.g)-xdd*yddd)*(yddd*(ydd+self.g)+xdd*xddd))/((ydd+self.g)**2+xdd**2)**2+self.m*xdd/np.sin(phi))
+            control[k,1] = 0.5*(self.Iyy/self.l*((xdd*ydddd-xdddd*(ydd+self.g))*((ydd+self.g)**2+xdd**2)+2*(xddd*(ydd+self.g)-xdd*yddd)*(yddd*(ydd+self.g)+xdd*xddd))/((ydd+self.g)**2+xdd**2)**2-self.m*xdd/np.sin(phi))
+
+            # Check control within bounds
             if control[k,0] > self.max_thrust_per_prop:
                 control[k,0] = self.max_thrust_per_prop
             elif control[k,0] < self.min_thrust_per_prop:
@@ -207,12 +242,13 @@ class Quadrotor2D:
                 control[k,1] = self.max_thrust_per_prop
             elif control[k,1] < self.min_thrust_per_prop:
                 control[k,1] = self.min_thrust_per_prop
-            
-        state[T-1,0] = x[T-1]
+
+        # Set final state
+        state[T-1,0] = x_smooth[-1]
         state[T-1,1] = 0
-        state[T-1,2] = y[T-1]
+        state[T-1,2] = y_smooth[-1]
         state[T-1,3] = 0
         state[T-1,4] = 0
         state[T-1,5] = 0
-        
+            
         return state,control

@@ -8,13 +8,11 @@ import globals
 
 if __name__ == "__main__":
 
-    """
-    # Verify dynamics code
+    """# Verify dynamics code
     quad = dynamics.Quadrotor2D(0.1)
     quad.dynamics_test()
 
-    exit()
-    """
+    exit()"""
 
     # Get the map info for the map that we'll be using
     map_config = globals.MAP_CONFIGS["downup-o"]
