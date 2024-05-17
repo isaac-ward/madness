@@ -67,7 +67,7 @@ if __name__ == "__main__":
     # Generate a sample trajectory
     xtrue = np.array(path_metres[:,0])
     ytrue = np.array(path_metres[:,1])
-
+    
     # Verify dynamics code
     quad = dynamics.Quadrotor2D(0.1)
-    quad.dynamics_test(log_folder, xtrue, ytrue)
+    quad.dynamics_test(log_folder, xtrue, ytrue,v_desired=1,spline_alpha=0)

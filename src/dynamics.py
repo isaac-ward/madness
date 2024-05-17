@@ -3,19 +3,21 @@ import scipy.interpolate
 import visuals
 import utils
 import matplotlib.pyplot as plt
+import cvxpy as cp
+from tqdm import tqdm
 
 class Quadrotor2D:
 
     def __init__(self,dt):
         # Dynamics constants (sourced from AA274A)
-        self.n = 6 # state dimension
-        self.m = 2 # control dimension
+        self.n_dim = 6 # state dimension
+        self.m_dim = 2 # control dimension
         self.g = 9.81 # gravity (m/s**2)
         self.m = 2.5 # mass (kg)
         self.l = 1.0 # half-length (m)
         self.Iyy = 1.0 # moment of inertia about the out-of-plane axis (kg * m**2)
-        self.CD_v = 0.25 # translational drag coefficient
-        self.CD_phi = 0.02255 # rotational drag coefficient
+        self.CD_v = 0#0.25 # translational drag coefficient
+        self.CD_phi = 0#0.02255 # rotational drag coefficient
         self.dt = dt # time interval between steps
 
         # Control constraints (sourced from AA274A)
@@ -26,7 +28,7 @@ class Quadrotor2D:
         self.wx = 0 # wind velocity in x-dir #TODO Implement Dryden wind model
         self.wy = 0 # wind velocity in y-dir
     
-    def dynamics_test(self, log_folder, xtrue, ytrue):
+    def dynamics_test(self,log_folder,xtrue,ytrue,obstacles,v_desired,spline_alpha):
         """
         Function to perform simple diagnostic tests on the dynamics
         Check if trajectory extrapolation works
@@ -36,7 +38,17 @@ class Quadrotor2D:
         T = np.shape(xtrue)[0]
 
         # Extrapolate state and control data from trajectory
-        state,control = self.nominal_trajectory(xtrue,ytrue,v_desired=1,spline_alpha=0.00001)
+        """state,control = self.differential_flatness_trajectory(xtrue,ytrue,v_desired,spline_alpha)
+        T = np.shape(state)[0]
+        xnom = np.zeros((T,1))
+        ynom = np.zeros((T,1))
+        for i in range(T):
+            xnom[i] = state[i,0]
+            ynom[i] = state[i,2]"""
+
+        # Extrapolate state and control data from trajectory
+        astar_path = np.column_stack((xtrue,ytrue))
+        state,control = self.SCP_nominal_trajectory(astar_path=astar_path,obstacles=obstacles,R=np.eye(self.m_dim),Q=np.eye(self.n_dim),QN=10*np.eye(self.n_dim),v_desired=v_desired,spline_alpha=spline_alpha)
         T = np.shape(state)[0]
         xnom = np.zeros((T,1))
         ynom = np.zeros((T,1))
@@ -56,7 +68,14 @@ class Quadrotor2D:
             xcont[i] = x_next[0]
             ycont[i] = x_next[2]
             truestate = np.append(truestate,x_next)
-
+        
+        fig, (ax) = plt.subplots()
+        ax.plot(xtrue,ytrue,label='true')
+        ax.plot(xcont,ycont,label='fit')
+        ax.grid()
+        ax.legend()
+        plt.show()
+        """
         truestate = np.reshape(truestate,(T,6))
 
         visuals.plot_trajectory(
@@ -66,7 +85,7 @@ class Quadrotor2D:
                 action_trajectory=control,
                 action_element_labels=[],
                 dt=self.dt
-            )
+            )"""
     
     def wind_model(self,x):
         """
@@ -139,6 +158,41 @@ class Quadrotor2D:
                       [-self.dt*self.l/self.Iyy, self.dt*self.l/self.Iyy]])
         
         return A,B
+    
+    def affinize(self, x_bar, u_bar):
+        """
+        Affinize dynamics about nominal state and control vectors
+        Sourced from AA274A
+        TODO Optional rewrite with jax for more efficiency
+        """
+        # Breakup state x(k) and control vector u(k)
+        x = x_bar[0]
+        vx = x_bar[1]
+        y = x_bar[2]
+        vy = x_bar[3]
+        phi = x_bar[4]
+        om = x_bar[5]
+        T1 = u_bar[0]
+        T2 = u_bar[1]
+        
+        # Compute A and B
+        A = np.array([[1., self.dt, 0., 0., 0., 0.],
+                      [0., 1.-self.dt*self.CD_v/self.m, 0., 0., -self.dt*(T1+T2)*np.cos(phi)/self.m, 0.],
+                      [0., 0., 1., self.dt, 0., 0.],
+                      [0., 0., 0., 1.-self.dt*self.CD_v/self.m, -self.dt*(T1+T2)*np.sin(phi)/self.m, 0.],
+                      [0., 0., 0., 0., 1., self.dt],
+                      [0., 0., 0., 0., 0., 1.-self.dt*self.CD_phi/self.Iyy]])
+        
+        B = np.array([[0., 0.],
+                      [-self.dt*np.sin(phi)/self.m, -self.dt*np.sin(phi)/self.m],
+                      [0., 0.],
+                      [self.dt*np.cos(phi)/self.m, self.dt*np.cos(phi)/self.m],
+                      [0., 0.],
+                      [-self.dt*self.l/self.Iyy, self.dt*self.l/self.Iyy]])
+        
+        C = self.dynamics_true_no_disturbances(x_bar, u_bar) - A@x_bar - B@u_bar
+        
+        return A,B,C
 
     def dynamics_model(self, x, u, x_bar, u_bar):
         """
@@ -153,7 +207,7 @@ class Quadrotor2D:
 
         return x_next
     
-    def smooth_trajectory(self,path,v_desired=0.15,spline_alpha=0.05):
+    def spline_trajectory_smoothing(self,path,v_desired=0.15,spline_alpha=0.05):
         """
         Use a 5th order spline to smooth the desired trajectory
         Sourced from AA274A
@@ -174,10 +228,12 @@ class Quadrotor2D:
         # Fit 5th degree polynomial splines for x and y
         path_x_spline = scipy.interpolate.splrep(ts, path_x, k=5, s=spline_alpha)
         path_y_spline = scipy.interpolate.splrep(ts, path_y, k=5, s=spline_alpha)
+        #path_x_spline = scipy.interpolate.CubicSpline(ts, path_x, bc_type='clamped')
+        #path_y_spline = scipy.interpolate.CubicSpline(ts, path_y, bc_type='clamped')
 
         return path_x_spline, path_y_spline, ts[-1]
     
-    def nominal_trajectory(self,x,y,v_desired=0.15,spline_alpha=0.05):
+    def differential_flatness_trajectory(self,x,y,v_desired=0.15,spline_alpha=0.05):
         """
         Compute the nominal trajectory from the planned path
         taking advantage of the differential flatness of the
@@ -186,7 +242,7 @@ class Quadrotor2D:
         """
         # Smooth given trajectory and gather derivatives
         path = np.column_stack((x,y))
-        x_spline,y_spline,duration = self.smooth_trajectory(path,v_desired,spline_alpha)
+        x_spline,y_spline,duration = self.spline_trajectory_smoothing(path,v_desired,spline_alpha)
         ts = np.arange(0.,duration,self.dt)
 
         x_smooth = scipy.interpolate.splev(ts,x_spline,der=0)
@@ -251,4 +307,74 @@ class Quadrotor2D:
         state[T-1,4] = 0
         state[T-1,5] = 0
             
+        return state,control
+    
+    def SCP_nominal_trajectory(self,astar_path,obstacles,R,Q,QN,max_iters=100,eps=5e-1,rho=1.0,v_desired=0.15,spline_alpha=0.05):
+        """
+        Use SCP techniques to better optimize the trajectory path
+        Sourced from AA203
+        """
+        # Break down path into x and y coords
+        path_x = np.array([])
+        path_y = np.array([])
+        for i in range(0, len(astar_path)):
+            path_x = np.append(path_x,astar_path[i][0])
+            path_y = np.append(path_y,astar_path[i][1])
+        
+        # Get initial and final points
+        start_point = np.array([path_x[0],0,path_y[0],0,0,0])
+        end_point = np.array([path_x[-1],0,path_y[-1],0,0,0])
+
+        # Get a initial trajectory using differential flatness
+        state,control = self.differential_flatness_trajectory(path_x,path_y,v_desired=0.15,spline_alpha=0.05)
+
+        # Run nominal trajectory through SCP
+        N = np.shape(state)[0]
+        converged = False
+        J = np.zeros(max_iters + 1)
+        J[0] = np.inf
+
+        for i in (prog_bar := tqdm(range(max_iters))):
+            # Convex optimization
+            # Declare Convex Variables
+            x_cvx = cp.Variable((N + 1, self.n_dim))
+            u_cvx = cp.Variable((N, self.m_dim))
+
+            # Define Objective
+            objective = cp.quad_form(x_cvx[N]-state[N],QN) + cp.sum([cp.quad_form(x_cvx[k]-state[k],Q)+cp.quad_form(u_cvx[k,:],R) for k in range(0,N)])
+
+            # Define Constraints
+            constraints = [x_cvx[0] == start_point, x_cvx[-1] == end_point]
+
+            for k in range(N):
+                A,B,C = self.affinize(state[k], control[k])
+                constraints += [x_cvx[k+1] == A@x_cvx[k] + B@u_cvx[k] + C,
+                        u_cvx[k,0] >= self.min_thrust_per_prop,
+                        u_cvx[k,1] >= self.min_thrust_per_prop,
+                        u_cvx[k,0] <= self.max_thrust_per_prop,
+                        u_cvx[k,1] <= self.max_thrust_per_prop,
+                        cp.norm(u_cvx[k]-control[k],np.inf) <= rho,
+                        cp.norm(x_cvx[k]-state[k],np.inf) <= rho]
+                for p in range(np.shape(obstacles)[0]):
+                    constraints += [cp.norm(np.array([x_cvx[k,0],x_cvx[k,2]])-obstacles[p],2) <= self.l*1.5]
+
+            # Problem
+            problem = cp.Problem(objective,constraints)
+
+            # Solve
+            problem.solve()
+            J[i + 1] = problem.objective.value
+            state = np.copy(x_cvx.value)
+            control = np.copy(u_cvx.value)
+            
+            dJ = np.abs(J[i + 1] - J[i])
+            prog_bar.set_postfix({"objective change": "{:.5f}".format(dJ)})
+            if dJ < eps:
+                converged = True
+                print("SCP converged after {} iterations.".format(i))
+                break
+        if not converged:
+            raise RuntimeError("SCP did not converge!")
+        J = J[1 : i + 1]
+        
         return state,control
