@@ -1,5 +1,6 @@
 import numpy as np
 from tqdm import tqdm
+import scipy
 
 import mapping 
 import planning
@@ -9,13 +10,14 @@ import visuals
 import utils 
 import globals
 
+
 if __name__ == "__main__":
 
     # Will log everything to here
     log_folder = utils.make_log_folder(name="run")
 
     # Get the map info for the map that we'll be using
-    map_config = globals.MAP_CONFIGS["downup"]
+    map_config = globals.MAP_CONFIGS["3x28"]
     metres_per_pixel    = map_config["metres_per_pixel"]
     filename            = map_config["filename"]
     start_coord_metres  = map_config["start_coord_metres"]
@@ -46,6 +48,17 @@ if __name__ == "__main__":
         finish_coord_metres=finish_coord_metres,
         agent_radius_metres=globals.AGENT_RADIUS_METRES
     )
+    # Which must be downsampled aggressively
+    path_metres = path_metres[::5]
+    # And a smoothed version
+    
+
+    # We need to know the locations of boundaries (parts of the occupancy grid)
+    # that touch both an occupied cell and an unoccupied cell
+    obstacles_metres = planning.find_boundary_positions(
+        occupancy_grid=occupancy_grid,
+        metres_per_pixel=metres_per_pixel,
+    ) 
 
     # Visualize the occupancy grid with a few points marked
     visuals.vis_occupancy_grid(
@@ -58,11 +71,9 @@ if __name__ == "__main__":
             finish_coord_metres
         ],
         path_metres=path_metres,
+        #path2_metres=fitted_path_metres,
         plot_coordinates=True
     )
-
-    # Subsample
-    path_metres = path_metres[::50]
 
     # Generate a sample trajectory
     xtrue = np.array(path_metres[:,0])
@@ -70,4 +81,20 @@ if __name__ == "__main__":
     
     # Verify dynamics code
     quad = dynamics.Quadrotor2D(0.1)
-    quad.dynamics_test(log_folder, xtrue, ytrue,v_desired=1,spline_alpha=0)
+    state_trajectory, action_trajectory = quad.dynamics_test(
+        log_folder, 
+        xtrue, 
+        ytrue, 
+        obstacles_metres, 
+        v_desired=1, 
+        spline_alpha=0
+    )
+
+    visuals.plot_trajectory(
+        filepath=f"{log_folder}/dynamicstest.mp4",
+        state_trajectory=state_trajectory,
+        state_element_labels=[],
+        action_trajectory=action_trajectory,
+        action_element_labels=[],
+        dt=dynamics.dt
+    )
