@@ -6,8 +6,9 @@ import moviepy.editor as mpy
 from tqdm import tqdm
 
 import utils
+import globals
 
-def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], plot_coordinates=True):
+def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], path2_metres=[], plot_coordinates=True):
     """
     Draws the occupancy grid (matrix) with matplotlib, and draws
     in the bottom right corner a scale bar that is one metre long
@@ -39,9 +40,11 @@ def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres
     if len(path_metres) > 0:
         path_pixels = np.array(path_metres) / metres_per_pixel
         ax.plot(path_pixels[:, 0], path_pixels[:, 1], color='blue', linewidth=1, linestyle='--')
-        # And plot points with xs
-        # for point in path_pixels:
-        #     ax.scatter(point[0], point[1], color='blue', marker='x') 
+
+    # Sometimes we want a second path (e.g. a fit)
+    if len(path2_metres) > 0:
+        path2_pixels = np.array(path2_metres) / metres_per_pixel
+        ax.plot(path2_pixels[:, 0], path2_pixels[:, 1], color='green', linewidth=1, linestyle='--')
 
     # Calculate scale bar length dynamically based on 1 meter length
     scale_bar_length = int(1 / metres_per_pixel)  # Length of scale bar in pixels
@@ -54,17 +57,20 @@ def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres
     # Hide axes
     ax.axis('off')
 
+    # Black background
+    fig.patch.set_facecolor('black')
+
     # Save figure
     plt.savefig(filepath, bbox_inches='tight', dpi=600)
 
 def plot_trajectory(
-        filepath, 
-        state_trajectory, 
-        state_element_labels,
-        action_trajectory,
-        action_element_labels,
-        dt  
-    ):
+    filepath, 
+    state_trajectory, 
+    state_element_labels,
+    action_trajectory,
+    action_element_labels,
+    dt  
+):
     """
     State trajectory is an iterable where each iterate is 
     a state vector
@@ -236,3 +242,165 @@ def plot_trajectory(
         os.remove(frame_filepath)
     # Then the frames folder
     os.rmdir(frames_folder)
+
+def plot_experiment(
+    filepath,
+    map,
+    start_point,
+    finish_point,
+    paths,
+    state_trajectory=[],
+    control_trajectory=[],
+    progress=1    
+):
+    """
+    The filepath to save this to, the map object, and a list of path objects that we also want to plot
+    in the form {
+        "path": path,
+        "color": color
+    }
+
+    If a state trajectory or a control trajectory is given, then we'll plot those as well, up to the progress
+    value (0 to 1)
+    """
+
+    # The plot is going to look like so, it will be 2 plots side by side, on the left
+    # will be the world, with the occupancy grid, the paths, and the drone's position path
+    # On the right will be a close up of the drone, with the current control rendered
+
+    # Create a figure
+    fig, axs = plt.subplots(1, 2, figsize=(16, 8))
+
+    # Plot the occupancy grid
+    axs[0].imshow(map.occupancy_grid, cmap='binary', origin='lower')
+    # Plot an x on every point that is a boundary cell (self.boundary_positions)
+    # Need to convert to pixels
+    axs[0].scatter(
+        map.metres_to_pixels(map.boundary_positions)[:, 0],
+        map.metres_to_pixels(map.boundary_positions)[:, 1],
+        color='red', 
+        marker='.',
+        #markersize=0.5
+    )
+
+    # Now plot the points
+    axs[0].scatter(
+        map.metres_to_pixels([start_point])[0, 0],
+        map.metres_to_pixels([start_point])[0, 1],
+        color='green',
+        marker='x'
+    )
+    axs[0].scatter(
+        map.metres_to_pixels([finish_point])[0, 0],
+        map.metres_to_pixels([finish_point])[0, 1],
+        color='green',
+        marker='x'
+    )
+
+    # Now plot the paths 
+    for path in paths:
+        p = path["path"]
+        c = path["color"]
+        axs[0].plot(
+            map.metres_to_pixels(p.path_metres)[:, 0],
+            map.metres_to_pixels(p.path_metres)[:, 1],
+            color=c,
+            linestyle='--'
+        )
+
+    # Now plot the drone's position up to the point in progress
+    if len(state_trajectory) > 0:
+        state_trajectory_of_interest = state_trajectory[:int(progress * len(state_trajectory))]
+        state_trajectory_of_interest = map.metres_to_pixels(state_trajectory_of_interest)
+        axs[0].plot(
+            state_trajectory_of_interest[:, 0],
+            state_trajectory_of_interest[:, 1],
+            color='blue',
+            linestyle='--'
+        )
+    
+    # Now we want to plot the drone centric view on the other axis
+    # We'll plot the drone as a rectangle, centered at the drone's position, rotated by the angle
+    # and with the control action vectors coming from the rotors. We want to plot the drone on both
+    # the drone centric view and the world view, so we'll make a helper function to do so
+    def plot_drone(ax, x, y, angle, control):
+        length = globals.DRONE_HALF_LENGTH * 2
+        height = globals.DRONE_HALF_HEIGHT / 2
+
+        # Compute the rectangle corners relative to the center and rotated by the angle
+        bottom_left  = np.array([-length / 2, -height / 2])
+        bottom_right = np.array([length / 2, -height / 2])
+        top_right    = np.array([length / 2, height / 2])
+        top_left     = np.array([-length / 2, height / 2])
+        rectangle = np.array([bottom_left, bottom_right, top_right, top_left])
+
+        # Rotate the rectangle
+        rotation_matrix = np.array([
+            [np.cos(angle), -np.sin(angle)],
+            [np.sin(angle), np.cos(angle)]
+        ])
+        rectangle = (rotation_matrix @ rectangle.T).T
+
+        # Translate the rectangle
+        rectangle += np.array([x, y])
+
+        # Also need to plot the controls, which can go from 0 to globals.MAX_THRUST_PER_PROP
+        # and are perpendicular to the drone's orientation
+        left_control = control[0]
+        right_control = control[1]
+        control_length = 0.5
+        left_control_vector = np.array([0, left_control * control_length])
+        right_control_vector = np.array([0, right_control * control_length])
+        left_control_vector = (rotation_matrix @ left_control_vector.T).T
+        right_control_vector = (rotation_matrix @ right_control_vector.T).T
+
+        # Plot as arrows from the rotated top left and top right corners
+        ax.arrow(
+            rectangle[3, 0], 
+            rectangle[3, 1], 
+            left_control_vector[0], 
+            left_control_vector[1], 
+            head_width=0.1, 
+            head_length=0.1, 
+            fc='blue',
+            ec='blue'
+        )
+        ax.arrow(
+            rectangle[2, 0], 
+            rectangle[2, 1], 
+            right_control_vector[0], 
+            right_control_vector[1], 
+            head_width=0.1, 
+            head_length=0.1, 
+            fc='blue',
+            ec='blue'
+        )
+    
+    # Can't plot the drone without trajectories
+    if len(state_trajectory) > 0 and len(control_trajectory) > 0:
+
+        # Where is the drone now
+        current_x = state_trajectory[-1, 0]
+        current_y = state_trajectory[-1, 2]
+        current_angle = state_trajectory[-1, 4]
+        current_control = control_trajectory[-1]
+
+        # Plot the drone on the world view
+        plot_drone(axs[0], current_x, current_y, current_angle, current_control)
+
+        # Plot the drone on the drone centric view
+        plot_drone(axs[1], 0, 0, current_angle, current_control)
+
+    # The drone centric view is centered around zero
+    axs[1].set_xlim(-globals.DRONE_HALF_LENGTH * 2, globals.DRONE_HALF_LENGTH * 2)
+    axs[1].set_ylim(-globals.DRONE_HALF_LENGTH * 2, globals.DRONE_HALF_LENGTH * 2)
+    # And doesn't need ticks
+    axs[1].set_xticks([])
+    axs[1].set_yticks([])
+    # And should be exactly square
+    axs[1].set_aspect('equal')
+
+    # Save the figure
+    plt.savefig(filepath, bbox_inches='tight', dpi=600)
+    # Close the figure
+    plt.close()

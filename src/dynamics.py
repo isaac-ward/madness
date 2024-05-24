@@ -5,6 +5,7 @@ import utils
 import matplotlib.pyplot as plt
 import cvxpy as cp
 from tqdm import tqdm
+import globals
 
 class Quadrotor2D:
 
@@ -12,16 +13,16 @@ class Quadrotor2D:
         # Dynamics constants (sourced from AA274A)
         self.n_dim = 6 # state dimension
         self.m_dim = 2 # control dimension
-        self.g = 9.81 # gravity (m/s**2)
-        self.m = 2.5 # mass (kg)
-        self.l = 1.0 # half-length (m)
+        self.g = globals.g # gravity (m/s**2)
+        self.m = globals.DRONE_MASS # mass (kg)
+        self.l = globals.DRONE_HALF_LENGTH # half-length (m)
         self.Iyy = 1.0 # moment of inertia about the out-of-plane axis (kg * m**2)
         self.CD_v = 0#0.25 # translational drag coefficient
         self.CD_phi = 0#0.02255 # rotational drag coefficient
         self.dt = dt # time interval between steps
 
         # Control constraints (sourced from AA274A)
-        self.max_thrust_per_prop = 0.75 * self.m * self.g  # total thrust-to-weight ratio = 1.5
+        self.max_thrust_per_prop = globals.MAX_THRUST_PER_PROP  # total thrust-to-weight ratio = 1.5
         self.min_thrust_per_prop = 0
 
         # Wind variables
@@ -69,23 +70,14 @@ class Quadrotor2D:
             ycont[i] = x_next[2]
             truestate = np.append(truestate,x_next)
         
-        fig, (ax) = plt.subplots()
-        ax.plot(xtrue,ytrue,label='true')
-        ax.plot(xcont,ycont,label='fit')
-        ax.grid()
-        ax.legend()
-        plt.show()
-        """
+        # fig, (ax) = plt.subplots()
+        # ax.plot(xtrue,ytrue,label='true')
+        # ax.plot(xcont,ycont,label='fit')
+        # ax.grid()
+        # ax.legend()
+        # plt.show()
         truestate = np.reshape(truestate,(T,6))
-
-        visuals.plot_trajectory(
-                filepath=f"{log_folder}/dynamicstest.mp4",
-                state_trajectory=truestate,
-                state_element_labels=[],
-                action_trajectory=control,
-                action_element_labels=[],
-                dt=self.dt
-            )"""
+        return truestate,control
     
     def wind_model(self,x):
         """
@@ -207,7 +199,8 @@ class Quadrotor2D:
 
         return x_next
     
-    def spline_trajectory_smoothing(self,path,v_desired=0.15,spline_alpha=0.05):
+    @staticmethod
+    def spline_trajectory_smoothing(path,v_desired=0.15,spline_alpha=0.05):
         """
         Use a 5th order spline to smooth the desired trajectory
         Sourced from AA274A
