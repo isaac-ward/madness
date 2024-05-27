@@ -2,8 +2,7 @@ import numpy as np
 from tqdm import tqdm
 import scipy
 
-import mapping 
-import planning
+from map import Map
 import control 
 import dynamics
 import visuals
@@ -24,60 +23,48 @@ if __name__ == "__main__":
     finish_coord_metres = map_config["finish_coord_metres"]
 
     # Load the map file as an occupancy grid
-    occupancy_grid = mapping.load_map_file_as_occupancy_grid(
-        filepath=f"{utils.get_assets_dir()}/{filename}",
-        metres_per_pixel=metres_per_pixel
+    map1 = Map(
+        map_filepath=f"{utils.get_assets_dir()}/{filename}",
+        metres_per_pixel=metres_per_pixel,
+        scale_factor=0.2
     )
-    # Downscale to allow for easier path planning computation
-    scale_factor = 0.2
-    occupancy_grid = mapping.reduce_occupancy_grid_resolution(
-        occupancy_grid, 
-        scale_factor=scale_factor
-    )
-    # Note that the metres per pixel has now changed
-    metres_per_pixel /= scale_factor
     
     # --------------------------------
     # there 
 
     # Generate a path from start to finish
-    path_metres = planning.compute_path_over_occupancy_grid(
-        occupancy_grid=occupancy_grid,
-        metres_per_pixel=metres_per_pixel,
-        start_coord_metres=start_coord_metres,
-        finish_coord_metres=finish_coord_metres,
-        agent_radius_metres=globals.AGENT_RADIUS_METRES
+    path1 = map1.path_a_to_b_metres(
+        a_coord_metres=start_coord_metres,
+        b_coord_metres=finish_coord_metres
     )
+
     # Which must be downsampled aggressively
-    path_metres = path_metres[::5]
+    path1.downsample_every_n(5)
     # And a smoothed version
     
 
     # We need to know the locations of boundaries (parts of the occupancy grid)
     # that touch both an occupied cell and an unoccupied cell
-    obstacles_metres = planning.find_boundary_positions(
-        occupancy_grid=occupancy_grid,
-        metres_per_pixel=metres_per_pixel,
-    ) 
+    obstacles_metres = map1.boundary_positions
 
     # Visualize the occupancy grid with a few points marked
     visuals.vis_occupancy_grid(
         filepath=f"{log_folder}/occupancy_grid.png",
-        occupancy_grid=occupancy_grid,
-        metres_per_pixel=metres_per_pixel,
+        occupancy_grid=map1.occupancy_grid,
+        metres_per_pixel=map1.metres_per_pixel,
         # start and finish points (in metres)
         points_metres=[
             start_coord_metres,
             finish_coord_metres
         ],
-        path_metres=path_metres,
+        path_metres=path1.path_metres,
         #path2_metres=fitted_path_metres,
         plot_coordinates=True
     )
 
     # Generate a sample trajectory
-    xtrue = np.array(path_metres[:,0])
-    ytrue = np.array(path_metres[:,1])
+    xtrue = np.array(path1.path_metres[:,0])
+    ytrue = np.array(path1.path_metres[:,1])
     
     # Verify dynamics code
     quad = dynamics.Quadrotor2D(0.1)
