@@ -182,7 +182,7 @@ class Quadrotor2D:
                       [0., 0.],
                       [-self.dt*self.l/self.Iyy, self.dt*self.l/self.Iyy]])
         
-        C = self.dynamics_true_no_disturbances(x_bar, u_bar) - A@x_bar - B@u_bar
+        C = np.reshape(self.dynamics_true_no_disturbances(x_bar, u_bar),(6,)) - A@x_bar - B@u_bar
         
         return A,B,C
 
@@ -330,16 +330,16 @@ class Quadrotor2D:
         for i in (prog_bar := tqdm(range(max_iters))):
             # Convex optimization
             # Declare Convex Variables
-            x_cvx = cp.Variable((N + 1, self.n_dim))
-            u_cvx = cp.Variable((N, self.m_dim))
+            x_cvx = cp.Variable((N, self.n_dim))
+            u_cvx = cp.Variable((N-1, self.m_dim))
 
             # Define Objective
-            objective = cp.quad_form(x_cvx[N]-state[N],QN) + cp.sum([cp.quad_form(x_cvx[k]-state[k],Q)+cp.quad_form(u_cvx[k,:],R) for k in range(0,N)])
+            objective = cp.quad_form(x_cvx[N-1]-state[N-1],QN) + cp.sum([cp.quad_form(x_cvx[k]-state[k],Q)+cp.quad_form(u_cvx[k,:],R) for k in range(0,N-1)])
 
             # Define Constraints
             constraints = [x_cvx[0] == start_point, x_cvx[-1] == end_point]
 
-            for k in range(N):
+            for k in range(N-1):
                 A,B,C = self.affinize(state[k], control[k])
                 constraints += [x_cvx[k+1] == A@x_cvx[k] + B@u_cvx[k] + C,
                         u_cvx[k,0] >= self.min_thrust_per_prop,
@@ -349,7 +349,7 @@ class Quadrotor2D:
                         cp.norm(u_cvx[k]-control[k],np.inf) <= rho,
                         cp.norm(x_cvx[k]-state[k],np.inf) <= rho]
                 for p in range(np.shape(obstacles)[0]):
-                    constraints += [cp.norm(np.array([x_cvx[k,0],x_cvx[k,2]])-obstacles[p],2) <= self.l*1.5]
+                    constraints += [cp.norm(cp.hstack([x_cvx[k,0],x_cvx[k,2]])-obstacles[p],2) >= self.l*1.5]
 
             # Problem
             problem = cp.Problem(objective,constraints)
@@ -368,6 +368,6 @@ class Quadrotor2D:
                 break
         if not converged:
             raise RuntimeError("SCP did not converge!")
-        J = J[1 : i + 1]
+        J = J[1:i+1]
         
         return state,control
