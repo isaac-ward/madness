@@ -1,9 +1,12 @@
 import matplotlib as mpl 
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import moviepy.editor as mpy
 from tqdm import tqdm
+import math
+from concurrent.futures import ProcessPoolExecutor
 
 import utils
 import globals
@@ -243,14 +246,109 @@ def plot_trajectory(
     # Then the frames folder
     os.rmdir(frames_folder)
 
+def generate_frame(i, num_states, map, start_point, finish_point, paths, simulation_dt,
+                   state_trajectory, control_trajectory, scored_rollouts_per_step,
+                   min_score, max_score, frames_folder):
+    """
+    Generate a frame for the given index.
+    """
+    # Progress is from 0 to 1
+    progress = i / num_states
+    frame_filepath = f"{frames_folder}/{i}.png"
+    plot_experiment(
+        frame_filepath,
+        map,
+        start_point,
+        finish_point,
+        paths,
+        dt=simulation_dt,
+        state_trajectory=state_trajectory,
+        control_trajectory=control_trajectory,
+        scored_rollouts=scored_rollouts_per_step[i],
+        score_bounds=(min_score, max_score),
+        progress=progress
+    )
+    return frame_filepath
+
+def plot_experiment_video(
+    filepath,
+    map,
+    start_point,
+    finish_point,
+    paths,
+    simulation_dt,
+    state_trajectory=[],
+    control_trajectory=[],
+    scored_rollouts_per_step=[],
+):
+    """
+    Call plot experiment at some interval to generate frames and then use
+    moviepy to generate a video
+    """
+
+    # Want this in realtime. If the simulation is 10x faster than realtime
+    # then we want to play it back at 0.1x speed
+    num_states = len(state_trajectory)
+    fps_desired = 25
+    
+    # Create a folder to store the frames
+    base_folder = os.path.dirname(filepath)
+    frames_folder = f"{base_folder}/frames"
+    os.makedirs(frames_folder, exist_ok=True)
+
+    # What were the highest and lowest non infinity scores encountered 
+    # in the scored rollouts? 
+    min_score = np.inf
+    max_score = -np.inf
+    for scored_rollouts in scored_rollouts_per_step:
+        scores = scored_rollouts[1]
+        for score in scores:
+            if score < min_score and score != -np.inf:
+                min_score = score
+            if score > max_score and score != +np.inf:
+                max_score = score
+    print(f"Non infinite scores encountered: [{min_score}, {max_score}]")
+
+    print(f"Have {len(scored_rollouts_per_step)} scored rollouts per step")
+
+    # Generate frames
+    frame_filepaths = []
+    max_workers = os.cpu_count() - 4
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(generate_frame, i, num_states, map, start_point, finish_point, paths,
+                            simulation_dt, state_trajectory, control_trajectory,
+                            scored_rollouts_per_step, min_score, max_score, frames_folder)
+            for i in range(num_states - 1)
+        ]
+        for future in tqdm(futures, desc="Generating frames"):
+            frame_filepaths.append(future.result())
+
+    # The filepaths need to be sorted by the frame number
+    frame_filepaths = sorted(frame_filepaths, key=lambda x: int(os.path.basename(x).split('.')[0]))
+
+    # Now use moviepy to create a video
+    clip = mpy.ImageSequenceClip(frame_filepaths, fps=fps_desired)
+    clip.write_videofile(filepath, fps=fps_desired, threads=max_workers)
+
+    # Delete the frames and folder
+    delete_frames = False 
+    if delete_frames:
+        for frame_filepath in frame_filepaths:
+            os.remove(frame_filepath)
+        os.rmdir(frames_folder)
+
 def plot_experiment(
     filepath,
     map,
     start_point,
     finish_point,
     paths,
+    dt,
     state_trajectory=[],
     control_trajectory=[],
+    scored_rollouts=[],
+    score_bounds=(0,1),
     progress=1    
 ):
     """
@@ -263,38 +361,61 @@ def plot_experiment(
     If a state trajectory or a control trajectory is given, then we'll plot those as well, up to the progress
     value (0 to 1)
     """
+    drone_color = 'purple'
 
     # The plot is going to look like so, it will be 2 plots side by side, on the left
     # will be the world, with the occupancy grid, the paths, and the drone's position path
     # On the right will be a close up of the drone, with the current control rendered
 
     # Create a figure
-    fig, axs = plt.subplots(1, 2, figsize=(16, 8))
+    fig = plt.figure(figsize=(16, 8))
+    # 1 row, two columns
+    gs = gridspec.GridSpec(1, 2, width_ratios=[2, 1])
+    axs = [plt.subplot(gs[0]), plt.subplot(gs[1])]
+
+    # In the top right of the drone view we want to plot the
+    # current time and the total time, and the dt
+    def plot_text_y_down(ax, y, text):
+        ax.text(0.99, y, text, color='black', fontsize=12, ha='right', va='bottom', font='monospace', transform=ax.transAxes)
+    T = len(state_trajectory) * dt
+    plot_text_y_down(axs[1], 0.95, f"dt = {dt:.4f} s")
+    plot_text_y_down(axs[1], 0.91, f"t  = {progress * T:.4f} s")
+    plot_text_y_down(axs[1], 0.87, f"T  = {T:.4f} s")
 
     # Plot the occupancy grid
     axs[0].imshow(map.occupancy_grid, cmap='binary', origin='lower')
+    # Set the limits based on the occupancy grid
+    axs[0].set_xlim([0, map.occupancy_grid.shape[1]])
+    axs[0].set_ylim([0, map.occupancy_grid.shape[0]])
     # Plot an x on every point that is a boundary cell (self.boundary_positions)
     # Need to convert to pixels
     axs[0].scatter(
         map.metres_to_pixels(map.boundary_positions)[:, 0],
         map.metres_to_pixels(map.boundary_positions)[:, 1],
-        color='red', 
-        marker='.',
-        #markersize=0.5
+        color='orange', 
+        marker=',',
+        s=0.03
     )
+    # Plot a scale in the bottom left corner of the world view
+    annotation = f"1m = {int(1 / map.metres_per_pixel)} pixels"
+    axs[0].text(0, 0.01, annotation, color='orange', fontsize=6, ha='left', va='bottom', transform=axs[0].transAxes)
+    # And plot a bar in the bottom left corner that shows this scale
+    scale_length = 1 / map.metres_per_pixel
+    axs[0].plot([0, scale_length], [0, 0], color='orange', lw=4)
+
 
     # Now plot the points
     axs[0].scatter(
         map.metres_to_pixels([start_point])[0, 0],
         map.metres_to_pixels([start_point])[0, 1],
-        color='green',
-        marker='x'
+        color='grey',
+        marker='o'
     )
     axs[0].scatter(
         map.metres_to_pixels([finish_point])[0, 0],
         map.metres_to_pixels([finish_point])[0, 1],
-        color='green',
-        marker='x'
+        color='grey',
+        marker='o'
     )
 
     # Now plot the paths 
@@ -305,27 +426,62 @@ def plot_experiment(
             map.metres_to_pixels(p.path_metres)[:, 0],
             map.metres_to_pixels(p.path_metres)[:, 1],
             color=c,
-            linestyle='--'
+            linestyle='--',
+            lw=1
         )
 
     # Now plot the drone's position up to the point in progress
     if len(state_trajectory) > 0:
         state_trajectory_of_interest = state_trajectory[:int(progress * len(state_trajectory))]
         state_trajectory_of_interest = map.metres_to_pixels(state_trajectory_of_interest)
+        # 0, and 2 are x and y
         axs[0].plot(
             state_trajectory_of_interest[:, 0],
-            state_trajectory_of_interest[:, 1],
-            color='blue',
-            linestyle='--'
+            state_trajectory_of_interest[:, 2],
+            color=drone_color,
+            linestyle='-',
+            lw=1
+        )
+
+    # We have the scored rollouts - these are all the samples that
+    # MPPI took, and the score that each one got. We want to plot every single
+    # one, the color of the line will be based on the score
+    colormap = mpl.cm.get_cmap('hsv')
+    # But I actually only want the last half (the green to blue bit),
+    # and in reverse
+    color_samples = 255
+    colormap = colormap(np.linspace(0.0, 0.33, color_samples+1))#[::-1]
+    for i, _ in tqdm(enumerate(scored_rollouts[0]), desc="Plotting rollouts", leave=False):
+        Xs    = scored_rollouts[0][i]
+        score = scored_rollouts[1][i]
+        # Convert to pixels
+        pos_x = map.metres_to_pixels(Xs[:, 0])
+        pos_y = map.metres_to_pixels(Xs[:, 2])
+        # Normalize the score to be between 0 and 1
+        if score == -np.inf:
+            score = 0
+        else:
+            score = (score - score_bounds[0]) / (score_bounds[1] - score_bounds[0])
+
+        color = colormap[int(score * color_samples)]
+        # Plot the line
+        axs[0].plot(
+            pos_x,
+            pos_y,
+            color=color,
+            lw=0.2,
+            linestyle='-',
+            # Draw the highest scores on top
+            zorder=20+score
         )
     
     # Now we want to plot the drone centric view on the other axis
     # We'll plot the drone as a rectangle, centered at the drone's position, rotated by the angle
     # and with the control action vectors coming from the rotors. We want to plot the drone on both
     # the drone centric view and the world view, so we'll make a helper function to do so
-    def plot_drone(ax, x, y, angle, control):
-        length = globals.DRONE_HALF_LENGTH * 2
-        height = globals.DRONE_HALF_HEIGHT / 2
+    def plot_drone(ax, x, y, angle, control, zoom=1):
+        length = zoom*globals.DRONE_HALF_LENGTH * 2
+        height = zoom*globals.DRONE_HALF_LENGTH / 2
 
         # Compute the rectangle corners relative to the center and rotated by the angle
         bottom_left  = np.array([-length / 2, -height / 2])
@@ -344,13 +500,18 @@ def plot_experiment(
         # Translate the rectangle
         rectangle += np.array([x, y])
 
+        # Draw the rectangle (always on top!)
+        patch = plt.Polygon(rectangle, edgecolor=drone_color, facecolor=drone_color)
+        patch.set_zorder(10)
+        ax.add_patch(patch)
+
         # Also need to plot the controls, which can go from 0 to globals.MAX_THRUST_PER_PROP
         # and are perpendicular to the drone's orientation
         left_control = control[0]
         right_control = control[1]
-        control_length = 0.5
-        left_control_vector = np.array([0, left_control * control_length])
-        right_control_vector = np.array([0, right_control * control_length])
+        control_length = 0.25*zoom
+        left_control_vector = np.array([0, (left_control/globals.MAX_THRUST_PER_PROP) * control_length])
+        right_control_vector = np.array([0, (right_control/globals.MAX_THRUST_PER_PROP) * control_length])
         left_control_vector = (rotation_matrix @ left_control_vector.T).T
         right_control_vector = (rotation_matrix @ right_control_vector.T).T
 
@@ -362,8 +523,9 @@ def plot_experiment(
             left_control_vector[1], 
             head_width=0.1, 
             head_length=0.1, 
-            fc='blue',
-            ec='blue'
+            fc=drone_color,
+            ec=drone_color,
+            zorder=11
         )
         ax.arrow(
             rectangle[2, 0], 
@@ -372,21 +534,30 @@ def plot_experiment(
             right_control_vector[1], 
             head_width=0.1, 
             head_length=0.1, 
-            fc='blue',
-            ec='blue'
+            fc=drone_color,
+            ec=drone_color,
+            zorder=11
         )
     
     # Can't plot the drone without trajectories
     if len(state_trajectory) > 0 and len(control_trajectory) > 0:
 
         # Where is the drone now
-        current_x = state_trajectory[-1, 0]
-        current_y = state_trajectory[-1, 2]
-        current_angle = state_trajectory[-1, 4]
-        current_control = control_trajectory[-1]
+        current_index = math.floor(progress * len(state_trajectory))
+        current_x = state_trajectory[current_index, 0]
+        current_y = state_trajectory[current_index, 2]
+        current_angle = state_trajectory[current_index, 4]
+        current_control = control_trajectory[current_index]
 
         # Plot the drone on the world view
-        plot_drone(axs[0], current_x, current_y, current_angle, current_control)
+        plot_drone(
+            axs[0], 
+            map.metres_to_pixels([current_x])[0],
+            map.metres_to_pixels([current_y])[0],
+            current_angle, 
+            current_control, 
+            zoom=1/map.metres_per_pixel
+        )
 
         # Plot the drone on the drone centric view
         plot_drone(axs[1], 0, 0, current_angle, current_control)

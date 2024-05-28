@@ -36,6 +36,9 @@ class Path:
         average_distance = np.mean(distances)
         # Calculate the factor by which to downsample
         factor = int(average_distance / desired_average_adjacent_distance_metres)
+        # If the factor is 0, we're done
+        if factor == 0:
+            return self
         # Downsample
         return self.downsample_every_n(factor)
 
@@ -85,10 +88,29 @@ class Path:
         """
         return np.sum(np.linalg.norm(np.diff(self.path_metres, axis=0), axis=1))
     
+    def length_start_to_finish(self):
+        """
+        Returns the length from the start to the finish of the path
+        """
+        return np.linalg.norm(self.path_metres[-1] - self.path_metres[0])
+    
     def num_points_along_path(self):
         return len(self.path_metres)
 
-    def deviation_from_other_path(self, path_b, verbose=False):
+    def deviation_from_path(self, path_b, verbose=False):
+        """
+        Calculate the deviation from the nominal path
+        by looking at each point in the actual path
+        and finding the closest point in the nominal path
+        and taking the distance between them
+        """
+        # Calculate the deviation in a vectorized way
+        distances_matrix = np.linalg.norm(self.path_metres[:, np.newaxis, :] - path_b.path_metres[np.newaxis, :, :], axis=2)
+        closest_distances = np.min(distances_matrix, axis=0)
+        deviation = np.sum(closest_distances)
+        return deviation
+
+    def deviation_from_other_path_legacy(self, path_b, verbose=False):
         """
         Uses fast (approximate) Dynamic Time Warping to calculate the deviation
         between this path and the other path. This takes on a value of 0 when the

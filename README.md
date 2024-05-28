@@ -1,6 +1,6 @@
-# Python Template Repository
+# Madness
 
-# Running this
+## Running this
 
 We use [conda](https://docs.anaconda.com/free/miniconda/miniconda-install/) to manage the environment. 
 
@@ -35,7 +35,7 @@ Alternatively, you can use pip:
 pip install scipy numpy matplotlib tqdm networkx moviepy fastdtw
 ```
 
-# Initial 2D Dynamics
+## Initial 2D Dynamics
 
 We will be modeling our manipulator-arm drone with quadrotor dynamics sourced from AA274A and AA203.
 
@@ -79,7 +79,7 @@ Finally, we can pose the cost function for the LQR problem as
 
 Since we are solving this over a trajectory of points, we will need to use iLQR techniques to solve the control problem.
 
-# Links
+## Links
 
 For 3D visualization:
 
@@ -88,3 +88,10 @@ For 3D visualization:
 - https://github.com/fwilliams/point-cloud-utils
 - https://towardsdatascience.com/python-libraries-for-mesh-and-point-cloud-visualization-part-1-daa2af36de30
 - https://towardsdatascience.com/python-libraries-for-mesh-point-cloud-and-data-visualization-part-2-385f16188f0f
+
+## Handy commands
+
+To remove all logs (minus the gitkeep file)
+```
+rm -rf logs/*
+```
