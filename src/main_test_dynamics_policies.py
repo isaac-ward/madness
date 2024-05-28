@@ -1,8 +1,8 @@
 import numpy as np
 from tqdm import tqdm
 
-import mapping 
-import planning
+import map 
+import path
 import control 
 import dynamics
 import visuals

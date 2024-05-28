@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 import scipy
 import scipy.ndimage
+import scipy.spatial    
 import networkx as nx
 from tqdm import tqdm
 
@@ -48,6 +49,10 @@ class Map:
             self.occupancy_grid,
             self.metres_per_pixel
         ) 
+
+        # Let's also compute a kd tree representation of the boundary positions
+        # for fast collision checking
+        self.boundary_positions_kd_tree = scipy.spatial.cKDTree(self.boundary_positions)
 
         print(f"Loaded map from {map_filepath}, scale divided by {scale_factor:.4f} to reduce from {metres_per_pixel:.4f}->{self.metres_per_pixel:.4f} metres per pixel")
 
@@ -160,9 +165,12 @@ class Map:
         self,
         a_coord_metres, 
         b_coord_metres,
+        fudge_factor=1.0
     ):
         """
-        a and b are in metres, each a tuple x,y
+        a and b are in metres, each a tuple x,y, the fudge factor is a multiplier
+        on the size of the agent radius to be more conservative. 1 is the true
+        size, 2 is twice as big, etc.
 
         Note that generally return a path that is subsampled
         very very densely - recommend using the path's 
@@ -173,7 +181,7 @@ class Map:
             self.metres_per_pixel,
             a_coord_metres,
             b_coord_metres,
-            agent_radius_metres=globals.DRONE_HALF_LENGTH
+            agent_radius_metres=globals.DRONE_HALF_LENGTH*fudge_factor
         )
         return Path(path_metres)
 
@@ -285,3 +293,26 @@ class Map:
                                 break  # No need to check other neighbors for this cell
 
         return np.array(boundary_cells)
+    
+    def does_path_hit_boundary(self, path):
+        """
+        Returns True if the path intersects with any boundary positions
+        """
+        
+        # Go through all points in the path - if any of them are within a certain
+        # distance of a boundary position, return True
+        for xy in path.path_metres:
+            if self.does_point_hit_boundary(xy[0], xy[1]):
+                return True
+        return False
+    
+    def does_point_hit_boundary(self, x, y):
+        """
+        Returns True if the point intersects with any boundary positions
+        """
+        
+        # Query the kd tree for the nearest boundary position
+        distance, _ = self.boundary_positions_kd_tree.query(np.array([x, y]).T)
+        # TODO variable threshold, in case we are not testing collision
+        # with the drone
+        return distance < globals.DRONE_HALF_LENGTH

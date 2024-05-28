@@ -1,5 +1,7 @@
 import numpy as np
 
+from path import Path
+
 class MPPI:
     """
     Implementation of model predictive path integral control
@@ -13,6 +15,8 @@ class MPPI:
         K,
         H,
         lambda_,
+        nominal_xy_positions,
+        map,
     ):
 
         """
@@ -30,14 +34,18 @@ class MPPI:
         self.K = K
         self.H = H
         self.lambda_ = lambda_
+        self.nominal_xy_path = Path(nominal_xy_positions)
+        self.map = map
 
-        # We'll use the bounds to create a distribution that we can sample from. Initiall
-        # we have now reward information so we'll just sample uniformly
-        self.action_distribution = lambda: np.random.uniform(
+    def sample_action_sequence(self):
+        # This is actually the MPOPI simulation - we'll sample a sequence
+        # of actions out to the horizon 
+        action_sequence = np.random.uniform(
             low=self.control_bounds_lower,
             high=self.control_bounds_upper,
-            size=(self.K, self.H)
+            size=(self.H, len(self.control_bounds_lower))
         )
+        return action_sequence
 
     def rollout(self, x0, U):
         """
@@ -52,7 +60,7 @@ class MPPI:
             X.append(x)
         return np.array(X)
     
-    def score(self, X, nominal_xy_positions):
+    def score(self, X):
         """
         Score a trajectory of states
         """
@@ -60,15 +68,42 @@ class MPPI:
         # Optimize two things here:
         # - the positions that we go through should overlap with the nominal positions (use
         #   path comparison implementation for this
-        # - the distance we travel should be maximized
+        # - the distance to the goal should be minimized
 
-    def optimal_control_sequence(self, x0):
+        # Recall that x and y at 0 and 2
+        actual_xy_positions = X[:,[0,2]]
+        actual_xy_positions = actual_xy_positions.reshape(-1, 2)
+        actual_path = Path(actual_xy_positions)
+
+        # If we hit a wall get negative infinity
+        if self.map.does_path_hit_boundary(actual_path):
+            return -np.inf
+
+        # How much does the actual path deviate from the nominal path?
+        deviation = self.nominal_xy_path.deviation_from_path(actual_path)
+
+        # Calculate the distance to the end point
+        distance_to_end = np.linalg.norm(actual_xy_positions[-1] - self.nominal_xy_path.path_metres[-1])
+
+        # We're going to maximize this score, so we need to negate 
+        # these terms
+        deviation = -deviation
+        distance_to_end = -distance_to_end
+
+        # Score is a weighted sum of the two
+        score = 10 * deviation + 0.5 * distance_to_end
+
+        return score
+
+    def optimal_control_sequence(self, x0, return_scored_rollouts=False):
         """
         Optimize the control sequence to minimize the cost of the trajectory
         """
         
         # Start by sampling K, H long control sequences
-        Us = self.action_distribution()
+        Us = np.array([ self.sample_action_sequence() for _ in range(self.K) ])
+
+        # TODO this should all be vectorized
 
         # Rollout each of the K control sequences
         Xs = []
@@ -82,10 +117,14 @@ class MPPI:
             score = self.score(X)
             scores.append(score)
 
-        # Take the best
         # TODO MPPI weighted with softmax
+
+        # Take the best
         best_index = np.argmax(scores)
         best_U = Us[best_index]
-        return best_U
+        if return_scored_rollouts:
+            return best_U, (Xs, scores)
+        else:   
+            return best_U
 
 
