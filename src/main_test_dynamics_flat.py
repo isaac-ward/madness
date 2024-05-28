@@ -46,6 +46,7 @@ if __name__ == "__main__":
     # We need to know the locations of boundaries (parts of the occupancy grid)
     # that touch both an occupied cell and an unoccupied cell
     obstacles_metres = map1.boundary_positions
+    print(np.shape(obstacles_metres)[0])
 
     # Visualize the occupancy grid with a few points marked
     visuals.vis_occupancy_grid(
