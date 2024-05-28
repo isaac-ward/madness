@@ -308,12 +308,12 @@ def plot_experiment_video(
             if score > max_score and score != +np.inf:
                 max_score = score
     print(f"Non infinite scores encountered: [{min_score}, {max_score}]")
-
-    print(f"Have {len(scored_rollouts_per_step)} scored rollouts per step")
+    #print(f"Have {len(scored_rollouts_per_step)} scored rollouts per step")
 
     # Generate frames
     frame_filepaths = []
-    max_workers = os.cpu_count() - 4
+    max_workers = 4 #os.cpu_count() - 4
+    print(f"Using {max_workers} workers to generate frames")
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(generate_frame, i, num_states, map, start_point, finish_point, paths,
@@ -327,9 +327,9 @@ def plot_experiment_video(
     # The filepaths need to be sorted by the frame number
     frame_filepaths = sorted(frame_filepaths, key=lambda x: int(os.path.basename(x).split('.')[0]))
 
-    # Now use moviepy to create a video
+    # Now use moviepy to create a video, and compress it
     clip = mpy.ImageSequenceClip(frame_filepaths, fps=fps_desired)
-    clip.write_videofile(filepath, fps=fps_desired, threads=max_workers)
+    clip.write_videofile(filepath, fps=fps_desired, threads=max_workers, bitrate='2M')
 
     # Delete the frames and folder
     delete_frames = False 
@@ -370,13 +370,13 @@ def plot_experiment(
     # Create a figure
     fig = plt.figure(figsize=(16, 8))
     # 1 row, two columns
-    gs = gridspec.GridSpec(1, 2, width_ratios=[2, 1])
+    gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1])
     axs = [plt.subplot(gs[0]), plt.subplot(gs[1])]
 
     # In the top right of the drone view we want to plot the
     # current time and the total time, and the dt
     def plot_text_y_down(ax, y, text):
-        ax.text(0.99, y, text, color='black', fontsize=12, ha='right', va='bottom', font='monospace', transform=ax.transAxes)
+        ax.text(0.01, y, text, color='black', fontsize=8, ha='left', va='bottom', font='monospace', transform=ax.transAxes)
     T = len(state_trajectory) * dt
     plot_text_y_down(axs[1], 0.95, f"dt = {dt:.4f} s")
     plot_text_y_down(axs[1], 0.91, f"t  = {progress * T:.4f} s")
@@ -402,7 +402,8 @@ def plot_experiment(
     # And plot a bar in the bottom left corner that shows this scale
     scale_length = 1 / map.metres_per_pixel
     axs[0].plot([0, scale_length], [0, 0], color='orange', lw=4)
-
+    # Don't need axis ticks
+    axs[0].axis('off')
 
     # Now plot the points
     axs[0].scatter(
@@ -451,7 +452,7 @@ def plot_experiment(
     # and in reverse
     color_samples = 255
     colormap = colormap(np.linspace(0.0, 0.33, color_samples+1))#[::-1]
-    for i, _ in tqdm(enumerate(scored_rollouts[0]), desc="Plotting rollouts", leave=False):
+    for i, _ in tqdm(enumerate(scored_rollouts[0]), desc="Plotting rollouts", leave=False, disable=True):
         Xs    = scored_rollouts[0][i]
         score = scored_rollouts[1][i]
         # Convert to pixels
@@ -472,7 +473,8 @@ def plot_experiment(
             lw=0.2,
             linestyle='-',
             # Draw the highest scores on top
-            zorder=20+score
+            zorder=20+score,
+            alpha=0.1,
         )
     
     # Now we want to plot the drone centric view on the other axis
@@ -504,6 +506,18 @@ def plot_experiment(
         patch = plt.Polygon(rectangle, edgecolor=drone_color, facecolor=drone_color)
         patch.set_zorder(10)
         ax.add_patch(patch)
+
+        # Draw a little triangle pointing up so we know the orientation
+        triangle = np.array([
+            [0, height / 2],
+            [length / 8, 0],
+            [-length / 8, 0]
+        ])
+        triangle = (rotation_matrix @ triangle.T).T
+        triangle += np.array([x, y])
+        patch = plt.Polygon(triangle, edgecolor='black', facecolor='black')
+        patch.set_zorder(11)
+        ax.add_patch(patch) 
 
         # Also need to plot the controls, which can go from 0 to globals.MAX_THRUST_PER_PROP
         # and are perpendicular to the drone's orientation
