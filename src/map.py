@@ -216,10 +216,16 @@ class Map:
         print(f"Graph has {len(graph.nodes)} nodes and {len(graph.edges)} edges")
 
         # Define a custom heuristic function for A* (Euclidean distance)
-        def heuristic(u, v):
+        def heuristic_euclidean(u, v):
             (x1, y1) = u
             (x2, y2) = v
             return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        
+        def heuristic_weighted_euclidean(u, v):
+            (x1, y1) = u
+            (x2, y2) = v
+            weight = 4
+            return weight * np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
         # Define a custom weight function for A* (considering obstacle dilation)
         def weight(u, v, data):
@@ -244,7 +250,7 @@ class Map:
 
         # Compute the path using A* algorithm
         try:
-            path = nx.astar_path(graph, start_node, finish_node, heuristic=heuristic, weight=weight)
+            path = nx.astar_path(graph, start_node, finish_node, heuristic=heuristic_euclidean, weight=weight)
             # Convert path nodes back to coordinates in metres
             path_metres = [(coord[1] * metres_per_pixel, coord[0] * metres_per_pixel) for coord in path]
         
@@ -316,3 +322,9 @@ class Map:
         # TODO variable threshold, in case we are not testing collision
         # with the drone
         return distance < globals.DRONE_HALF_LENGTH
+    
+    def out_of_bounds(self, x, y):
+        """
+        Returns True if the point is out of bounds
+        """
+        return x < 0 or y < 0 or x > self.occupancy_grid.shape[1] * self.metres_per_pixel or y > self.occupancy_grid.shape[0] * self.metres_per_pixel

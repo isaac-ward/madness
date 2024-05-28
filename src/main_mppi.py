@@ -36,7 +36,7 @@ if __name__ == "__main__":
     nominal_xy = map.path_a_to_b_metres(
         a_coord_metres=start_coord_metres,
         b_coord_metres=finish_coord_metres,
-        fudge_factor=1.8,
+        fudge_factor=1.6,
     )
     nominal_xy = nominal_xy.downsample_to_average_adjacent_distance_metres(0.1)
 
@@ -49,8 +49,8 @@ if __name__ == "__main__":
         control_bounds_lower=np.array([-globals.MAX_THRUST_PER_PROP, -globals.MAX_THRUST_PER_PROP]),
         control_bounds_upper=np.array([+globals.MAX_THRUST_PER_PROP, +globals.MAX_THRUST_PER_PROP]),
         K=1024,
-        H=8,
-        lambda_=0,
+        H=12,
+        lambda_=1000000, # Take the best
         nominal_xy_positions=nominal_xy.path_metres,
         map=map
     )
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     # Enter a loop where we apply the controller, get a control, roll forward
     # the dynamics and repeat
-    N = 64*12
+    N = 64*10
     # Initial state
     x = np.zeros((dyn.n_dim, 1))
     x[0] = start_coord_metres[0]
@@ -75,9 +75,9 @@ if __name__ == "__main__":
         u = U[0]
         # Roll forward the dynamics
         x = dyn.dynamics_true_no_disturbances(x, u)
-        # The game is over if we hit a wall
-        if map.does_point_hit_boundary(x[0], x[2]):
-            print("Hit a wall! Ending simulation.")
+        # The game is over if we hit a wall, or if we go out of bounds
+        if map.does_point_hit_boundary(x[0], x[2]) or map.out_of_bounds(x[0], x[2]):
+            print("Ending simulation early.")
             state_trajectory   = state_trajectory[:i]
             control_trajectory = control_trajectory[:i]
             break
@@ -91,7 +91,8 @@ if __name__ == "__main__":
     # and back again
     # TODO
         
-    # We want to visualize all the samples and scores
+        
+    # --------------------------------
 
     # Visualize the run
     output_filepath = f"{log_folder}/experiment.mp4"
