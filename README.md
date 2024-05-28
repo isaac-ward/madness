@@ -32,7 +32,7 @@ conda env update --name madness --file env.yaml
 
 Alternatively, you can use pip:
 ```
-pip install scipy numpy matplotlib tqdm networkx moviepy fastdtw
+pip install scipy numpy matplotlib tqdm networkx moviepy fastdtw cvxpy
 ```
 
 ## Initial 2D Dynamics
