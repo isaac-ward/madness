@@ -16,7 +16,7 @@ if __name__ == "__main__":
     log_folder = utils.make_log_folder(name="run")
 
     # Get the map info for the map that we'll be using
-    map_config = globals.MAP_CONFIGS["3x28"]
+    map_config = globals.MAP_CONFIGS["downup-o"]
     metres_per_pixel    = map_config["metres_per_pixel"]
     filename            = map_config["filename"]
     start_coord_metres  = map_config["start_coord_metres"]
@@ -39,14 +39,17 @@ if __name__ == "__main__":
     )
 
     # Which must be downsampled aggressively
-    path1.downsample_every_n(5)
+    path1 = path1.downsample_every_n(20)
     # And a smoothed version
     
 
     # We need to know the locations of boundaries (parts of the occupancy grid)
     # that touch both an occupied cell and an unoccupied cell
     obstacles_metres = map1.boundary_positions
-    print(np.shape(obstacles_metres)[0])
+
+    # Get Boxes
+    boxes = map1.path_box(path1)
+    print(boxes)
 
     # Visualize the occupancy grid with a few points marked
     visuals.vis_occupancy_grid(
@@ -60,9 +63,11 @@ if __name__ == "__main__":
         ],
         path_metres=path1.path_metres,
         #path2_metres=fitted_path_metres,
-        plot_coordinates=True
+        plot_coordinates=True,
+        path_boxes=boxes
     )
 
+    """
     # Generate a sample trajectory
     xtrue = np.array(path1.path_metres[:,0])
     ytrue = np.array(path1.path_metres[:,1])
@@ -73,7 +78,7 @@ if __name__ == "__main__":
         log_folder, 
         xtrue, 
         ytrue, 
-        obstacles_metres, 
+        obstacles_metres[::100], 
         v_desired=1, 
         spline_alpha=0
     )
@@ -86,3 +91,4 @@ if __name__ == "__main__":
         action_element_labels=[],
         dt=dynamics.dt
     )
+    """
