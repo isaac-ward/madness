@@ -39,7 +39,7 @@ if __name__ == "__main__":
     )
 
     # Which must be downsampled aggressively
-    path1 = path1.downsample_every_n(20)
+    path1 = path1.downsample_every_n(5)
     # And a smoothed version
     
 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     # Get Boxes
     boxes = map1.path_box(path1)
-    print(boxes)
+    #print(boxes)
 
     # Visualize the occupancy grid with a few points marked
     visuals.vis_occupancy_grid(
