@@ -352,7 +352,7 @@ class Quadrotor2D:
                     constraints += [cp.norm(cp.hstack([x_cvx[k,0],x_cvx[k,2]])-obstacles[p],2) >= self.l*1.5]
 
             # Problem
-            problem = cp.Problem(objective,constraints)
+            problem = cp.Problem(cp.Minimize(objective),constraints)
 
             # Solve
             problem.solve()

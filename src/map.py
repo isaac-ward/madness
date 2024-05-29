@@ -328,3 +328,131 @@ class Map:
         Returns True if the point is out of bounds
         """
         return x < 0 or y < 0 or x > self.occupancy_grid.shape[1] * self.metres_per_pixel or y > self.occupancy_grid.shape[0] * self.metres_per_pixel
+    
+    def path_box(self,path):
+        """
+        Return boxes bounding the operational space of the trajectory
+        """
+
+        # Create array of box corners starting at path
+        expansion_direct = 4
+        path_num,path_dim = np.shape(path.path_metres)
+        boxes = -1*np.ones((path_num,expansion_direct))
+        print(path_num)
+
+        # Iterate through path points and define boxes
+        for _i in range(path_num):
+            print(_i)
+
+            expansion_flag = np.ones(expansion_direct)
+            current_box = np.array([path.path_metres[_i,1], # Up
+                                    path.path_metres[_i,0], # Right
+                                    path.path_metres[_i,1], # Down
+                                    path.path_metres[_i,0]]) # Left
+
+            while (np.sum(expansion_flag)):
+                print(expansion_flag)
+                # Expand box up
+                if expansion_flag[0]:
+                    current_box[0] += self.metres_per_pixel
+                    x_min = (int)(current_box[3]/self.metres_per_pixel)
+                    x_max = (int)(current_box[1]/self.metres_per_pixel)
+                    for x in range(x_min,x_max):
+                        if (self.does_point_hit_boundary(x*self.metres_per_pixel, current_box[0])):
+                            expansion_flag[0] = 0
+                            current_box[0] -= self.metres_per_pixel
+                            break
+
+                # Expand box right
+                if expansion_flag[1]:
+                    current_box[1] += self.metres_per_pixel
+                    y_min = (int)(current_box[2]/self.metres_per_pixel)
+                    y_max = (int)(current_box[0]/self.metres_per_pixel)
+                    for y in range(y_min,y_max):
+                        if (self.does_point_hit_boundary(current_box[1],y*self.metres_per_pixel)):
+                            expansion_flag[1] = 0
+                            current_box[1] -= self.metres_per_pixel
+                            break
+                
+                # Expand box down
+                if expansion_flag[2]:
+                    current_box[2] -= self.metres_per_pixel
+                    x_min = (int)(current_box[3]/self.metres_per_pixel)
+                    x_max = (int)(current_box[1]/self.metres_per_pixel)
+                    for x in range(x_min,x_max):
+                        if (self.does_point_hit_boundary(x*self.metres_per_pixel, current_box[2])):
+                            expansion_flag[2] = 0
+                            current_box[2] += self.metres_per_pixel
+                            break
+                
+                # Expand box left
+                if expansion_flag[3]:
+                    current_box[3] -= self.metres_per_pixel
+                    y_min = (int)(current_box[2]/self.metres_per_pixel)
+                    y_max = (int)(current_box[0]/self.metres_per_pixel)
+                    for y in range(y_min,y_max):
+                        if (self.does_point_hit_boundary(current_box[3],y*self.metres_per_pixel)):
+                            expansion_flag[3] = 0
+                            current_box[3] += self.metres_per_pixel
+                            break
+            
+            # Store box info
+            boxes[_i] = np.copy(current_box)
+        
+        # Box overlap analysis functions
+        def rect_area(box):
+            return abs(box[0]-box[2])*abs(box[1]-box[3])
+        
+        def overlap_percent(box1,box2):
+            # Get overlap borders
+            min_up = min(box1[0],box2[0])
+            max_down = max(box1[2],box2[2])
+            min_right = min(box1[1],box2[1])
+            max_left = max(box1[3],box2[3])
+
+            # Check if no overlap
+            if min_up <= max_down or min_right <= max_left:
+                return 0,0
+            
+            # Get rectangle areas
+            overlap_box = np.array([min_up,
+                                    min_right,
+                                    max_down,
+                                    max_left])
+            overlap_area = rect_area(overlap_box)
+            box1_area = rect_area(box1)
+            box2_area = rect_area(box2)
+
+            # Calc percent overlaps
+            box1_percent = overlap_area/box1_area * 100
+            box2_percent = overlap_area/box2_area * 100
+
+            return box1_percent,box2_percent
+        
+        # Get rid of unnecessary boxes with rounding, uniqueness, and with percentage overlap
+        boxes = np.round(boxes,5)
+        boxes = np.unique(boxes,axis=0)
+        box_flag = 1
+
+        while box_flag:
+            box_flag = 0
+            boxes_temp = np.copy(boxes[0])
+            boxes_temp = np.append(boxes_temp,boxes[-1],axis=0)
+            
+            for _i in range(1,np.shape(boxes)[0]-2):
+                percent1,percent2 = overlap_percent(boxes[_i],boxes[_i+1])
+                if (percent1 >= percent2) and (percent1 >= 0.8):
+                    boxes_temp = np.append(boxes_temp,boxes[_i+1])
+                elif (percent2 >= percent1) and (percent2 >= 0.8):
+                    boxes_temp = np.append(boxes_temp,boxes[_i])
+                else:
+                    boxes_temp = np.append(boxes_temp,boxes[_i])
+                    boxes_temp = np.append(boxes_temp,boxes[_i+1])
+
+            boxes_temp = np.reshape(boxes_temp,((int)(np.shape(boxes_temp)[0]/expansion_direct),expansion_direct))
+            boxes_temp = np.unique(boxes_temp,axis=0)
+            if (np.shape(boxes)[0] != np.shape(boxes_temp)[0]):
+                box_flag = 1
+            boxes = np.copy(boxes_temp)
+
+        return boxes
