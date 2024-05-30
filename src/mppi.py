@@ -74,7 +74,8 @@ class MPPI:
         # - we shouldn't go too fast or too slow
         # - we should avoid obstacles
         # - we should not put in too much control effort
-        # - stay upright
+        # - stay upright (no rotations - penalize upside down states and high angular velocities)
+        # - continuous controls
 
         # Recall that x and y at 0 and 2
         actual_xy_positions = X[:,[0,2]]
