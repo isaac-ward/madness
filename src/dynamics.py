@@ -226,6 +226,77 @@ class Quadrotor2D:
 
         return path_x_spline, path_y_spline, ts[-1]
     
+    def bezier_trajectory_fitting(self,astar_path,boxes):
+        """
+        Fit a smooth trajectory to the A* path using 5th order bezier functions 
+        constrained by bounding boxes
+        """
+        # Beta function
+        def beta(t):
+            return np.array([(t - 1)**8, -8*t*(t - 1)**7, 28*t**2*(t - 1)**6, -56*t**3*(t - 1)**5, 70*t**4*(t - 1)**4, -56*t**5*(t - 1)**3, 28*t**6*(t - 1)**2, -t**7*(8*t - 8), t**8])
+        def beta_2d(t):
+            return np.array([56*(t - 1)**6, -112*(4*t - 1)*(t - 1)**5, 56*(t - 1)**4*(28*t**2 - 14*t + 1), -112*t*(t - 1)**3*(28*t**2 - 21*t + 3), 280*t**2*(t - 1)**2*(14*t**2 - 14*t + 3), -112*t**3*(28*t**3 - 63*t**2 + 45*t - 10), 56*t**4*(28*t**2 - 42*t + 15), -112*t**5*(4*t - 3), 56*t**6])
+        def beta_3d(t):
+            return np.array([336*(t - 1)**5, -336*(8*t - 3)*(t - 1)**4, 336*(t - 1)**3*(28*t**2 - 21*t + 3), -336*(t - 1)**2*(56*t**3 - 63*t**2 + 18*t - 1), 1680*t*(14*t**4 - 35*t**3 + 30*t**2 - 10*t + 1), -336*t**2*(56*t**3 - 105*t**2 + 60*t - 10), 336*t**3*(28*t**2 - 35*t + 10), -336*t**4*(8*t - 5), 336*t**5])
+        def beta_4d(t):
+            return np.array([1680*(t - 1)**4, -6720*(2*t - 1)*(t - 1)**3, 3360*(t - 1)**2*(14*t**2 - 14*t + 3), - 94080*t**4 + 235200*t**3 - 201600*t**2 + 67200*t - 6720, 117600*t**4 - 235200*t**3 + 151200*t**2 - 33600*t + 1680, -6720*t*(14*t**3 - 21*t**2 + 9*t - 1), 3360*t**2*(14*t**2 - 14*t + 3), -6720*t**3*(2*t - 1), 1680*t**4])
+        
+
+        # Constants
+        L = np.shape(boxes)[0]
+        N = 8
+
+        # Solve convex fitting problem
+        # Declare Convex Variables
+        s = cp.Variable((L*(N+1),2))
+
+        # Define Objective
+        objective = 0
+        n = 100  # discretization points for the integral
+        t = np.linspace(0,1,n)
+        dt = (1-0)/(n-1)
+        for i in range(L):
+            # Integral term using the trapezoidal rule
+            for j in range(n-1):
+                objective += dt/2*(cp.norm(beta_4d(t[j])*s[i*(N+1):i*(N+1)+N+1],2)**2 + cp.norm(beta_4d(t[j+1])*s[i*(N+1):i*(N+1)+N+1],2)**2)
+            objective += cp.sum([cp.norm(s[i*(N+1)+k,:]-s[i*(N+1)+k+1,:],2)**2 for k in range(N)])
+
+
+        # Define Constraints
+        constraints = [beta(0)@s[0:N+1] == astar_path[0],
+                       beta(1)@s[(L-1)*(N+1):(L-1)*(N+1)+N+1] == astar_path[-1]]
+
+        for i in range(L):
+            for k in range(N+1):
+                constraints += [s[i*(N+1)+k,1] <= boxes[i,0], # up
+                                s[i*(N+1)+k,0] <= boxes[i,1], # right
+                                s[i*(N+1)+k,1] >= boxes[i,2], # down
+                                s[i*(N+1)+k,0] >= boxes[i,3]] # left
+        for i in range(L-1):
+            constraints += [beta(1)@s[i*(N+1):i*(N+1)+N+1] == beta(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1],
+                            beta_2d(1)@s[i*(N+1):i*(N+1)+N+1] == beta_2d(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1],
+                            beta_3d(1)@s[i*(N+1):i*(N+1)+N+1] == beta_3d(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1],
+                            beta_4d(1)@s[i*(N+1):i*(N+1)+N+1] == beta_4d(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1]]
+
+        # Problem
+        print(objective.curvature)
+        problem = cp.Problem(cp.Minimize(objective),constraints)
+
+        # Solve
+        problem.solve()
+        s_val = s.value
+
+        # Calc trajectories
+        n = 10
+        t = np.linspace(0,1,n)
+        path = np.zeros(2)
+        for i in range(L):
+            for _t in t:
+                path = np.vstack([path,beta(_t)@s_val[i*(N+1):i*(N+1)+N+1]])
+
+        return path[1:]
+
+    
     def differential_flatness_trajectory(self,x,y,v_desired=0.15,spline_alpha=0.05):
         """
         Compute the nominal trajectory from the planned path

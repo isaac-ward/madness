@@ -48,7 +48,7 @@ def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres
     # Sometimes we want a second path (e.g. a fit)
     if len(path2_metres) > 0:
         path2_pixels = np.array(path2_metres) / metres_per_pixel
-        ax.plot(path2_pixels[:, 0], path2_pixels[:, 1], color='green', linewidth=1, linestyle='--')
+        ax.plot(path2_pixels[:, 0], path2_pixels[:, 1], color='red', linewidth=1, linestyle='--')
     
     # Plot path boxes
     if len(path_boxes) > 0:
@@ -56,7 +56,7 @@ def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres
         for _i in range(len(path_boxes)):
             width = box_pixels[_i,1] - box_pixels[_i,3]
             height = box_pixels[_i,0] - box_pixels[_i,2]
-            rectangle = patches.Rectangle((box_pixels[_i,3], box_pixels[_i,2]), width, height, linewidth=1, edgecolor='r', facecolor='none')
+            rectangle = patches.Rectangle((box_pixels[_i,3], box_pixels[_i,2]), width, height, linewidth=1, edgecolor='orange', facecolor='none')
             ax.add_patch(rectangle)
 
     # Calculate scale bar length dynamically based on 1 meter length

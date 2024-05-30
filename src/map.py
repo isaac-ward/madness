@@ -480,6 +480,21 @@ class Map:
                 boxes_temp = np.vstack([boxes_temp,boxes[np.argmax(boxes_overlapped)]])
         
         boxes_temp = np.unique(boxes_temp,axis=0)
-        boxes = np.copy(boxes_temp)
+
+        # Sort boxes in order
+        boxes = -1*np.ones(4)
+        for _i in range(path_num):
+            for _j in range(np.shape(boxes_temp)[0]):
+                path_x = path.path_metres[_i,0]
+                path_y = path.path_metres[_i,1]
+                if (_i != 0) and (path_y <= boxes_temp[_j,0]+self.metres_per_pixel) and (path_y >= boxes_temp[_j,2]-self.metres_per_pixel) and (path_x <= boxes_temp[_j,1]+self.metres_per_pixel) and (path_x >= boxes_temp[_j,3]-self.metres_per_pixel):
+                    percent1,percent2 = overlap_percent(boxes_temp[_j,:],boxes[-1,:])
+                    if (boxes_temp[_j].tolist() not in boxes.tolist()) and (percent1):
+                        boxes = np.vstack([boxes,boxes_temp[_j]])
+                elif (path_y <= boxes_temp[_j,0]) and (path_y >= boxes_temp[_j,2]) and (path_x <= boxes_temp[_j,1]) and (path_x >= boxes_temp[_j,3]):
+                    if boxes_temp[_j].tolist() not in boxes.tolist():
+                        boxes = np.vstack([boxes,boxes_temp[_j]])
+
+        boxes = np.copy(boxes[1:])
 
         return boxes
