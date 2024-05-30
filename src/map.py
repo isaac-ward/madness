@@ -440,6 +440,13 @@ class Map:
 
             return box1_percent,box2_percent
         
+        def point_in_box(point,box):
+            x = point[0]
+            y = point[1]
+            if (y <= box[0]) and (y >= box[2]) and (x <= box[1]) and (x >= box[3]):
+                return True
+            return False
+        
         # Get rid of unnecessary boxes with rounding, uniqueness, and percentage overlap methods
         boxes = np.round(boxes,5)
         boxes = np.unique(boxes,axis=0)
@@ -476,25 +483,31 @@ class Map:
                             percent1,percent2 = overlap_percent(boxes[_j,:],boxes_temp[_k,:])
                             if percent1 and (_k != _i):
                                 boxes_overlapped[_j] += 1
-                
                 boxes_temp = np.vstack([boxes_temp,boxes[np.argmax(boxes_overlapped)]])
-        
         boxes_temp = np.unique(boxes_temp,axis=0)
 
         # Sort boxes in order
-        boxes = -1*np.ones(4)
-        for _i in range(path_num):
-            for _j in range(np.shape(boxes_temp)[0]):
-                path_x = path.path_metres[_i,0]
-                path_y = path.path_metres[_i,1]
-                if (_i != 0) and (path_y <= boxes_temp[_j,0]+self.metres_per_pixel) and (path_y >= boxes_temp[_j,2]-self.metres_per_pixel) and (path_x <= boxes_temp[_j,1]+self.metres_per_pixel) and (path_x >= boxes_temp[_j,3]-self.metres_per_pixel):
-                    percent1,percent2 = overlap_percent(boxes_temp[_j,:],boxes[-1,:])
-                    if (boxes_temp[_j].tolist() not in boxes.tolist()) and (percent1):
-                        boxes = np.vstack([boxes,boxes_temp[_j]])
-                elif (path_y <= boxes_temp[_j,0]) and (path_y >= boxes_temp[_j,2]) and (path_x <= boxes_temp[_j,1]) and (path_x >= boxes_temp[_j,3]):
-                    if boxes_temp[_j].tolist() not in boxes.tolist():
-                        boxes = np.vstack([boxes,boxes_temp[_j]])
-
-        boxes = np.copy(boxes[1:])
+        sorting_flag = 1
+        while sorting_flag:
+            sorting_flag = 0
+            boxes = -1*np.ones(4)
+            for _i in range(path_num):
+                for _j in range(np.shape(boxes_temp)[0]):
+                    path_x = path.path_metres[_i,0]
+                    path_y = path.path_metres[_i,1]
+                    expanded_box = boxes_temp[_j,:] + np.array([self.metres_per_pixel,self.metres_per_pixel,-self.metres_per_pixel,-self.metres_per_pixel])
+                    if (_i != 0) and (point_in_box(path.path_metres[_i],expanded_box)):
+                        percent1,percent2 = overlap_percent(boxes_temp[_j,:],boxes[-1,:])
+                        if (boxes_temp[_j,:].tolist() not in boxes.tolist()) and (percent1):
+                            boxes = np.vstack([boxes,boxes_temp[_j,:]])
+                    elif point_in_box(path.path_metres[_i],boxes_temp[_j,:]):
+                        if boxes_temp[_j,:].tolist() not in boxes.tolist():
+                            boxes = np.vstack([boxes,boxes_temp[_j,:]])
+            boxes = np.copy(boxes[1:])
+            # Make sure boxes path didn't get stuck, and if it did remove problem box
+            if (np.shape(boxes)[0] != np.shape(boxes_temp)[0]) and (not point_in_box(path.path_metres[-1],boxes[-1,:])):
+                mask = ~(boxes_temp == boxes[-1,:]).all(axis=1)
+                boxes_temp = boxes_temp[mask]
+                sorting_flag = 1
 
         return boxes
