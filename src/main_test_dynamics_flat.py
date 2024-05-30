@@ -49,7 +49,12 @@ if __name__ == "__main__":
 
     # Get Boxes
     boxes = map1.path_box(path1)
-    #print(boxes)
+
+    # Verify dynamics code
+    quad = dynamics.Quadrotor2D(0.1)
+
+    # Test spline fit
+    fitted_path_metres = quad.bezier_trajectory_fitting(path1.path_metres,boxes)
 
     # Visualize the occupancy grid with a few points marked
     visuals.vis_occupancy_grid(
@@ -62,19 +67,16 @@ if __name__ == "__main__":
             finish_coord_metres
         ],
         path_metres=path1.path_metres,
-        #path2_metres=fitted_path_metres,
+        path2_metres=fitted_path_metres,
         plot_coordinates=True,
         path_boxes=boxes
     )
 
-    """
     # Generate a sample trajectory
     xtrue = np.array(path1.path_metres[:,0])
     ytrue = np.array(path1.path_metres[:,1])
-    
-    # Verify dynamics code
-    quad = dynamics.Quadrotor2D(0.1)
-    state_trajectory, action_trajectory = quad.dynamics_test(
+
+    """state_trajectory, action_trajectory = quad.dynamics_test(
         log_folder, 
         xtrue, 
         ytrue, 
