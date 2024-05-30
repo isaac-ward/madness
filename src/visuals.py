@@ -1,6 +1,7 @@
 import matplotlib as mpl 
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import numpy as np
 import os
 import moviepy.editor as mpy
@@ -11,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor
 import utils
 import globals
 
-def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], path2_metres=[], plot_coordinates=True):
+def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], path2_metres=[], plot_coordinates=True, path_boxes=[]):
     """
     Draws the occupancy grid (matrix) with matplotlib, and draws
     in the bottom right corner a scale bar that is one metre long
@@ -48,6 +49,15 @@ def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres
     if len(path2_metres) > 0:
         path2_pixels = np.array(path2_metres) / metres_per_pixel
         ax.plot(path2_pixels[:, 0], path2_pixels[:, 1], color='green', linewidth=1, linestyle='--')
+    
+    # Plot path boxes
+    if len(path_boxes) > 0:
+        box_pixels = np.array(path_boxes) / metres_per_pixel
+        for _i in range(len(path_boxes)):
+            width = box_pixels[_i,1] - box_pixels[_i,3]
+            height = box_pixels[_i,0] - box_pixels[_i,2]
+            rectangle = patches.Rectangle((box_pixels[_i,3], box_pixels[_i,2]), width, height, linewidth=1, edgecolor='r', facecolor='none')
+            ax.add_patch(rectangle)
 
     # Calculate scale bar length dynamically based on 1 meter length
     scale_bar_length = int(1 / metres_per_pixel)  # Length of scale bar in pixels
