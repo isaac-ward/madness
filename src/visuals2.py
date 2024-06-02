@@ -2,6 +2,7 @@ import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.animation as animation
 import numpy as np
 import os
 import moviepy.editor as mpy
@@ -22,33 +23,31 @@ def plot_experiment_video(
     state_trajectory=[],
     control_trajectory=[],
     scored_rollouts_per_step=[],
+    fps=25
 ):
-    
+    # We want to render at like 25 fps, but the simulation_dt
+    # could be much smaller. What we'll do is iterate through the
+    # number of render frames and render the closest simulation
+    # frame to that time
 
-def plot_experiment(
-    filepath,
-    map,
-    start_point,
-    finish_point,
-    paths,
-    dt,
-    state_trajectory=[],
-    control_trajectory=[],
-    scored_rollouts=[],
-    score_bounds=(0,1),
-    progress=1    
-):
-    """
-    The filepath to save this to, the map object, and a list of path objects that we also want to plot
-    in the form {
-        "path": path,
-        "color": color
-    }
+    # So how many frames are there to render?
+    num_frames_simulation = len(state_trajectory)
+    T = num_frames_simulation * simulation_dt
+    num_frames_to_render = int(T * fps)
 
-    If a state trajectory or a control trajectory is given, then we'll plot those as well, up to the progress
-    value (0 to 1)
-    """
-    drone_color = 'purple'
+    # What were the highest and lowest non infinity scores encountered 
+    # in the scored rollouts? 
+    min_score = np.inf
+    max_score = -np.inf
+    for scored_rollouts in scored_rollouts_per_step:
+        scores = scored_rollouts[1]
+        for score in scores:
+            if score < min_score and score != -np.inf:
+                min_score = score
+            if score > max_score and score != +np.inf:
+                max_score = score
+    print(f"Non-infinite scores encountered are in range: [{min_score}, {max_score}]")
+    #print(f"Have {len(scored_rollouts_per_step)} scored rollouts per step")
 
     # The plot is going to look like so, it will be 2 plots side by side, on the left
     # will be the world, with the occupancy grid, the paths, and the drone's position path
@@ -60,12 +59,71 @@ def plot_experiment(
     gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1])
     axs = [plt.subplot(gs[0]), plt.subplot(gs[1])]
 
+    # Monitor progress with tqdm
+    pbar = tqdm(total=num_frames_to_render, desc="Rendering frames")
+    
+    def animate(render_frame_index):
+        # What simulation step are we closest to?
+        sim_frame_index = math.floor(num_frames_simulation / num_frames_to_render * render_frame_index)
+
+        # Clear the axes
+        for ax in axs:
+            ax.cla()
+
+        # Plot the experiment
+        plot_experiment(
+            axs,
+            map,
+            start_point,
+            finish_point,
+            paths,
+            simulation_dt,
+            state_trajectory=state_trajectory,
+            control_trajectory=control_trajectory,
+            scored_rollouts=scored_rollouts_per_step[sim_frame_index],
+            score_bounds=(min_score, max_score),
+            progress=sim_frame_index / num_frames_simulation
+        )
+        pbar.update(1)
+        return axs
+    
+    # Create the animation
+    anim = animation.FuncAnimation(
+        fig, animate, frames=num_frames_to_render
+    )
+    anim.save(filepath, fps=fps, extra_args=['-vcodec', 'libx264'])
+
+def plot_experiment(
+    axs,
+    map,
+    start_point,
+    finish_point,
+    paths,
+    simulation_dt,
+    state_trajectory=[],
+    control_trajectory=[],
+    scored_rollouts=[],
+    score_bounds=(0,1),
+    progress=1    
+):
+    """
+    The map object, and a list of path objects that we also want to plot
+    in the form {
+        "path": path,
+        "color": color
+    }
+
+    If a state trajectory or a control trajectory is given, then we'll plot those as well, up to the progress
+    value (0 to 1)
+    """
+    drone_color = 'purple'
+
     # In the top right of the drone view we want to plot the
     # current time and the total time, and the dt
     def plot_text_y_down(ax, y, text):
         ax.text(0.01, y, text, color='black', fontsize=8, ha='left', va='bottom', font='monospace', transform=ax.transAxes)
-    T = len(state_trajectory) * dt
-    plot_text_y_down(axs[1], 0.95, f"dt = {dt:.4f} s")
+    T = len(state_trajectory) * simulation_dt
+    plot_text_y_down(axs[1], 0.95, f"dt = {simulation_dt:.4f} s")
     plot_text_y_down(axs[1], 0.91, f"t  = {progress * T:.4f} s")
     plot_text_y_down(axs[1], 0.87, f"T  = {T:.4f} s")
 
@@ -157,11 +215,11 @@ def plot_experiment(
             pos_x,
             pos_y,
             color=color,
-            lw=0.2,
+            lw=0.4,
             linestyle='-',
             # Draw the highest scores on top
             zorder=20+score,
-            alpha=0.1,
+            alpha=0.3,
         )
     
     # Now we want to plot the drone centric view on the other axis
@@ -271,8 +329,3 @@ def plot_experiment(
     axs[1].set_yticks([])
     # And should be exactly square
     axs[1].set_aspect('equal')
-
-    # Save the figure
-    plt.savefig(filepath, bbox_inches='tight', dpi=600)
-    # Close the figure
-    plt.close()
