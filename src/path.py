@@ -97,6 +97,23 @@ class Path:
     def num_points_along_path(self):
         return len(self.path_metres)
 
+    def other_path_in_same_direction(self, path_b):
+        """
+        Returns true if the other path is in the same direction
+        as this path
+        """
+
+        # Need to come up with a measure of forwardness or backwardness. One
+        # simple approach is to look at the order of the closest points, if
+        # they're generally ascending, then we're going in the right direction,
+        # if they're descending, then we're going in the wrong direction
+        distances_matrix = np.linalg.norm(self.path_metres[:, np.newaxis, :] - path_b.path_metres[np.newaxis, :, :], axis=2)
+        closest_indices = np.argmin(distances_matrix, axis=0)
+        differences = np.diff(closest_indices)
+        forwardness_measure = np.sum(differences > 0) - np.sum(differences < 0)
+        
+        return forwardness_measure > 0
+
     def deviation_from_path(self, path_b, verbose=False):
         """
         Calculate the deviation from the nominal path
@@ -108,9 +125,10 @@ class Path:
         distances_matrix = np.linalg.norm(self.path_metres[:, np.newaxis, :] - path_b.path_metres[np.newaxis, :, :], axis=2)
         closest_distances = np.min(distances_matrix, axis=0)
         deviation = np.sum(closest_distances)
+
         return deviation
 
-    def deviation_from_other_path_legacy(self, path_b, verbose=False):
+    def dtw_distance(self, path_b, verbose=False):
         """
         Uses fast (approximate) Dynamic Time Warping to calculate the deviation
         between this path and the other path. This takes on a value of 0 when the
@@ -119,72 +137,35 @@ class Path:
         Small devations have a value close to 0, while large deviations have a
         large positive value
         """
+        path_a = self.path_metres
+        path_b = path_b.path_metres
 
-        # The problem here is that one path might be longer than the other path (both
-        # in terms of number of points, and in terms of length). We need them to 
-        # be the same length first (shorter), then we can subsample them to have the 
-        # same number of points, then we can use fastdtw to calculate the deviation
-        path_a = self 
-        path_a_length = path_a.length_along_path()
-        path_b_length = path_b.length_along_path()
+        n = len(path_a)
+        m = len(path_b)
         
-        # Which path is longer?
-        longer_path  = path_a if path_a_length > path_b_length else path_b
-        shorter_path = path_b if path_a_length > path_b_length else path_a 
-
-        # The last point in the longer path needs to be made the same distance
-        # from it's start as the shorter path's last point is from it's start
-        shorter_path_length = shorter_path.length_along_path()
-        longer_path_length  = longer_path.length_along_path()
-        desired_length = shorter_path_length
-
-        if verbose:
-            print(f"Shorter path length: {shorter_path_length}")
-            print(f"Longer path length: {longer_path_length}")
-
-        # If the distance to remove is 0, we're done
-        if desired_length < longer_path_length:
-
-            # We need to find the point on the longer path that is distance_from_start
-            # from the start
-            distances = np.linalg.norm(np.diff(longer_path.path_metres, axis=0), axis=1)
-            total_distance = 0
-            for i, distance in enumerate(distances):
-                total_distance += distance
-                if total_distance > desired_length:
-                    # How much over the distance are we?
-                    over_distance = total_distance - desired_length
-                    # We need to interpolate between the previous point and this point
-                    # to find the point that is distance_from_start from the start
-                    # i's are + 1 because we're iterating over the distance between points
-                    previous_point = longer_path.path_metres[i]
-                    this_point = longer_path.path_metres[i+1]
-                    new_point = previous_point + (this_point - previous_point) * (distance - over_distance) / distance
-                    # Now we have the new point, which is going to be the last point
-                    # on the longer path
-                    longer_path.path_metres = np.concatenate([
-                        longer_path.path_metres[:i+1],
-                        np.array([new_point])
-                    ])
-                    break
-
-            # The paths are now the same length, we can resample them to have the same
-            # number of points along this length
-            new_num_points = max(
-                shorter_path.num_points_along_path(),
-                longer_path.num_points_along_path()
-            )
-            shorter_path = shorter_path.upsample(new_num_points)
-            longer_path  = longer_path.upsample(new_num_points)
-
-        print("Paths to be compared")
-        print(shorter_path.path_metres)
-        print(longer_path.path_metres)
-
-        # Can now calculate the deviation
-        distance, path = fastdtw(
-            shorter_path.path_metres,
-            longer_path.path_metres,
-            dist=euclidean
-        )
-        return distance
+        # Create a cost matrix
+        cost = np.zeros((n, m))
+        
+        # Fill the first row and column
+        for i in range(n):
+            for j in range(m):
+                cost[i, j] = np.linalg.norm(path_a[i] - path_b[j])
+        
+        # Initialize the accumulated cost matrix
+        accumulated_cost = np.zeros((n, m))
+        accumulated_cost[0, 0] = cost[0, 0]
+        
+        # Initialize the first row and column of the accumulated cost matrix
+        for i in range(1, n):
+            accumulated_cost[i, 0] = accumulated_cost[i-1, 0] + cost[i, 0]
+        for j in range(1, m):
+            accumulated_cost[0, j] = accumulated_cost[0, j-1] + cost[0, j]
+        
+        # Fill in the rest of the accumulated cost matrix
+        for i in range(1, n):
+            for j in range(1, m):
+                accumulated_cost[i, j] = cost[i, j] + min(accumulated_cost[i-1, j],    # Insertion
+                                                        accumulated_cost[i, j-1],    # Deletion
+                                                        accumulated_cost[i-1, j-1])  # Match
+                
+        return accumulated_cost[-1, -1]
