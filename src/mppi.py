@@ -70,7 +70,7 @@ class MPPI:
         # Optimize some things here:
         # - the positions that we go through should overlap with the nominal positions (use
         #   path comparison implementation for this
-        # - the distance to the goal should be minimized
+        # - we should be going forward along the path
         # - we shouldn't go too fast or too slow
         # - we should avoid obstacles
         # - we should not put in too much control effort
@@ -90,6 +90,7 @@ class MPPI:
         deviation = self.nominal_xy_path.deviation_from_path(actual_path)
 
         # Calculate the distance to the end point
+        # TODO we want to replace this with some notion of 'direction' along the path
         distance_to_end = np.linalg.norm(actual_xy_positions[-1] - self.nominal_xy_path.path_metres[-1])
         
         # Calculate the length of the path. We actually want to favor paths
@@ -112,8 +113,12 @@ class MPPI:
         # Control effort should be minimized
         control_effort = np.linalg.norm(U)
 
+        # Control should be continuous, i.e., adjacent control actions should be similar,
+        # so we measure the mean difference between adjacent control actions
+        adjacent_control_diff = np.mean(np.linalg.norm(U[1:] - U[:-1], axis=1))
+
         # We're going to maximize this score, so we need to negate 
-        # these terms. Now if deviation is large, it's a worse score,
+        # some of these terms. Now if deviation is large, it's a worse score,
         # and if distance to end is large, it's a worse score, etc.
         deviation        *= -1
         distance_to_end  *= -1
@@ -130,7 +135,12 @@ class MPPI:
         #   start
         # - the length_deviation is important to emphasize, otherwise
         #   we'll go too fast and crash
-        score = 10 * deviation + 25 * distance_to_end + 30 * length_deviation + 4 * angle_deviation + 1 * angular_velocity_deviation + 0.25 * control_effort
+        score =   10 * deviation \
+                + 25 * distance_to_end \
+                + 30 * length_deviation \
+                + 4 * angle_deviation \
+                + 1 * angular_velocity_deviation \
+                + 0.25 * control_effort
 
         return score
 
@@ -147,6 +157,7 @@ class MPPI:
         # TODO this should all be vectorized
 
         # Rollout each of the K control sequences
+        # TODO this could be parallelized
         Xs = []
         for U in Us:
             X = self.rollout(x0, U)
