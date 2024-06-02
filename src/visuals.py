@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor
 import utils
 import globals
 
-def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], path2_metres=[], plot_coordinates=True, path_boxes=[]):
+def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], path2_metres=[], path3_metres=[], plot_coordinates=True, path_boxes=[]):
     """
     Draws the occupancy grid (matrix) with matplotlib, and draws
     in the bottom right corner a scale bar that is one metre long
@@ -48,7 +48,12 @@ def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres
     # Sometimes we want a second path (e.g. a fit)
     if len(path2_metres) > 0:
         path2_pixels = np.array(path2_metres) / metres_per_pixel
-        ax.plot(path2_pixels[:, 0], path2_pixels[:, 1], color='green', linewidth=1, linestyle='--')
+        ax.plot(path2_pixels[:, 0], path2_pixels[:, 1], color='red', linewidth=1, linestyle='--')
+
+    # Sometimes we want a third path (e.g. following)
+    if len(path3_metres) > 0:
+        path3_pixels = np.array(path3_metres) / metres_per_pixel
+        ax.plot(path3_pixels[:, 0], path3_pixels[:, 1], color='purple', linewidth=1, linestyle='--')
     
     # Plot path boxes
     if len(path_boxes) > 0:
@@ -56,7 +61,7 @@ def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres
         for _i in range(len(path_boxes)):
             width = box_pixels[_i,1] - box_pixels[_i,3]
             height = box_pixels[_i,0] - box_pixels[_i,2]
-            rectangle = patches.Rectangle((box_pixels[_i,3], box_pixels[_i,2]), width, height, linewidth=1, edgecolor='r', facecolor='none')
+            rectangle = patches.Rectangle((box_pixels[_i,3], box_pixels[_i,2]), width, height, linewidth=1, edgecolor='orange', facecolor='none')
             ax.add_patch(rectangle)
 
     # Calculate scale bar length dynamically based on 1 meter length

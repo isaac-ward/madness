@@ -49,7 +49,32 @@ if __name__ == "__main__":
 
     # Get Boxes
     boxes = map1.path_box(path1)
-    #print(boxes)
+
+    # Verify dynamics code
+    quad = dynamics.Quadrotor2D(0.1)
+
+    # Test bezier fit
+    state_vector,control_vector = quad.bezier_trajectory_fitting(path1.path_metres,boxes)
+    fitted_path_metres = state_vector[:,[0,2]]
+    print(control_vector)
+    print(state_vector)
+
+    # Test SCP path planning
+    """state_vector,control_vector = quad.SCP_nominal_trajectory(astar_path=path1.path_metres,
+                                                              boxes=boxes,
+                                                              R=np.eye(2),
+                                                              Q=np.eye(6),
+                                                              P=10*np.eye(6))
+    fitted_path_metres = state_vector[:,[0,2]]"""
+
+    # Test controls on dynamic model
+    T = np.shape(state_vector)[0]
+    truestate = np.copy(state_vector[0])
+    x_next = np.copy(state_vector[0])
+    for i in range(1,T):
+        x_next = quad.dynamics_true_no_disturbances(x_next, control_vector[i-1])
+        truestate = np.vstack([truestate,x_next])
+    follow_path_metres = truestate[:,[0,2]]
 
     # Visualize the occupancy grid with a few points marked
     visuals.vis_occupancy_grid(
@@ -62,19 +87,17 @@ if __name__ == "__main__":
             finish_coord_metres
         ],
         path_metres=path1.path_metres,
-        #path2_metres=fitted_path_metres,
+        path2_metres=fitted_path_metres,
+        #path3_metres=follow_path_metres,
         plot_coordinates=True,
         path_boxes=boxes
     )
 
-    """
     # Generate a sample trajectory
     xtrue = np.array(path1.path_metres[:,0])
     ytrue = np.array(path1.path_metres[:,1])
-    
-    # Verify dynamics code
-    quad = dynamics.Quadrotor2D(0.1)
-    state_trajectory, action_trajectory = quad.dynamics_test(
+
+    """state_trajectory, action_trajectory = quad.dynamics_test(
         log_folder, 
         xtrue, 
         ytrue, 
