@@ -26,8 +26,12 @@ if __name__ == "__main__":
     map = Map(
         map_filepath=f"{utils.get_assets_dir()}/{filename}",
         metres_per_pixel=metres_per_pixel,
-        scale_factor=0.4 # Anything less doesn't resolve obstacles
+        scale_factor=0.4 # Anything less doesn't resolve obstacles well
     )
+
+    # And a dynamics model
+    dt = 1/25 # This makes rendering easier because playback fps is 25
+    dyn = dynamics.Quadrotor2D(dt=dt)
     
     # --------------------------------
     # there 
@@ -38,11 +42,17 @@ if __name__ == "__main__":
         b_coord_metres=finish_coord_metres,
         fudge_factor=1.6,
     )
-    nominal_xy = nominal_xy.downsample_to_average_adjacent_distance_metres(0.1)
+    nominal_xy = nominal_xy.downsample_to_average_adjacent_distance_metres(0.05)
+
+    # Smooth it with respect to the boundaries by first getting 
+    # obstacle/freespace boxes
+    boxes = map.path_box(nominal_xy)
+    state_vector, control_vector = dyn.bezier_trajectory_fitting(nominal_xy.path_metres, boxes)
+    fitted_path_metres = state_vector[:,[0,2]]
+    fitted_nominal_xy = path.Path(fitted_path_metres)
+    fitted_nominal_xy = fitted_nominal_xy.downsample_to_average_adjacent_distance_metres(0.1)
 
     # Create an MPPI controller
-    dt = 1/25 # This makes rendering easier because playback fps is 25
-    dyn = dynamics.Quadrotor2D(dt=dt)
     controller = MPPI(
         dynamics_fn=dyn.dynamics_true_no_disturbances,
         # Allow reverse thrust
@@ -51,7 +61,7 @@ if __name__ == "__main__":
         K=1024,
         H=12,
         lambda_=1000000, # Take the best
-        nominal_xy_positions=nominal_xy.path_metres,
+        nominal_xy_positions=fitted_nominal_xy.path_metres,
         map=map
     )
     print(f"Created MPPI controller with {controller.K} samples and horizon {controller.H} ({controller.H * dt} seconds lookahead)")
@@ -68,6 +78,7 @@ if __name__ == "__main__":
     state_trajectory[0] = x.flatten()
     control_trajectory  = np.zeros((N, dyn.m_dim))
     scored_rollouts_per_step = []
+    # This has to be ran forward, we can't parallelize
     for i in tqdm(range(N), desc="Running simulation"):
         # Apply the controller to get a control sequence
         U, (samples, scores) = controller.optimal_control_sequence(x, return_scored_rollouts=True)
@@ -104,6 +115,10 @@ if __name__ == "__main__":
         [ # paths to render
             {
                 "path": nominal_xy,
+                "color": "lightgrey",
+            },
+            {
+                "path": fitted_nominal_xy,
                 "color": "grey",
             }
         ], 
