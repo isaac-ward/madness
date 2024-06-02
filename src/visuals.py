@@ -322,7 +322,7 @@ def plot_experiment_video(
                 min_score = score
             if score > max_score and score != +np.inf:
                 max_score = score
-    print(f"Non infinite scores encountered: [{min_score}, {max_score}]")
+    print(f"Non-infinite scores encountered are in range: [{min_score}, {max_score}]")
     #print(f"Have {len(scored_rollouts_per_step)} scored rollouts per step")
 
     # Generate frames

@@ -5,7 +5,7 @@ from map import Map
 import path
 import control 
 import dynamics
-import visuals
+import visuals2 as visuals
 import utils 
 import globals
 from mppi import MPPI
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     map = Map(
         map_filepath=f"{utils.get_assets_dir()}/{filename}",
         metres_per_pixel=metres_per_pixel,
-        scale_factor=0.4 # Anything less doesn't resolve obstacles well
+        scale_factor=0.2 # Anything less than 0.2 doesn't resolve obstacles well
     )
 
     # And a dynamics model
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         # Allow reverse thrust
         control_bounds_lower=np.array([-globals.MAX_THRUST_PER_PROP, -globals.MAX_THRUST_PER_PROP]),
         control_bounds_upper=np.array([+globals.MAX_THRUST_PER_PROP, +globals.MAX_THRUST_PER_PROP]),
-        K=1024,
+        K=4096,
         H=12,
         lambda_=1000000, # Take the best
         nominal_xy_positions=fitted_nominal_xy.path_metres,
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     # the dynamics and repeat
     N = 64*10
     # Initial state
-    x = np.zeros((dyn.n_dim, 1))
+    x = np.zeros(dyn.n_dim)
     x[0] = start_coord_metres[0]
     x[2] = start_coord_metres[1]
     # Logging

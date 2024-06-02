@@ -1,4 +1,6 @@
 import numpy as np
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 from path import Path
 
@@ -54,13 +56,12 @@ class MPPI:
         Rollout the dynamics function from an initial state with a sequence of actions,
         and return the resulting trajectory of states
         """
-        x = x0
-        X = [x]
+        X = np.zeros((self.H+1, len(x0)))
+        X[0] = x0
         # That the u here is a sequence of controls, u_0, u_1, ..., u_{H-1}
-        for u in U:
-            x = self.dynamics_fn(x, u)
-            X.append(x)
-        return np.array(X)
+        for i, u in enumerate(U):
+            X[i+1] = self.dynamics_fn(X[i], u)
+        return X
     
     def score(self, X, U):
         """
@@ -87,45 +88,34 @@ class MPPI:
             return -np.inf
 
         # How much does the actual path deviate from the nominal path?
-        deviation = self.nominal_xy_path.deviation_from_path(actual_path)
+        path_deviation = self.nominal_xy_path.deviation_from_path(actual_path)
 
-        # Calculate the distance to the end point
-        # TODO we want to replace this with some notion of 'direction' along the path
-        distance_to_end = np.linalg.norm(actual_xy_positions[-1] - self.nominal_xy_path.path_metres[-1])
+        # Are we going in the right direction?
+        correct_direction = self.nominal_xy_path.other_path_in_same_direction(actual_path)
         
         # Calculate the length of the path. We actually want to favor paths
         # that are ~1m long, so we'll punish paths that are too short
         # or too long. If we have a lookahead of 2 seconds, then
         # a 1m long path represents a speed of desired_length/lookahead=0.5m/s
         length = actual_path.length_along_path()
-        # TODO put in self.H and self.dt to compute this exactly
-        desired_length = 0.4
-        length_deviation = np.abs(length - desired_length) # aka speed
+        desired_length = 0.1
+        desired_speed  = desired_length / self.H
+        path_length_deviation = np.abs(length - desired_length) # aka speed
         # TODO could also look at vx, vy
 
         # Stay upright
-        angle = X[:,4]
-        angle_deviation = np.linalg.norm(angle) 
+        angles = X[:,4]
+        angle_deviation = np.linalg.norm(angles) 
         # Don't have a high angular velocity
-        angular_velocity = X[:,5]
-        angular_velocity_deviation = np.linalg.norm(angular_velocity)
+        angular_velocities = X[:,5]
+        angular_velocity_deviation = np.linalg.norm(angular_velocities)
 
         # Control effort should be minimized
         control_effort = np.linalg.norm(U)
 
         # Control should be continuous, i.e., adjacent control actions should be similar,
         # so we measure the mean difference between adjacent control actions
-        adjacent_control_diff = np.mean(np.linalg.norm(U[1:] - U[:-1], axis=1))
-
-        # We're going to maximize this score, so we need to negate 
-        # some of these terms. Now if deviation is large, it's a worse score,
-        # and if distance to end is large, it's a worse score, etc.
-        deviation        *= -1
-        distance_to_end  *= -1
-        length_deviation *= -1
-        angle_deviation  *= -1
-        angular_velocity_deviation *= -1
-        control_effort   *= -1
+        adjacent_control_differences = np.mean(np.linalg.norm(U[1:] - U[:-1], axis=1))
 
         # Score is a weighted sum
         # Notes from playing around:
@@ -133,14 +123,15 @@ class MPPI:
         #   we'll go backwards along the path, even sometimes 
         #   crashing into the wall in the wrong direction from the 
         #   start
-        # - the length_deviation is important to emphasize, otherwise
+        # - the path_length_deviation is important to emphasize, otherwise
         #   we'll go too fast and crash
-        score =   10 * deviation \
-                + 25 * distance_to_end \
-                + 30 * length_deviation \
+        score =   30 * path_deviation \
+                + (100 if correct_direction else -100) \
+                + 30 * path_length_deviation \
                 + 4 * angle_deviation \
                 + 1 * angular_velocity_deviation \
-                + 0.25 * control_effort
+                + 0.25 * control_effort \
+                + 0 * adjacent_control_differences
 
         return score
 
@@ -148,27 +139,27 @@ class MPPI:
         """
         Optimize the control sequence to minimize the cost of the trajectory
         """
-        
-        # TODO implement some form of adaptive importance sampling
 
-        # Start by sampling K, H long control sequences
-        Us = np.array([ self.sample_action_sequence() for _ in range(self.K) ])
+        # TODO: implement some kind of adaptive improvement
 
-        # TODO this should all be vectorized
-
-        # Rollout each of the K control sequences
-        # TODO this could be parallelized
-        Xs = []
-        for U in Us:
+        # Define a function for parallel execution of a sample
+        def process_control_sequence(_):
+            U = self.sample_action_sequence()
             X = self.rollout(x0, U)
-            Xs.append(X)
-        
-        # Score each of the trajectories
-        scores = []
-        for i, _ in enumerate(Xs):
-            score = self.score(Xs[i], Us[i])
-            scores.append(score)
+            score = self.score(X, U)
+            return U, X, score
 
+        # Number of processes to run in parallel
+        num_processes = min(self.K, os.cpu_count() - 8)
+        num_processes = max(num_processes, 1)
+
+         # Use ThreadPoolExecutor for concurrent execution
+        with ThreadPoolExecutor(max_workers=num_processes) as executor:
+            results = list(executor.map(process_control_sequence, range(num_processes)))
+
+        # Extract results from parallel execution
+        Us, Xs, scores = zip(*results)
+        
         # MPPI weighted with softmax + lambda
         weights = np.exp(self.lambda_ * np.array(scores))
         weights /= np.sum(weights)
