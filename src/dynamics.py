@@ -108,7 +108,7 @@ class Quadrotor2D:
         T2 = uk[1]
 
         # Compute x(k+1)
-        x_next = np.zeros((6,1))
+        x_next = np.zeros(6)
         x_next[0] = x + self.dt*vx
         x_next[1] = vx + self.dt*((-(T1+T2)*np.sin(phi))/self.m) # - self.CD_v*vx + self.wx
         x_next[2] = y + self.dt*vy
@@ -231,9 +231,11 @@ class Quadrotor2D:
         Fit a smooth trajectory to the A* path using 5th order bezier functions 
         constrained by bounding boxes
         """
-        # Beta function
+        # Beta functions
         def beta(t):
             return np.array([(t - 1)**8, -8*t*(t - 1)**7, 28*t**2*(t - 1)**6, -56*t**3*(t - 1)**5, 70*t**4*(t - 1)**4, -56*t**5*(t - 1)**3, 28*t**6*(t - 1)**2, -t**7*(8*t - 8), t**8])
+        def beta_1d(t):
+            return np.array([8*(t - 1)**7, -8*(8*t - 1)*(t - 1)**6, 56*t*(4*t - 1)*(t - 1)**5, -56*t**2*(8*t - 3)*(t - 1)**4, 280*t**3*(2*t - 1)*(t - 1)**3, -56*t**4*(8*t - 5)*(t - 1)**2, 56*t**5*(4*t**2 - 7*t + 3), -8*t**6*(8*t - 7), 8*t**7])
         def beta_2d(t):
             return np.array([56*(t - 1)**6, -112*(4*t - 1)*(t - 1)**5, 56*(t - 1)**4*(28*t**2 - 14*t + 1), -112*t*(t - 1)**3*(28*t**2 - 21*t + 3), 280*t**2*(t - 1)**2*(14*t**2 - 14*t + 3), -112*t**3*(28*t**3 - 63*t**2 + 45*t - 10), 56*t**4*(28*t**2 - 42*t + 15), -112*t**5*(4*t - 3), 56*t**6])
         def beta_3d(t):
@@ -241,7 +243,6 @@ class Quadrotor2D:
         def beta_4d(t):
             return np.array([1680*(t - 1)**4, -6720*(2*t - 1)*(t - 1)**3, 3360*(t - 1)**2*(14*t**2 - 14*t + 3), - 94080*t**4 + 235200*t**3 - 201600*t**2 + 67200*t - 6720, 117600*t**4 - 235200*t**3 + 151200*t**2 - 33600*t + 1680, -6720*t*(14*t**3 - 21*t**2 + 9*t - 1), 3360*t**2*(14*t**2 - 14*t + 3), -6720*t**3*(2*t - 1), 1680*t**4])
         
-
         # Constants
         L = np.shape(boxes)[0]
         N = 8
@@ -263,24 +264,31 @@ class Quadrotor2D:
 
 
         # Define Constraints
-        constraints = [beta(0)@s[0:N+1] == astar_path[0],
-                       beta(1)@s[(L-1)*(N+1):(L-1)*(N+1)+N+1] == astar_path[-1]]
-
+        # Constrain states at start and end
+        constraints = [beta(0)@s[0:N+1] == astar_path[0], # start position
+                       beta_1d(0)@s[0:N+1] == np.zeros(2), # start velocity
+                       beta(1)@s[(L-1)*(N+1):(L-1)*(N+1)+N+1] == astar_path[-1], # end position
+                       beta_1d(1)@s[(L-1)*(N+1):(L-1)*(N+1)+N+1] == np.zeros(2)] # end velocity
         for i in range(L):
             for k in range(N+1):
+                # Constrain path to be within bounding boxes
                 constraints += [s[i*(N+1)+k,1] <= boxes[i,0], # up
                                 s[i*(N+1)+k,0] <= boxes[i,1], # right
                                 s[i*(N+1)+k,1] >= boxes[i,2], # down
                                 s[i*(N+1)+k,0] >= boxes[i,3]] # left
         for i in range(L-1):
+            # Constrain path to be smooth and continuous
             constraints += [beta(1)@s[i*(N+1):i*(N+1)+N+1] == beta(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1],
+                            beta_1d(1)@s[i*(N+1):i*(N+1)+N+1] == beta_1d(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1],
                             beta_2d(1)@s[i*(N+1):i*(N+1)+N+1] == beta_2d(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1],
                             beta_3d(1)@s[i*(N+1):i*(N+1)+N+1] == beta_3d(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1],
                             beta_4d(1)@s[i*(N+1):i*(N+1)+N+1] == beta_4d(0)@s[(i+1)*(N+1):(i+1)*(N+1)+N+1]]
 
         # Problem
-        print(objective.curvature)
         problem = cp.Problem(cp.Minimize(objective),constraints)
+        
+        if problem.status == "infeasible":
+            raise Exception("Current problem infeasible")
 
         # Solve
         problem.solve()
@@ -289,12 +297,47 @@ class Quadrotor2D:
         # Calc trajectories
         n = 10
         t = np.linspace(0,1,n)
-        path = np.zeros(2)
+        state = np.zeros(self.n_dim)
+        control = np.zeros(self.m_dim)
         for i in range(L):
             for _t in t:
-                path = np.vstack([path,beta(_t)@s_val[i*(N+1):i*(N+1)+N+1]])
+                x = (beta(_t)@s_val[i*(N+1):i*(N+1)+N+1])[0]
+                y = (beta(_t)@s_val[i*(N+1):i*(N+1)+N+1])[1]
+                xd = (beta_1d(_t)@s_val[i*(N+1):i*(N+1)+N+1])[0]
+                yd = (beta_1d(_t)@s_val[i*(N+1):i*(N+1)+N+1])[1]
+                xdd = (beta_2d(_t)@s_val[i*(N+1):i*(N+1)+N+1])[0]
+                ydd = (beta_2d(_t)@s_val[i*(N+1):i*(N+1)+N+1])[1]
+                xddd = (beta_3d(_t)@s_val[i*(N+1):i*(N+1)+N+1])[0]
+                yddd = (beta_3d(_t)@s_val[i*(N+1):i*(N+1)+N+1])[1]
+                xdddd = (beta_4d(_t)@s_val[i*(N+1):i*(N+1)+N+1])[0]
+                ydddd = (beta_4d(_t)@s_val[i*(N+1):i*(N+1)+N+1])[1]
 
-        return path[1:]
+                # Def state vector
+                phi = np.arctan(-xdd/(ydd+self.g))
+                omega = (yddd*xdd-(ydd+self.g)*xddd)/((ydd+self.g)**2+xdd**2)
+                state_temp = np.zeros(self.n_dim)
+                state_temp[0] = x
+                state_temp[1] = xd
+                state_temp[2] = y
+                state_temp[3] = yd
+                state_temp[4] = phi
+                state_temp[5] = omega
+                state = np.vstack([state,state_temp])
+                
+                # Def control vector
+                control_temp = np.zeros(self.m_dim)
+                control_temp[0] = -0.5*(self.Iyy/self.l*((xdd*ydddd-xdddd*(ydd+self.g))*((ydd+self.g)**2+xdd**2)+2*(xddd*(ydd+self.g)-xdd*yddd)*(yddd*(ydd+self.g)+xdd*xddd))/((ydd+self.g)**2+xdd**2)**2+self.m*xdd/np.sin(phi))
+                control_temp[1] = 0.5*(self.Iyy/self.l*((xdd*ydddd-xdddd*(ydd+self.g))*((ydd+self.g)**2+xdd**2)+2*(xddd*(ydd+self.g)-xdd*yddd)*(yddd*(ydd+self.g)+xdd*xddd))/((ydd+self.g)**2+xdd**2)**2-self.m*xdd/np.sin(phi))
+                control = np.vstack([control,control_temp])
+        state = state[1:]
+        control = control[1:]
+
+        return state,control
+    
+    def differential_flatness(self,x,y,xd,yd,xdd,ydd,xddd,yddd,xdddd,ydddd):
+        """
+        Using differential flatness, derive a nominal drone trajectory
+        """
 
     
     def differential_flatness_trajectory(self,x,y,v_desired=0.15,spline_alpha=0.05):
@@ -373,63 +416,70 @@ class Quadrotor2D:
             
         return state,control
     
-    def SCP_nominal_trajectory(self,astar_path,obstacles,R,Q,QN,max_iters=100,eps=5e-1,rho=1.0,v_desired=0.15,spline_alpha=0.05):
+    def SCP_nominal_trajectory(self,astar_path,boxes,R,Q,P,max_iters=100,eps=5e-1,rho_init=5.0,rho_min=0.01,rho_change=0.9,N=1000):
         """
         Use SCP techniques to better optimize the trajectory path
         Sourced from AA203
         """
-        # Break down path into x and y coords
-        path_x = np.array([])
-        path_y = np.array([])
-        for i in range(0, len(astar_path)):
-            path_x = np.append(path_x,astar_path[i][0])
-            path_y = np.append(path_y,astar_path[i][1])
-        
-        # Get initial and final points
-        start_point = np.array([path_x[0],0,path_y[0],0,0,0])
-        end_point = np.array([path_x[-1],0,path_y[-1],0,0,0])
+        # Get initial and final states
+        x_start = np.array([astar_path[0,0],0,astar_path[0,1],0,0,0])
+        x_goal = np.array([astar_path[-1,0],0,astar_path[-1,1],0,0,0])
 
-        # Get a initial trajectory using differential flatness
-        state,control = self.differential_flatness_trajectory(path_x,path_y,v_desired=0.15,spline_alpha=0.05)
+        # Get nominal starting trajectory
+        u_prev = np.zeros((N-1,self.m_dim))
+        x_prev = np.zeros((N,self.n_dim))
+        x_prev[0] = np.copy(x_start)
+        for t in range(N-1):
+            x_prev[t+1] = self.dynamics_true_no_disturbances(x_prev[t],u_prev[t])
 
-        # Run nominal trajectory through SCP
-        N = np.shape(state)[0]
+        # Run nominal trajectory through SCP (cold start)
+        L = np.shape(boxes)[0]
         converged = False
         J = np.zeros(max_iters + 1)
         J[0] = np.inf
+        rho = rho_init
+        big_M = 1e6  # Large number for big-M formulation
 
         for i in (prog_bar := tqdm(range(max_iters))):
             # Convex optimization
             # Declare Convex Variables
             x_cvx = cp.Variable((N, self.n_dim))
             u_cvx = cp.Variable((N-1, self.m_dim))
+            inside_box = cp.Variable((L, N), boolean=True)
 
             # Define Objective
-            objective = cp.quad_form(x_cvx[N-1]-state[N-1],QN) + cp.sum([cp.quad_form(x_cvx[k]-state[k],Q)+cp.quad_form(u_cvx[k,:],R) for k in range(0,N-1)])
+            objective = cp.quad_form(x_cvx[-1,:]-x_goal,P) + cp.sum([cp.quad_form(x_cvx[k,:]-x_goal,Q)+cp.quad_form(u_cvx[k,:],R) for k in range(N-1)])
 
             # Define Constraints
-            constraints = [x_cvx[0] == start_point, x_cvx[-1] == end_point]
+            constraints = [x_cvx[0] == x_start]
 
             for k in range(N-1):
-                A,B,C = self.affinize(state[k], control[k])
+                A,B,C = self.affinize(x_prev[k], u_prev[k])
                 constraints += [x_cvx[k+1] == A@x_cvx[k] + B@u_cvx[k] + C,
                         u_cvx[k,0] >= self.min_thrust_per_prop,
                         u_cvx[k,1] >= self.min_thrust_per_prop,
                         u_cvx[k,0] <= self.max_thrust_per_prop,
                         u_cvx[k,1] <= self.max_thrust_per_prop,
-                        cp.norm(u_cvx[k]-control[k],np.inf) <= rho,
-                        cp.norm(x_cvx[k]-state[k],np.inf) <= rho]
-                for p in range(np.shape(obstacles)[0]):
-                    constraints += [cp.norm(cp.hstack([x_cvx[k,0],x_cvx[k,2]])-obstacles[p],2) >= self.l*1.5]
+                        cp.norm(u_cvx[k]-u_prev[k],np.inf) <= rho]
+            for k in range(N):
+                constraints += [cp.norm(x_cvx[k]-x_prev[k],np.inf) <= rho]
+                for i_box in range(L):
+                    constraints += [x_cvx[k, 2] <= boxes[i_box, 0] + big_M * (1 - inside_box[i_box, k]),
+                                    x_cvx[k, 0] <= boxes[i_box, 1] + big_M * (1 - inside_box[i_box, k]),
+                                    x_cvx[k, 2] >= boxes[i_box, 2] - big_M * (1 - inside_box[i_box, k]),
+                                    x_cvx[k, 0] >= boxes[i_box, 3] - big_M * (1 - inside_box[i_box, k])]
+            constraints += [cp.sum(inside_box[:, k]) >= 1 for k in range(N)]
 
             # Problem
             problem = cp.Problem(cp.Minimize(objective),constraints)
 
             # Solve
-            problem.solve()
+            problem.solve(solver=cp.CBC)
+            if problem.status != "optimal":
+                raise RuntimeError("SCP solve failed. Problem status: " + problem.status)
             J[i + 1] = problem.objective.value
-            state = np.copy(x_cvx.value)
-            control = np.copy(u_cvx.value)
+            x_prev = np.copy(x_cvx.value)
+            u_prev = np.copy(u_cvx.value)
             
             dJ = np.abs(J[i + 1] - J[i])
             prog_bar.set_postfix({"objective change": "{:.5f}".format(dJ)})
@@ -437,8 +487,15 @@ class Quadrotor2D:
                 converged = True
                 print("SCP converged after {} iterations.".format(i))
                 break
+            
+            # Update rho
+            if dJ < eps * 10:
+                rho = max(rho * rho_change, rho_min)
+            else:
+                rho = min(rho / rho_change, rho_init)
+
         if not converged:
             raise RuntimeError("SCP did not converge!")
         J = J[1:i+1]
         
-        return state,control
+        return x_prev,u_prev
