@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor
 import utils
 import globals
 
-def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], path2_metres=[], plot_coordinates=True, path_boxes=[]):
+def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres=[], path_metres=[], path2_metres=[], path3_metres=[], plot_coordinates=True, path_boxes=[]):
     """
     Draws the occupancy grid (matrix) with matplotlib, and draws
     in the bottom right corner a scale bar that is one metre long
@@ -49,6 +49,11 @@ def vis_occupancy_grid(filepath, occupancy_grid, metres_per_pixel, points_metres
     if len(path2_metres) > 0:
         path2_pixels = np.array(path2_metres) / metres_per_pixel
         ax.plot(path2_pixels[:, 0], path2_pixels[:, 1], color='red', linewidth=1, linestyle='--')
+
+    # Sometimes we want a third path (e.g. following)
+    if len(path3_metres) > 0:
+        path3_pixels = np.array(path3_metres) / metres_per_pixel
+        ax.plot(path3_pixels[:, 0], path3_pixels[:, 1], color='purple', linewidth=1, linestyle='--')
     
     # Plot path boxes
     if len(path_boxes) > 0:
