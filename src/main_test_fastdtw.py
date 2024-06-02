@@ -5,9 +5,8 @@ def test_deviation_from_other_path(p1, p2):
     path2 = Path(p2)
     print(f"P1: {path1.path_metres}")
     print(f"P2: {path2.path_metres}")
-    #deviation = path1.deviation_from_path(path2, verbose=False)
-    deviation = path1.dtw_distance(path2)
-    print(f"Deviation Score: {deviation}")
+    print(f"Deviation Score: {path1.deviation_from_path(path2, verbose=False)}")
+    print(f"Same direction: {path1.other_path_in_same_direction(path2)}")
 
 if __name__ == "__main__":
     path1 = [(0, 0), (1, 1), (2, 2)]
