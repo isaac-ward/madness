@@ -89,7 +89,7 @@ def plot_experiment_video(
     
     # Create the animation
     anim = animation.FuncAnimation(
-        fig, animate, frames=num_frames_to_render
+        fig, animate, frames=num_frames_to_render-1
     )
     anim.save(filepath, fps=fps, extra_args=['-vcodec', 'libx264'])
 
@@ -189,6 +189,11 @@ def plot_experiment(
             lw=1
         )
 
+    # Plot a grid on ax[0] at each metre
+    axs[0].set_xticks(np.arange(0, map.occupancy_grid.shape[1], 1 / map.metres_per_pixel))
+    axs[0].set_yticks(np.arange(0, map.occupancy_grid.shape[0], 1 / map.metres_per_pixel))
+    axs[0].grid(True, which='both', color='grey', linestyle='--', linewidth=0.5)
+
     # We have the scored rollouts - these are all the samples that
     # MPPI took, and the score that each one got. We want to plot every single
     # one, the color of the line will be based on the score
@@ -206,20 +211,24 @@ def plot_experiment(
         # Normalize the score to be between 0 and 1
         if score == -np.inf:
             score = 0
+        elif score == np.inf:
+            score = 1
         else:
             score = (score - score_bounds[0]) / (score_bounds[1] - score_bounds[0])
 
+        #print(score)
+            
         color = colormap[int(score * color_samples)]
         # Plot the line
         axs[0].plot(
             pos_x,
             pos_y,
             color=color,
-            lw=0.4,
+            lw=0.8,
             linestyle='-',
             # Draw the highest scores on top
             zorder=20+score,
-            alpha=0.3,
+            alpha=0.5,
         )
     
     # Now we want to plot the drone centric view on the other axis

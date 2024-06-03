@@ -18,6 +18,12 @@ class Path:
         """
         self.path_metres = np.array(path_metres, dtype=np.float32)
 
+    # This needs to be picklable for caching
+    def __getstate__(self):
+        return self.path_metres.tolist()
+    def __setstate__(self, state):
+        self.path_metres = np.array(state)
+
     def downsample_every_n(self, every_n_points=1):
         """
         Downsamples the path by a factor and returns a new path
@@ -96,11 +102,17 @@ class Path:
     
     def num_points_along_path(self):
         return len(self.path_metres)
-
-    def other_path_in_same_direction(self, path_b):
+    
+    def reversed(self):
         """
-        Returns true if the other path is in the same direction
-        as this path
+        Returns a new path that is the reverse of this path
+        """
+        return Path(self.path_metres[::-1])
+
+    def forwardness_wrt_other_path(self, path_b):
+        """
+        Returns > 0 if the other path is in the same direction as this path
+        or < 0 if the other path is in the opposite direction
         """
 
         # Need to come up with a measure of forwardness or backwardness. One
@@ -112,7 +124,7 @@ class Path:
         differences = np.diff(closest_indices)
         forwardness_measure = np.sum(differences > 0) - np.sum(differences < 0)
         
-        return forwardness_measure > 0
+        return forwardness_measure
 
     def deviation_from_path(self, path_b, verbose=False):
         """

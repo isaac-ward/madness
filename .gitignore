@@ -1,4 +1,5 @@
 logs/*
+caches/*
 !.gitkeep
 
 # Byte-compiled / optimized / DLL files
