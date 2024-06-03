@@ -5,9 +5,13 @@ DRONE_MASS = 2.5 # kg
 g = 9.81 # m/s^2
 #MAX_THRUST_PER_PROP = 0.75 * DRONE_MASS * g  # total thrust-to-weight ratio = 1.5
 MAX_THRUST_PER_PROP = 3 * DRONE_MASS * g # Ike's tasty edit
-REACHED_SAMPLE_REGION_THRESHOLD = 1 # m
-REACHED_ENTRY_POINT_THRESHOLD = 0.1 # m
+REACHED_SAMPLE_REGION_THRESHOLD = 0.5 # m
+REACHED_ENTRY_POINT_THRESHOLD   = 0.25 # m
 
+# For testing disturbances
+DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0 #0.33
+
+# TODO should define goal states (i.e. set velocities and angles)
 MAP_CONFIGS = {
     "3x7": {
         "filename": "3x7.png",

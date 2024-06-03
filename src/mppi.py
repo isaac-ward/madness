@@ -52,6 +52,13 @@ class MPPI:
         # - near to obstacles (conservative)
         # - aggressive
 
+        # TODO could be useful to draw from a low dimensional space
+        # and then map to the high dimensional space using learning,
+        # so that it's easier to explore/learn a good distribution
+        # with flows in the low dimensional space (recall that this
+        # is over U). flow can still have transformations learned
+        # based on context
+
 
     def update_nominal_xy_path(self, nominal_xy_path):
         self.nominal_xy_path = nominal_xy_path
@@ -141,7 +148,7 @@ class MPPI:
         forwardness = self.nominal_xy_path.forwardness_wrt_other_path(actual_path)
 
         # Stay at a certain speed throughout the path
-        target_speed = 0.5 # m/s
+        target_speed = 1 # m/s
         vxs = X[:,1]
         vys = X[:,3]
         speeds = np.linalg.norm(np.array([vxs, vys]).T, axis=1)
@@ -173,12 +180,12 @@ class MPPI:
         # - the path_length_deviation is important to emphasize, otherwise
         #   we'll go too fast and crash
         score = - 5000 * path_deviation \
-                + 300 * forwardness \
-                - 1000 * speed_deviation \
+                + 500 * forwardness \
+                - 1500 * speed_deviation \
                 - 80 * angle_deviation \
                 - 80 * angular_velocity_deviation \
                 - 0 * control_effort \
-                - 0 * adjacent_control_differences \
+                - 700 * adjacent_control_differences \
                 - 10000 * (collision_closer_along_path if hit_boundary else 0)
 
         return score
@@ -204,7 +211,7 @@ class MPPI:
             return U, X, score
 
         # Number of processes to run in parallel
-        num_processes = min(self.K, os.cpu_count() - 8)
+        num_processes = min(self.K, os.cpu_count() - 4)
         num_processes = max(num_processes, 1)
 
          # Use ThreadPoolExecutor for concurrent execution
