@@ -43,6 +43,16 @@ class MPPI:
         self.nominal_xy_path = nominal_xy_path
         self.map = map
 
+        # TODO we can configure different hyperparameter/behavioral parameters
+        # to score random trajectories differently, thus changing the behavior
+        # of the controller in different situations
+        # Potential modes:
+        # - general
+        # - near to/within sample region
+        # - near to obstacles (conservative)
+        # - aggressive
+
+
     def update_nominal_xy_path(self, nominal_xy_path):
         self.nominal_xy_path = nominal_xy_path
 
@@ -88,9 +98,10 @@ class MPPI:
             X[i+1] = self.dynamics_fn(X[i], u)
         return X
     
-    def score(self, X, U):
+    def score(self, prev_X, X, prev_U, U):
         """
-        Score a trajectory of states and controls
+        Score a trajectory of states and controls, with the previous states and controls
+        known for context
         """
         
         # Optimize some things here:
@@ -109,7 +120,18 @@ class MPPI:
         actual_path = Path(actual_xy_positions)
 
         # If we hit a wall get negative infinity
-        if self.map.does_path_hit_boundary(actual_path):
+        hit_boundary, collision_index =  self.map.does_path_hit_boundary(actual_path, return_earliest_hit_index=True)
+        # index will be zero if we immediately hit the boundary
+        # and will be H if we hit the boundary at the end of our 
+        # projected path, so the following variable will be (H - 0) / H = 1 if
+        # we hit the boundary immediately and (H - (H-1)) / H = 1/H if 
+        # we hit the boundary as late as possible
+        collision_closer_along_path = ( self.H - collision_index ) / self.H
+
+        #print(f"Collision: {hit_boundary}, index: {collision_index}, closer: {collision_closer_along_path}")
+        
+        # If you hit boundary in the first X% of the path then it's -inf
+        if collision_closer_along_path > 1 - 0.4 and hit_boundary:
             return -np.inf
 
         # How much does the actual path deviate from the nominal path?
@@ -117,21 +139,12 @@ class MPPI:
 
         # Are we going in the right direction?
         forwardness = self.nominal_xy_path.forwardness_wrt_other_path(actual_path)
-        
-        # Calculate the length of the path. We actually want to favor paths
-        # that are ~1m long, so we'll punish paths that are too short
-        # or too long. If we have a lookahead of 2 seconds, then
-        # a 1m long path represents a speed of desired_length/lookahead=0.5m/s
-        length = actual_path.length_along_path()
-        desired_length = 0.05
-        desired_speed  = desired_length / self.H
-        path_length_deviation = np.abs(length - desired_length) 
 
         # Stay at a certain speed throughout the path
-        target_speed = 1 # m/s
+        target_speed = 0.5 # m/s
         vxs = X[:,1]
         vys = X[:,3]
-        speeds = np.linalg.norm(np.array([vxs]).T, axis=1)
+        speeds = np.linalg.norm(np.array([vxs, vys]).T, axis=1)
         speed_deviation = np.mean(np.abs(speeds - target_speed))   
 
         # Stay upright
@@ -146,7 +159,8 @@ class MPPI:
 
         # Control should be continuous, i.e., adjacent control actions should be similar,
         # so we measure the mean difference between adjacent control actions
-        adjacent_control_differences = np.mean(np.linalg.norm(U[1:] - U[:-1], axis=1))
+        entire_U = np.concatenate((prev_U, U)) 
+        adjacent_control_differences = np.mean(np.abs(np.diff(entire_U, axis=0)))
 
         # Score is a weighted sum - note the negatives mean that we minimize
         # deviations, differences, and efforts as desired, and maximize the
@@ -158,14 +172,14 @@ class MPPI:
         #   start
         # - the path_length_deviation is important to emphasize, otherwise
         #   we'll go too fast and crash
-        score = - 300 * path_deviation \
-                + 75 * forwardness \
-                - 400 * speed_deviation \
-                - 0 * path_length_deviation \
+        score = - 5000 * path_deviation \
+                + 300 * forwardness \
+                - 1000 * speed_deviation \
                 - 80 * angle_deviation \
                 - 80 * angular_velocity_deviation \
                 - 0 * control_effort \
-                - 0 * adjacent_control_differences
+                - 0 * adjacent_control_differences \
+                - 10000 * (collision_closer_along_path if hit_boundary else 0)
 
         return score
 
@@ -186,7 +200,7 @@ class MPPI:
             #U = self.sample_action_sequence()
             U = Us[i]
             X = self.rollout(x0, U)
-            score = self.score(X, U)
+            score = self.score(prev_X, X, prev_U, U)
             return U, X, score
 
         # Number of processes to run in parallel

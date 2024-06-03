@@ -54,7 +54,7 @@ def plot_experiment_video(
     # On the right will be a close up of the drone, with the current control rendered
 
     # Create a figure
-    fig = plt.figure(figsize=(16, 8))
+    fig = plt.figure(figsize=(20, 8))
     # 1 row, two columns
     gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1])
     axs = [plt.subplot(gs[0]), plt.subplot(gs[1])]
@@ -85,12 +85,14 @@ def plot_experiment_video(
             progress=sim_frame_index / num_frames_simulation
         )
         pbar.update(1)
+        plt.tight_layout()
         return axs
     
     # Create the animation
     anim = animation.FuncAnimation(
         fig, animate, frames=num_frames_to_render-1
     )
+    #plt.tight_layout()
     anim.save(filepath, fps=fps, extra_args=['-vcodec', 'libx264'])
 
 def plot_experiment(
@@ -139,7 +141,7 @@ def plot_experiment(
         map.metres_to_pixels(map.boundary_positions)[:, 1],
         color='orange', 
         marker=',',
-        s=0.03
+        s=0.3
     )
     # Plot a scale in the bottom left corner of the world view
     annotation = f"1m = {int(1 / map.metres_per_pixel)} pixels"
@@ -148,7 +150,7 @@ def plot_experiment(
     scale_length = 1 / map.metres_per_pixel
     axs[0].plot([0, scale_length], [0, 0], color='orange', lw=4)
     # Don't need axis ticks
-    axs[0].axis('off')
+    # axs[0].axis('off')
 
     # Now plot the points
     axs[0].scatter(
@@ -192,6 +194,9 @@ def plot_experiment(
     # Plot a grid on ax[0] at each metre
     axs[0].set_xticks(np.arange(0, map.occupancy_grid.shape[1], 1 / map.metres_per_pixel))
     axs[0].set_yticks(np.arange(0, map.occupancy_grid.shape[0], 1 / map.metres_per_pixel))
+    # But I don't want to see the numbers
+    axs[0].set_xticklabels([])
+    axs[0].set_yticklabels([])
     axs[0].grid(True, which='both', color='grey', linestyle='--', linewidth=0.5)
 
     # We have the scored rollouts - these are all the samples that
@@ -224,12 +229,26 @@ def plot_experiment(
             pos_x,
             pos_y,
             color=color,
-            lw=0.8,
+            lw=0.5,
             linestyle='-',
             # Draw the highest scores on top
-            zorder=20+score,
-            alpha=0.5,
+            zorder=20+int(score*0.01),
+            alpha=0.2,
         )
+
+    # Plot the best rollout in a different color
+    best_rollout_index = np.argmax(scored_rollouts[1])
+    best_rollout = scored_rollouts[0][best_rollout_index]
+    best_rollout = map.metres_to_pixels(best_rollout)
+    axs[0].plot(
+        best_rollout[:, 0],
+        best_rollout[:, 2],
+        color='pink',
+        lw=1,
+        linestyle='--',
+        zorder=1000,
+        alpha=0.5
+    )
     
     # Now we want to plot the drone centric view on the other axis
     # We'll plot the drone as a rectangle, centered at the drone's position, rotated by the angle
@@ -283,29 +302,33 @@ def plot_experiment(
         left_control_vector = (rotation_matrix @ left_control_vector.T).T
         right_control_vector = (rotation_matrix @ right_control_vector.T).T
 
-        # Plot as arrows from the rotated top left and top right corners
-        ax.arrow(
-            rectangle[3, 0], 
-            rectangle[3, 1], 
-            left_control_vector[0], 
-            left_control_vector[1], 
-            head_width=0.1, 
-            head_length=0.1, 
-            fc=drone_color,
-            ec=drone_color,
-            zorder=11
-        )
-        ax.arrow(
-            rectangle[2, 0], 
-            rectangle[2, 1], 
-            right_control_vector[0], 
-            right_control_vector[1], 
-            head_width=0.1, 
-            head_length=0.1, 
-            fc=drone_color,
-            ec=drone_color,
-            zorder=11
-        )
+        # Plot as arrows from the rotated top left and top right corners, if the control  
+        # is not zero or very close to zero
+        draw_threshold = 0.02
+        if abs(left_control/globals.MAX_THRUST_PER_PROP) > draw_threshold:
+            ax.arrow(
+                rectangle[3, 0], 
+                rectangle[3, 1], 
+                left_control_vector[0], 
+                left_control_vector[1], 
+                head_width=0.1, 
+                head_length=0.1, 
+                fc=drone_color,
+                ec=drone_color,
+                zorder=11
+            )
+        if abs(right_control/globals.MAX_THRUST_PER_PROP) > draw_threshold:
+            ax.arrow(
+                rectangle[2, 0], 
+                rectangle[2, 1], 
+                right_control_vector[0], 
+                right_control_vector[1], 
+                head_width=0.1, 
+                head_length=0.1, 
+                fc=drone_color,
+                ec=drone_color,
+                zorder=11
+            )
     
     # Can't plot the drone without trajectories
     if len(state_trajectory) > 0 and len(control_trajectory) > 0:

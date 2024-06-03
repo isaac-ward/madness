@@ -102,7 +102,7 @@ if __name__ == "__main__":
         control_bounds_lower=np.array([-globals.MAX_THRUST_PER_PROP, -globals.MAX_THRUST_PER_PROP]),
         control_bounds_upper=np.array([+globals.MAX_THRUST_PER_PROP, +globals.MAX_THRUST_PER_PROP]),
         K=256,
-        H=5,
+        H=20,
         lambda_=1000000, # Take the best would be lambda_ -> inf
         nominal_xy_path=fitted_nominal_xy,
         map=map
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     # Initial state
     x = np.zeros(dyn.n_dim)
     x[0] = start_coord_metres[0]
-    x[1] = 0.25 # a gentle push
+    x[1] = 2 # a gentle push
     x[2] = start_coord_metres[1]
     sample_obtained = False
     # Logging
@@ -124,6 +124,7 @@ if __name__ == "__main__":
     control_trajectory  = np.zeros((N, dyn.m_dim))
     scored_rollouts_per_step = []
     # This has to be ran forward, we can't parallelize
+    # Track progress, don't want iterations per second
     pbar = tqdm(total=N, desc="Approaching sample region")
     for i in range(N):
 
@@ -135,27 +136,31 @@ if __name__ == "__main__":
         U, (samples, scores) = controller.optimal_control_sequence(prev_X, prev_U, return_scored_rollouts=True)
         scored_rollouts_per_step.append((samples, scores))
         u = U[0]
+
+        # There could be a disturbance in the control (e.g. motor noise, wind)
+        # TODO
+
         # Roll forward the dynamics
         x = dyn.dynamics_true_no_disturbances(x, u)
 
         # The game is over if we hit a wall, or if we go out of bounds
         if map.does_point_hit_boundary(x[0], x[2]) or map.out_of_bounds(x[0], x[2]):
-            pbar.set_description("Out of bounds or hit a wall, stopping simulation")
+            pbar.set_description("Out of bounds or hit a wall")
             pbar.close()
             state_trajectory   = state_trajectory[:i]
             control_trajectory = control_trajectory[:i]
             break
 
         # If we reach the finish point, then then we reverse the MPPI path
-        if np.linalg.norm(x[[0,2]] - finish_coord_metres) < globals.REACHED_GOAL_THRESHOLD and not sample_obtained:
+        if np.linalg.norm(x[[0,2]] - finish_coord_metres) < globals.REACHED_SAMPLE_REGION_THRESHOLD and not sample_obtained:
             controller.update_nominal_xy_path(fitted_nominal_xy.reversed())
             sample_obtained = True
-            pbar.set_description("Sample taken, returning to base")
+            pbar.set_description("Sample taken, returning")
             # TODO edit the dynamics too - heavier now!
 
         # If we reach the start with the sample then we're done
-        if np.linalg.norm(x[[0,2]] - start_coord_metres) < globals.REACHED_GOAL_THRESHOLD and sample_obtained:
-            pbar.set_description("Sample retrieved!")
+        if np.linalg.norm(x[[0,2]] - start_coord_metres) < globals.REACHED_ENTRY_POINT_THRESHOLD and sample_obtained:
+            pbar.set_description("Sample retrieved")
             pbar.close()
             state_trajectory   = state_trajectory[:i]
             control_trajectory = control_trajectory[:i]
@@ -167,7 +172,7 @@ if __name__ == "__main__":
 
         # Update the progress bar
         pbar.set_postfix({
-            "m_to_goal": f"{np.linalg.norm(x[[0,2]] - finish_coord_metres):.2f}",
+            "m_from_sample_region": f"{np.linalg.norm(x[[0,2]] - finish_coord_metres):.2f}",
             "x": f"{x[0]:.2f}",
             "y": f"{x[2]:.2f}",
             "v": f"{np.linalg.norm(x[[1,3]]):.2f}",
