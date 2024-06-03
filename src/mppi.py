@@ -1,6 +1,7 @@
 import numpy as np
 import os
 from concurrent.futures import ThreadPoolExecutor
+from sobol_seq import i4_sobol_generate
 
 from path import Path
 
@@ -17,7 +18,7 @@ class MPPI:
         K,
         H,
         lambda_,
-        nominal_xy_positions,
+        nominal_xy_path,
         map,
     ):
 
@@ -37,9 +38,33 @@ class MPPI:
         self.control_bounds_upper = control_bounds_upper
         self.K = K
         self.H = H
+        self.control_dimensions = len(control_bounds_lower)
         self.lambda_ = lambda_
-        self.nominal_xy_path = Path(nominal_xy_positions)
+        self.nominal_xy_path = nominal_xy_path
         self.map = map
+
+    def update_nominal_xy_path(self, nominal_xy_path):
+        self.nominal_xy_path = nominal_xy_path
+
+    def sample_all_action_sequences(self):
+        """
+        Random sampling in high dimensions trends towards
+        the center of the space. To avoid this, we'll sample using 
+        a sampling plan
+        """
+
+        # Maximally fill the space
+        bounds = np.array([self.control_bounds_lower, self.control_bounds_upper])
+        samples = np.zeros((self.K, self.H, self.control_dimensions))
+
+        # Generate Sobol sequences
+        for i in range(self.H):
+            sobol_samples = i4_sobol_generate(self.control_dimensions, self.K)
+            for j in range(self.control_dimensions):
+                sobol_samples[:, j] = sobol_samples[:, j] * (bounds[1, j] - bounds[0, j]) + bounds[0, j]
+            samples[:, i, :] = sobol_samples
+
+        return samples
 
     def sample_action_sequence(self):
         # This is actually the MPOPI simulation - we'll sample a sequence
@@ -47,7 +72,7 @@ class MPPI:
         action_sequence = np.random.uniform(
             low=self.control_bounds_lower,
             high=self.control_bounds_upper,
-            size=(self.H, len(self.control_bounds_lower))
+            size=(self.H, self.control_dimensions)
         )
         return action_sequence
 
@@ -91,17 +116,23 @@ class MPPI:
         path_deviation = self.nominal_xy_path.deviation_from_path(actual_path)
 
         # Are we going in the right direction?
-        correct_direction = self.nominal_xy_path.other_path_in_same_direction(actual_path)
+        forwardness = self.nominal_xy_path.forwardness_wrt_other_path(actual_path)
         
         # Calculate the length of the path. We actually want to favor paths
         # that are ~1m long, so we'll punish paths that are too short
         # or too long. If we have a lookahead of 2 seconds, then
         # a 1m long path represents a speed of desired_length/lookahead=0.5m/s
         length = actual_path.length_along_path()
-        desired_length = 0.1
+        desired_length = 0.05
         desired_speed  = desired_length / self.H
-        path_length_deviation = np.abs(length - desired_length) # aka speed
-        # TODO could also look at vx, vy
+        path_length_deviation = np.abs(length - desired_length) 
+
+        # Stay at a certain speed throughout the path
+        target_speed = 1 # m/s
+        vxs = X[:,1]
+        vys = X[:,3]
+        speeds = np.linalg.norm(np.array([vxs]).T, axis=1)
+        speed_deviation = np.mean(np.abs(speeds - target_speed))   
 
         # Stay upright
         angles = X[:,4]
@@ -117,7 +148,9 @@ class MPPI:
         # so we measure the mean difference between adjacent control actions
         adjacent_control_differences = np.mean(np.linalg.norm(U[1:] - U[:-1], axis=1))
 
-        # Score is a weighted sum
+        # Score is a weighted sum - note the negatives mean that we minimize
+        # deviations, differences, and efforts as desired, and maximize the
+        # correct direction
         # Notes from playing around:
         # - the distance_to_end is important to emphasize, otherwise
         #   we'll go backwards along the path, even sometimes 
@@ -125,26 +158,33 @@ class MPPI:
         #   start
         # - the path_length_deviation is important to emphasize, otherwise
         #   we'll go too fast and crash
-        score =   30 * path_deviation \
-                + (100 if correct_direction else -100) \
-                + 30 * path_length_deviation \
-                + 4 * angle_deviation \
-                + 1 * angular_velocity_deviation \
-                + 0.25 * control_effort \
-                + 0 * adjacent_control_differences
+        score = - 300 * path_deviation \
+                + 75 * forwardness \
+                - 400 * speed_deviation \
+                - 0 * path_length_deviation \
+                - 80 * angle_deviation \
+                - 80 * angular_velocity_deviation \
+                - 0 * control_effort \
+                - 0 * adjacent_control_differences
 
         return score
 
-    def optimal_control_sequence(self, x0, return_scored_rollouts=False):
+    def optimal_control_sequence(self, prev_X, prev_U, return_scored_rollouts=False):
         """
         Optimize the control sequence to minimize the cost of the trajectory
         """
 
+        x0 = prev_X[-1]
+
         # TODO: implement some kind of adaptive improvement
 
+        # TODO: give previous states and controls 
+
         # Define a function for parallel execution of a sample
-        def process_control_sequence(_):
-            U = self.sample_action_sequence()
+        Us = self.sample_all_action_sequences()
+        def process_control_sequence(i):
+            #U = self.sample_action_sequence()
+            U = Us[i]
             X = self.rollout(x0, U)
             score = self.score(X, U)
             return U, X, score
@@ -155,7 +195,7 @@ class MPPI:
 
          # Use ThreadPoolExecutor for concurrent execution
         with ThreadPoolExecutor(max_workers=num_processes) as executor:
-            results = list(executor.map(process_control_sequence, range(num_processes)))
+            results = list(executor.map(process_control_sequence, range(self.K)))
 
         # Extract results from parallel execution
         Us, Xs, scores = zip(*results)
