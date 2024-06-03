@@ -103,7 +103,7 @@ if __name__ == "__main__":
         control_bounds_upper=np.array([+globals.MAX_THRUST_PER_PROP, +globals.MAX_THRUST_PER_PROP]),
         K=256,
         H=20,
-        lambda_=1000000, # Take the best would be lambda_ -> inf
+        lambda_=10, # 'Take the best' would be lambda_ -> inf
         nominal_xy_path=fitted_nominal_xy,
         map=map
     )
@@ -138,7 +138,9 @@ if __name__ == "__main__":
         u = U[0]
 
         # There could be a disturbance in the control (e.g. motor noise, wind)
-        # TODO
+        # motor noise is modeled by drawing from a gaussian with set variance
+        u_disturbance_rotors = np.random.normal(0, globals.DISTURBANCE_VARIANCE_ROTORS**0.5, size=dyn.m_dim) 
+        u += u_disturbance_rotors
 
         # Roll forward the dynamics
         x = dyn.dynamics_true_no_disturbances(x, u)
@@ -160,7 +162,7 @@ if __name__ == "__main__":
 
         # If we reach the start with the sample then we're done
         if np.linalg.norm(x[[0,2]] - start_coord_metres) < globals.REACHED_ENTRY_POINT_THRESHOLD and sample_obtained:
-            pbar.set_description("Sample retrieved")
+            pbar.set_description(f"Sample retrieved in {i * dt:.2f} seconds")
             pbar.close()
             state_trajectory   = state_trajectory[:i]
             control_trajectory = control_trajectory[:i]
@@ -177,14 +179,7 @@ if __name__ == "__main__":
             "y": f"{x[2]:.2f}",
             "v": f"{np.linalg.norm(x[[1,3]]):.2f}",
         })
-        pbar.update(1)
-    
-    # Oh sick I got a sample!
-    
-    # --------------------------------
-    # and back again
-    # TODO
-        
+        pbar.update(1)        
         
     # --------------------------------
 

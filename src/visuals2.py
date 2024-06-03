@@ -141,7 +141,8 @@ def plot_experiment(
         map.metres_to_pixels(map.boundary_positions)[:, 1],
         color='orange', 
         marker=',',
-        s=0.3
+        s=2,
+        alpha=0.5
     )
     # Plot a scale in the bottom left corner of the world view
     annotation = f"1m = {int(1 / map.metres_per_pixel)} pixels"
@@ -175,7 +176,7 @@ def plot_experiment(
             map.metres_to_pixels(p.path_metres)[:, 1],
             color=c,
             linestyle='--',
-            lw=1
+            lw=2
         )
 
     # Now plot the drone's position up to the point in progress
@@ -188,7 +189,8 @@ def plot_experiment(
             state_trajectory_of_interest[:, 2],
             color=drone_color,
             linestyle='-',
-            lw=1
+            lw=2,
+            alpha=0.5
         )
 
     # Plot a grid on ax[0] at each metre
@@ -229,25 +231,24 @@ def plot_experiment(
             pos_x,
             pos_y,
             color=color,
-            lw=0.5,
+            lw=1,
             linestyle='-',
             # Draw the highest scores on top
             zorder=20+int(score*0.01),
-            alpha=0.2,
+            alpha=0.25,
         )
 
     # Plot the best rollout in a different color
     best_rollout_index = np.argmax(scored_rollouts[1])
     best_rollout = scored_rollouts[0][best_rollout_index]
-    best_rollout = map.metres_to_pixels(best_rollout)
+    best_rollout_pos_x = map.metres_to_pixels(best_rollout[:, 0])
+    best_rollout_pos_y = map.metres_to_pixels(best_rollout[:, 2])
     axs[0].plot(
-        best_rollout[:, 0],
-        best_rollout[:, 2],
-        color='pink',
-        lw=1,
-        linestyle='--',
-        zorder=1000,
-        alpha=0.5
+        best_rollout_pos_x,
+        best_rollout_pos_y,
+        color='cyan',
+        lw=2,
+        linestyle='-'
     )
     
     # Now we want to plot the drone centric view on the other axis
@@ -283,8 +284,8 @@ def plot_experiment(
         # Draw a little triangle pointing up so we know the orientation
         triangle = np.array([
             [0, height / 2],
-            [length / 8, 0],
-            [-length / 8, 0]
+            [+length / 8, -height / 2],
+            [-length / 8, -height / 2]
         ])
         triangle = (rotation_matrix @ triangle.T).T
         triangle += np.array([x, y])
@@ -304,7 +305,7 @@ def plot_experiment(
 
         # Plot as arrows from the rotated top left and top right corners, if the control  
         # is not zero or very close to zero
-        draw_threshold = 0.02
+        draw_threshold = 0.05
         if abs(left_control/globals.MAX_THRUST_PER_PROP) > draw_threshold:
             ax.arrow(
                 rectangle[3, 0], 
