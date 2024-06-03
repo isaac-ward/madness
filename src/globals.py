@@ -1,12 +1,12 @@
-
 METRES_PER_PIXEL  = 0.01
 
-DRONE_HALF_LENGTH = 0.25 # m
+DRONE_HALF_LENGTH = 0.2 # m
 DRONE_MASS = 2.5 # kg
 g = 9.81 # m/s^2
 #MAX_THRUST_PER_PROP = 0.75 * DRONE_MASS * g  # total thrust-to-weight ratio = 1.5
 MAX_THRUST_PER_PROP = 3 * DRONE_MASS * g # Ike's tasty edit
-REACHED_GOAL_THRESHOLD = 0.5 # m
+REACHED_SAMPLE_REGION_THRESHOLD = 1 # m
+REACHED_ENTRY_POINT_THRESHOLD = 0.1 # m
 
 MAP_CONFIGS = {
     "3x7": {

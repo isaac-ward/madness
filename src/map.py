@@ -300,17 +300,38 @@ class Map:
 
         return np.array(boundary_cells)
     
-    def does_path_hit_boundary(self, path):
+    def does_path_hit_boundary(self, path, return_earliest_hit_index=False):
         """
         Returns True if the path intersects with any boundary positions
         """
+
+        # Subsample to make sure we're not missing anything
+        # Want a point each centimeter
+        points_per_metre = 5 # TODO this is an expensive parameter to increase
+        orig_num_points = len(path.path_metres)
+        new_num_points  = int(path.length_along_path() * points_per_metre)
+        # Might already be densely sampled enough
+        if new_num_points > orig_num_points:
+            path = path.upsample(new_num_points)
+        new_num_points = len(path.path_metres)
+
+        # TODO would prefer to move to some sort of check between points on a line,
+        # i.e. is the boundary point near enough to the line between the two points?
+        # Easy enough to do this, but how to do it with a kdtree?
         
         # Go through all points in the path - if any of them are within a certain
         # distance of a boundary position, return True
-        for xy in path.path_metres:
+        for i, xy in enumerate(path.path_metres):
             if self.does_point_hit_boundary(xy[0], xy[1]):
-                return True
-        return False
+                if return_earliest_hit_index:
+                    # Need to return index in the original path
+                    return True, i * (orig_num_points / new_num_points)
+                else:
+                    return True
+        if return_earliest_hit_index:
+            return False, -1
+        else:
+            return False
     
     def does_point_hit_boundary(self, x, y):
         """
