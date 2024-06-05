@@ -1,5 +1,6 @@
 import numpy as np
-import dynamics as dy
+import dynamics
+from scipy.linalg import cho_factor, cho_solve
 
 def optimal_control(path):
 
@@ -11,7 +12,7 @@ def optimal_control(path):
 
     pass
 
-def ilqr(x0, x_goal, N, dt, Q, R, QN, eps=1e-3, max_iters=1000):
+def ilqr(x_track, u_track, dt, N, quadrotor: dynamics.Quadrotor2D, Q, R, QN, eps=1e-3, max_iters=1000):
     """
     Compute controls to track trajectory with iLQR
     Based on code from AA203 HW2
@@ -20,54 +21,50 @@ def ilqr(x0, x_goal, N, dt, Q, R, QN, eps=1e-3, max_iters=1000):
     # Check valid setup
     if max_iters <= 1:
         raise ValueError("Argument `max_iters` must be at least 1.")
-    
-    # Create 2D dynamics model
-    quadrotor = dy.Quadrotor2D(dt)
 
     # Get variables
-    n = Q.shape[0]  # state dimension
-    m = R.shape[0]  # control dimension
+    n = quadrotor.n_dim  # state dimension
+    m = quadrotor.m_dim  # control dimension
 
     # Initialize control gains Y and offsets y
     Y = np.zeros((N, m, n))
     y = np.zeros((N, m))
 
-    # Initialize the nominal trajectory `(x_bar, u_bar`), and the
-    # deviations `(dx, du)`
-    # TODO get this from path planning
-    u_bar = np.zeros((N, m))
-    x_bar = np.zeros((N + 1, n))
-    x_bar[0] = x0
+    # Initialize the nominal trajectory and deviations `(dx, du)`
+    x_bar = np.zeros(np.shape(x_track))
+    u_bar = np.copy(u_track)
+    x_bar[0] = np.copy(x_track[0])
     for k in range(N):
-        x_bar[k + 1] = quadrotor.dynamics_true(x_bar[k], u_bar[k])
+        x_bar[k + 1] = quadrotor.dynamics_true_no_disturbances(x_bar[k], u_bar[k], dt=dt[k])
     dx = np.zeros((N + 1, n))
     du = np.zeros((N, m))
 
     # iLQR loop
     converged = False
-    for _ in range(max_iters):
+    for _i in range(max_iters):
 
         # Backwards Pass
-        qN = QN@(x_bar[N]-x_goal)
+        qN = QN@(x_bar[N]-x_track[-1])
         V = np.copy(QN)
         vbar = np.copy(qN)
-        for k in range(N-1,-1,-1):
 
+        for k in range(N-1,-1,-1):
             # Get Ak and Bk
-            Ak,Bk = quadrotor.linearize(x_bar, u_bar)
+            Ak,Bk = quadrotor.linearize(x_bar[k], u_bar[k], dt[k])
 
             # Define cost functions
-            qk = Q@(x_bar[k]-x_goal)
+            qk = Q@(x_bar[k]-x_track[k])
             rk = R@u_bar[k]
             
             # Define S
+            reg = 1e-9
             Su = rk + vbar.T@Bk
-            Suu = R + Bk.T@V@Bk
+            Suu = R + Bk.T@V@Bk + reg * np.eye(m)
             Sux = Bk.T@V@Ak
 
             # Define Y, y
-            Y[k] = -np.linalg.inv(Suu)@Sux
-            y[k] = -np.linalg.inv(Suu)@Su
+            Y[k] = -np.linalg.pinv(Suu)@Sux
+            y[k] = -np.linalg.pinv(Suu)@Su
 
             # Update V, vbar
             V = Q + Ak.T@V@Ak - Y[k].T@Suu@Y[k]
@@ -76,14 +73,23 @@ def ilqr(x0, x_goal, N, dt, Q, R, QN, eps=1e-3, max_iters=1000):
         # Forwards Pass
         u = np.zeros((N, m))
         x = np.zeros((N + 1, n))
-        x[0] = x0
+        x[0] = np.copy(x_track[0])
         for k in range(N):
             dx[k] = x[k] - x_bar[k]
             du[k] = y[k] + Y[k]@dx[k]
             u[k] = u_bar[k] + du[k]
-            x[k + 1] = quadrotor.dynamics_true(x[k], u[k])
+            dt[k] = np.linalg.norm(x_bar[k+1,[0,2]]-x_bar[k,[0,2]])/np.linalg.norm(x_bar[k,[1,3]])
+            x[k + 1] = quadrotor.dynamics_true_no_disturbances(x[k], u[k], dt=dt[k])
+            """print(x[k + 1])
+            print(x_bar[k + 1])
+            print("_______________________")
+            if k == 5:
+                break
+                converged = True"""
         x_bar = np.copy(x)
         u_bar = np.copy(u)
+
+        print("iLQR iteration: " + str(_i) + "\ndu: " + str(np.max(np.abs(du))) + "\n")
 
         if np.max(np.abs(du)) < eps:
             converged = True

@@ -350,7 +350,7 @@ class Map:
         """
         return x < 0 or y < 0 or x > self.occupancy_grid.shape[1] * self.metres_per_pixel or y > self.occupancy_grid.shape[0] * self.metres_per_pixel
     
-    def path_box(self,path,percent_overlap=55):
+    def path_box(self,path,percent_overlap=60):
         """
         Return boxes bounding the operational space of the trajectory
         TODO: Generalize method to 3D
@@ -514,8 +514,6 @@ class Map:
             boxes = -1*np.ones(4)
             for _i in range(path_num):
                 for _j in range(np.shape(boxes_temp)[0]):
-                    path_x = path.path_metres[_i,0]
-                    path_y = path.path_metres[_i,1]
                     expanded_box = boxes_temp[_j,:] + np.array([self.metres_per_pixel,self.metres_per_pixel,-self.metres_per_pixel,-self.metres_per_pixel])
                     if (_i != 0) and (point_in_box(path.path_metres[_i],expanded_box)):
                         percent1,percent2 = overlap_percent(boxes_temp[_j,:],boxes[-1,:])
