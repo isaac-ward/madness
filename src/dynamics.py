@@ -120,10 +120,11 @@ class Quadrotor2D:
 
         return x_next
     
-    def dynamics_true(self, xk, uk):
+    def dynamics_true(self, xk, uk, dt=None):
         return self.dynamics_true_no_disturbances(
             xk, 
             uk, 
+            dt,
             first_order_disturbances=[
                 np.random.normal(0, globals.DISTURBANCE_VELOCITY_VARIANCE_WIND**0.5), 
                 np.random.normal(0, globals.DISTURBANCE_VELOCITY_VARIANCE_WIND**0.5),
@@ -303,13 +304,13 @@ class Quadrotor2D:
 
         # Problem
         problem = cp.Problem(cp.Minimize(objective),constraints)
-        
-        if problem.status == "infeasible":
-            raise Exception("Current problem infeasible")
 
         # Solve
         problem.solve()
         s_val = s.value
+
+        if problem.status == "infeasible":
+            raise Exception("Current problem infeasible")
 
         # Calc trajectories using differential flatness
         n = 1000 # Trajectory resolution (needs to be high or OL will drift)
