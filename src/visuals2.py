@@ -235,7 +235,7 @@ def plot_experiment(
             linestyle='-',
             # Draw the highest scores on top
             zorder=20+int(score*0.01),
-            alpha=0.25,
+            alpha=0.1,
         )
 
     # Plot the best rollout in a different color

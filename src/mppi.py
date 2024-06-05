@@ -185,7 +185,7 @@ class MPPI:
                 - 80 * angle_deviation \
                 - 80 * angular_velocity_deviation \
                 - 0 * control_effort \
-                - 700 * adjacent_control_differences \
+                - 500 * adjacent_control_differences \
                 - 10000 * (collision_closer_along_path if hit_boundary else 0)
 
         return score
