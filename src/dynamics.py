@@ -92,11 +92,13 @@ class Quadrotor2D:
         sigv = sigu
         sigw = 1.4 # (m/s)
 
-    def dynamics_true_no_disturbances(self, xk, uk, first_order_disturbances=[0, 0, 0], uk_disturbance=[0, 0]):
+    def dynamics_true_no_disturbances(self, xk, uk, dt=None, first_order_disturbances=[0, 0, 0], uk_disturbance=[0, 0]):
         """
         Compute the true next state with nonlinear dynamics
         TODO: Add wind and drag into model. Will likely also entail rederiving differential flatness terms
         """
+        if dt == None:
+            dt = self.dt
         # Breakup state x(k) and control vector u(k)
         x = xk[0]
         vx = xk[1]
@@ -109,12 +111,12 @@ class Quadrotor2D:
 
         # Compute x(k+1)
         x_next = np.zeros(6)
-        x_next[0] = x + self.dt*vx
-        x_next[1] = vx + self.dt*((-(T1+T2)*np.sin(phi))/self.m) + first_order_disturbances[0] # - self.CD_v*vx + self.wx 
-        x_next[2] = y + self.dt*vy
-        x_next[3] = vy + self.dt*(((T1+T2)*np.cos(phi))/self.m - self.g) + first_order_disturbances[1] # - self.CD_v*vy + self.wy
-        x_next[4] = phi + self.dt*om
-        x_next[5] = om + self.dt*((T2-T1)*self.l)/self.Iyy + first_order_disturbances[2] # - self.CD_phi*om
+        x_next[0] = x + dt*vx
+        x_next[1] = vx + dt*((-(T1+T2)*np.sin(phi))/self.m) + first_order_disturbances[0] # - self.CD_v*vx + self.wx 
+        x_next[2] = y + dt*vy
+        x_next[3] = vy + dt*(((T1+T2)*np.cos(phi))/self.m - self.g) + first_order_disturbances[1] # - self.CD_v*vy + self.wy
+        x_next[4] = phi + dt*om
+        x_next[5] = om + dt*((T2-T1)*self.l)/self.Iyy + first_order_disturbances[2] # - self.CD_phi*om
 
         return x_next
     
@@ -131,12 +133,14 @@ class Quadrotor2D:
             uk_disturbance=np.random.normal(0, globals.DISTURBANCE_VARIANCE_ROTORS**0.5, size=self.m_dim)
         )
     
-    def linearize(self, x_bar, u_bar):
+    def linearize(self, x_bar, u_bar, dt=None):
         """
         Linearize dynamics about nominal state and control vectors
         Sourced from AA274A
         TODO Optional rewrite with jax for more efficiency
         """
+        if dt == None:
+            dt = self.dt
         # Breakup state x(k) and control vector u(k)
         x = x_bar[0]
         vx = x_bar[1]
@@ -148,19 +152,19 @@ class Quadrotor2D:
         T2 = u_bar[1]
         
         # Compute A and B
-        A = np.array([[1., self.dt, 0., 0., 0., 0.],
-                      [0., 1.-self.dt*self.CD_v/self.m, 0., 0., -self.dt*(T1+T2)*np.cos(phi)/self.m, 0.],
-                      [0., 0., 1., self.dt, 0., 0.],
-                      [0., 0., 0., 1.-self.dt*self.CD_v/self.m, -self.dt*(T1+T2)*np.sin(phi)/self.m, 0.],
-                      [0., 0., 0., 0., 1., self.dt],
-                      [0., 0., 0., 0., 0., 1.-self.dt*self.CD_phi/self.Iyy]])
+        A = np.array([[1., dt, 0., 0., 0., 0.],
+                      [0., 1., 0., 0., -dt*(T1+T2)*np.cos(phi)/self.m, 0.],
+                      [0., 0., 1., dt, 0., 0.],
+                      [0., 0., 0., 1., -dt*(T1+T2)*np.sin(phi)/self.m, 0.],
+                      [0., 0., 0., 0., 1., dt],
+                      [0., 0., 0., 0., 0., 1.]])
         
         B = np.array([[0., 0.],
-                      [-self.dt*np.sin(phi)/self.m, -self.dt*np.sin(phi)/self.m],
+                      [-dt*np.sin(phi)/self.m, -dt*np.sin(phi)/self.m],
                       [0., 0.],
-                      [self.dt*np.cos(phi)/self.m, self.dt*np.cos(phi)/self.m],
+                      [dt*np.cos(phi)/self.m, dt*np.cos(phi)/self.m],
                       [0., 0.],
-                      [-self.dt*self.l/self.Iyy, self.dt*self.l/self.Iyy]])
+                      [-dt*self.l/self.Iyy, dt*self.l/self.Iyy]])
         
         return A,B
     
@@ -244,7 +248,7 @@ class Quadrotor2D:
         Fit a smooth trajectory to the A* path using 5th order bezier functions 
         constrained by bounding boxes
         """
-        # Beta functions
+        # Beta functions defining the bezier curves as well as the derivatives (verified with matlab)
         def beta(t):
             return np.array([(t - 1)**8, -8*t*(t - 1)**7, 28*t**2*(t - 1)**6, -56*t**3*(t - 1)**5, 70*t**4*(t - 1)**4, -56*t**5*(t - 1)**3, 28*t**6*(t - 1)**2, -t**7*(8*t - 8), t**8])
         def beta_1d(t):
@@ -257,8 +261,8 @@ class Quadrotor2D:
             return np.array([1680*(t - 1)**4, -6720*(2*t - 1)*(t - 1)**3, 3360*(t - 1)**2*(14*t**2 - 14*t + 3), - 94080*t**4 + 235200*t**3 - 201600*t**2 + 67200*t - 6720, 117600*t**4 - 235200*t**3 + 151200*t**2 - 33600*t + 1680, -6720*t*(14*t**3 - 21*t**2 + 9*t - 1), 3360*t**2*(14*t**2 - 14*t + 3), -6720*t**3*(2*t - 1), 1680*t**4])
         
         # Constants
-        L = np.shape(boxes)[0]
-        N = 8
+        L = np.shape(boxes)[0] # Number of boxes
+        N = 8 # Bezier polynomial order
 
         # Solve convex fitting problem
         # Declare Convex Variables
@@ -279,9 +283,9 @@ class Quadrotor2D:
         # Define Constraints
         # Constrain states at start and end
         constraints = [beta(0)@s[0:N+1] == astar_path[0], # start position
-                       beta_1d(0)@s[0:N+1] == np.zeros(2), # start velocity
-                       beta(1)@s[(L-1)*(N+1):(L-1)*(N+1)+N+1] == astar_path[-1], # end position
-                       beta_1d(1)@s[(L-1)*(N+1):(L-1)*(N+1)+N+1] == np.zeros(2)] # end velocity
+                       #beta_1d(0)@s[0:N+1] == np.zeros(2), # start velocity
+                       beta(1)@s[(L-1)*(N+1):(L-1)*(N+1)+N+1] == astar_path[-1]]#, # end position
+                       #beta_1d(1)@s[(L-1)*(N+1):(L-1)*(N+1)+N+1] == np.zeros(2)] # end velocity
         for i in range(L):
             for k in range(N+1):
                 # Constrain path to be within bounding boxes
@@ -307,12 +311,16 @@ class Quadrotor2D:
         problem.solve()
         s_val = s.value
 
-        # Calc trajectories
-        n = 10
+        # Calc trajectories using differential flatness
+        n = 1000 # Trajectory resolution (needs to be high or OL will drift)
         t = np.linspace(0,1,n)
         state = np.zeros(self.n_dim)
         control = np.zeros(self.m_dim)
         for i in range(L):
+            """diff = max(np.max(s_val[i*(N+1):i*(N+1)+N+1][:,0])-np.min(s_val[i*(N+1):i*(N+1)+N+1][:,0]),np.max(s_val[i*(N+1):i*(N+1)+N+1][:,1])-np.min(s_val[i*(N+1):i*(N+1)+N+1][:,1]))
+            if diff >= 1.5:
+                diff = 1.5
+            t = np.linspace(0,1,(int)(np.round(n**diff,0)))"""
             for _t in t:
                 x = (beta(_t)@s_val[i*(N+1):i*(N+1)+N+1])[0]
                 y = (beta(_t)@s_val[i*(N+1):i*(N+1)+N+1])[1]
