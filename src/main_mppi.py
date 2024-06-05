@@ -7,6 +7,7 @@ from map import Map
 import path
 import control 
 import dynamics
+import visuals as visuals_legacy
 import visuals2 as visuals
 import utils 
 import globals
@@ -18,7 +19,7 @@ if __name__ == "__main__":
     log_folder = utils.make_log_folder(name="run")
 
     # Get the map info for the map that we'll be using
-    map_config = globals.MAP_CONFIGS["downup-o"]
+    map_config = globals.MAP_CONFIGS["grapevine"]
     metres_per_pixel    = map_config["metres_per_pixel"]
     filename            = map_config["filename"]
     start_coord_metres  = map_config["start_coord_metres"]
@@ -77,6 +78,21 @@ if __name__ == "__main__":
             fudge_factor=fudge_factor,
         )
         nominal_xy = nominal_xy.downsample_to_average_adjacent_distance_metres(nominal_downsample_factor)
+
+        visuals_legacy.vis_occupancy_grid(
+            filepath=f"{log_folder}/occupancy_grid.png",
+            occupancy_grid=map.occupancy_grid,
+            metres_per_pixel=map.metres_per_pixel,
+            # start and finish points (in metres)
+            points_metres=[
+                start_coord_metres,
+                finish_coord_metres
+            ],
+            path_metres=nominal_xy.path_metres,
+            #path2_metres=fitted_nominal_xy.path_metres,
+            plot_coordinates=True,
+            #path_boxes=boxes
+        )
 
         # Smooth it with respect to the boundaries by first getting 
         # obstacle/freespace boxes

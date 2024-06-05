@@ -92,7 +92,7 @@ class Quadrotor2D:
         sigv = sigu
         sigw = 1.4 # (m/s)
 
-    def dynamics_true_no_disturbances(self, xk, uk):
+    def dynamics_true_no_disturbances(self, xk, uk, first_order_disturbances=[0, 0, 0], uk_disturbance=[0, 0]):
         """
         Compute the true next state with nonlinear dynamics
         TODO: Add wind and drag into model. Will likely also entail rederiving differential flatness terms
@@ -104,19 +104,32 @@ class Quadrotor2D:
         vy = xk[3]
         phi = xk[4]
         om = xk[5]
-        T1 = uk[0]
-        T2 = uk[1]
+        T1 = uk[0] + uk_disturbance[0]
+        T2 = uk[1] + uk_disturbance[1]
 
         # Compute x(k+1)
         x_next = np.zeros(6)
         x_next[0] = x + self.dt*vx
-        x_next[1] = vx + self.dt*((-(T1+T2)*np.sin(phi))/self.m) # - self.CD_v*vx + self.wx
+        x_next[1] = vx + self.dt*((-(T1+T2)*np.sin(phi))/self.m) + first_order_disturbances[0] # - self.CD_v*vx + self.wx 
         x_next[2] = y + self.dt*vy
-        x_next[3] = vy + self.dt*(((T1+T2)*np.cos(phi))/self.m - self.g) # - self.CD_v*vy + self.wy
+        x_next[3] = vy + self.dt*(((T1+T2)*np.cos(phi))/self.m - self.g) + first_order_disturbances[1] # - self.CD_v*vy + self.wy
         x_next[4] = phi + self.dt*om
-        x_next[5] = om + self.dt*((T2-T1)*self.l)/self.Iyy # - self.CD_phi*om
+        x_next[5] = om + self.dt*((T2-T1)*self.l)/self.Iyy + first_order_disturbances[2] # - self.CD_phi*om
 
         return x_next
+    
+    def dynamics_true(self, xk, uk):
+        return self.dynamics_true_no_disturbances(
+            xk, 
+            uk, 
+            first_order_disturbances=[
+                np.random.normal(0, globals.DISTURBANCE_VELOCITY_VARIANCE_WIND**0.5), 
+                np.random.normal(0, globals.DISTURBANCE_VELOCITY_VARIANCE_WIND**0.5),
+                np.random.normal(0, globals.DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND**0.5)
+            ], 
+            # np random normal likes standard deviations
+            uk_disturbance=np.random.normal(0, globals.DISTURBANCE_VARIANCE_ROTORS**0.5, size=self.m_dim)
+        )
     
     def linearize(self, x_bar, u_bar):
         """
@@ -338,7 +351,7 @@ class Quadrotor2D:
         """
         Using differential flatness, derive a nominal drone trajectory
         """
-
+        pass
     
     def differential_flatness_trajectory(self,x,y,v_desired=0.15,spline_alpha=0.05):
         """

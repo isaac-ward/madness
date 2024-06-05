@@ -1,3 +1,5 @@
+import numpy as np
+
 METRES_PER_PIXEL  = 0.01
 
 DRONE_HALF_LENGTH = 0.2 # m
@@ -9,7 +11,9 @@ REACHED_SAMPLE_REGION_THRESHOLD = 0.5 # m
 REACHED_ENTRY_POINT_THRESHOLD   = 0.25 # m
 
 # For testing disturbances
-DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0 #0.33
+DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.33
+DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.5 # m/s
+DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.5 # rad/s
 
 # TODO should define goal states (i.e. set velocities and angles)
 MAP_CONFIGS = {
@@ -36,5 +40,14 @@ MAP_CONFIGS = {
         "metres_per_pixel": METRES_PER_PIXEL,
         "start_coord_metres": (1.5, 8),
         "finish_coord_metres": (27.5, 8),
+    },
+    "grapevine": {
+        "filename": "grapevine.png",
+        "metres_per_pixel": METRES_PER_PIXEL,
+        # If you have a map with pixels, this is how you can do the start end points,
+        # note that x value is right from the left of the image, and the y value is 
+        # up from the bottom of the image
+        "start_coord_metres": 2 * np.array((300, 3000 - 300)) * METRES_PER_PIXEL,
+        "finish_coord_metres": 2 * np.array((1500, 3000 - 2100)) * METRES_PER_PIXEL
     },
 }
