@@ -195,11 +195,8 @@ class MPPI:
         Optimize the control sequence to minimize the cost of the trajectory
         """
 
+        # Having a handle to the most recent state is convienient
         x0 = prev_X[-1]
-
-        # TODO: implement some kind of adaptive improvement
-
-        # TODO: give previous states and controls 
 
         # Define a function for parallel execution of a sample
         Us = self.sample_all_action_sequences()
