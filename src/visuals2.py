@@ -80,7 +80,7 @@ def plot_experiment_video(
             simulation_dt,
             state_trajectory=state_trajectory,
             control_trajectory=control_trajectory,
-            scored_rollouts=scored_rollouts_per_step[sim_frame_index],
+            scored_rollouts=scored_rollouts_per_step[sim_frame_index] if len(scored_rollouts_per_step) > 0 else [],
             score_bounds=(min_score, max_score),
             progress=sim_frame_index / num_frames_simulation
         )
@@ -201,55 +201,56 @@ def plot_experiment(
     axs[0].set_yticklabels([])
     axs[0].grid(True, which='both', color='grey', linestyle='--', linewidth=0.5)
 
-    # We have the scored rollouts - these are all the samples that
-    # MPPI took, and the score that each one got. We want to plot every single
-    # one, the color of the line will be based on the score
-    colormap = mpl.cm.get_cmap('hsv')
-    # But I actually only want the last half (the green to blue bit),
-    # and in reverse
-    color_samples = 255
-    colormap = colormap(np.linspace(0.0, 0.33, color_samples+1))#[::-1]
-    for i, _ in tqdm(enumerate(scored_rollouts[0]), desc="Plotting rollouts", leave=False, disable=True):
-        Xs    = scored_rollouts[0][i]
-        score = scored_rollouts[1][i]
-        # Convert to pixels
-        pos_x = map.metres_to_pixels(Xs[:, 0])
-        pos_y = map.metres_to_pixels(Xs[:, 2])
-        # Normalize the score to be between 0 and 1
-        if score == -np.inf:
-            score = 0
-        elif score == np.inf:
-            score = 1
-        else:
-            score = (score - score_bounds[0]) / (score_bounds[1] - score_bounds[0])
+    if len(scored_rollouts) != 0:
+        # We have the scored rollouts - these are all the samples that
+        # MPPI took, and the score that each one got. We want to plot every single
+        # one, the color of the line will be based on the score
+        colormap = mpl.cm.get_cmap('hsv')
+        # But I actually only want the last half (the green to blue bit),
+        # and in reverse
+        color_samples = 255
+        colormap = colormap(np.linspace(0.0, 0.33, color_samples+1))#[::-1]
+        for i, _ in tqdm(enumerate(scored_rollouts[0]), desc="Plotting rollouts", leave=False, disable=True):
+            Xs    = scored_rollouts[0][i]
+            score = scored_rollouts[1][i]
+            # Convert to pixels
+            pos_x = map.metres_to_pixels(Xs[:, 0])
+            pos_y = map.metres_to_pixels(Xs[:, 2])
+            # Normalize the score to be between 0 and 1
+            if score == -np.inf:
+                score = 0
+            elif score == np.inf:
+                score = 1
+            else:
+                score = (score - score_bounds[0]) / (score_bounds[1] - score_bounds[0])
 
-        #print(score)
-            
-        color = colormap[int(score * color_samples)]
-        # Plot the line
+            #print(score)
+                
+            color = colormap[int(score * color_samples)]
+            # Plot the line
+            axs[0].plot(
+                pos_x,
+                pos_y,
+                color=color,
+                lw=1,
+                linestyle='-',
+                # Draw the highest scores on top
+                zorder=20+int(score*0.01),
+                alpha=0.1,
+            )
+
+        # Plot the best rollout in a different color
+        best_rollout_index = np.argmax(scored_rollouts[1])
+        best_rollout = scored_rollouts[0][best_rollout_index]
+        best_rollout_pos_x = map.metres_to_pixels(best_rollout[:, 0])
+        best_rollout_pos_y = map.metres_to_pixels(best_rollout[:, 2])
         axs[0].plot(
-            pos_x,
-            pos_y,
-            color=color,
-            lw=1,
-            linestyle='-',
-            # Draw the highest scores on top
-            zorder=20+int(score*0.01),
-            alpha=0.1,
+            best_rollout_pos_x,
+            best_rollout_pos_y,
+            color='cyan',
+            lw=2,
+            linestyle='-'
         )
-
-    # Plot the best rollout in a different color
-    best_rollout_index = np.argmax(scored_rollouts[1])
-    best_rollout = scored_rollouts[0][best_rollout_index]
-    best_rollout_pos_x = map.metres_to_pixels(best_rollout[:, 0])
-    best_rollout_pos_y = map.metres_to_pixels(best_rollout[:, 2])
-    axs[0].plot(
-        best_rollout_pos_x,
-        best_rollout_pos_y,
-        color='cyan',
-        lw=2,
-        linestyle='-'
-    )
     
     # Now we want to plot the drone centric view on the other axis
     # We'll plot the drone as a rectangle, centered at the drone's position, rotated by the angle
