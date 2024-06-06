@@ -81,7 +81,6 @@ def plot_experiment_video(
     scored_rollouts_per_step=[],
     fps=25
 ):
-    return
 
     # We want to render at like 25 fps, but the simulation_dt
     # could be much smaller. What we'll do is iterate through the
@@ -184,9 +183,9 @@ def plot_experiment(
     # current time and the total time, and the dt
     def plot_text_y_down(ax, y, text):
         ax.text(0.01, y, text, color='black', fontsize=8, ha='left', va='bottom', font='monospace', transform=ax.transAxes)
-    plot_text_y_down(axs[1], 0.95, f"dt = {simulation_dt:.4f} s")
-    plot_text_y_down(axs[1], 0.91, f"t  = {progress * simulation_T:.4f} s")
-    plot_text_y_down(axs[1], 0.87, f"T  = {simulation_T:.4f} s")
+    # plot_text_y_down(axs[1], 0.95, f"dt = {simulation_dt:.4f} s")
+    # plot_text_y_down(axs[1], 0.91, f"t  = {progress * simulation_T:.4f} s")
+    # plot_text_y_down(axs[1], 0.87, f"T  = {simulation_T:.4f} s")
 
     # Plot the occupancy grid
     axs[0].imshow(map.occupancy_grid, cmap='binary', origin='lower')
