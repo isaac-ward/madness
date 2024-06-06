@@ -15,19 +15,19 @@ REACHED_SAMPLE_REGION_THRESHOLD = 0.5 # m
 REACHED_ENTRY_POINT_THRESHOLD   = 0.25 # m
 
 # For testing disturbances
-disturbance_config = "rotor"
+disturbance_config = "both-minor"
 if disturbance_config == "both-major":
     DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.33
     DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.0003 # m/s
     DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.0001 # rad/s
 if disturbance_config == "both-minor":
     DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 1
-    DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.0003 # m/s
-    DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.0001 # rad/s
+    DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.00005 # m/s
+    DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.00005 # rad/s
 elif disturbance_config == "wind":
     DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.
-    DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.0003 # m/s
-    DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.0001 # rad/s
+    DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.00005 # m/s
+    DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.00005 # rad/s
 elif disturbance_config == "rotor":
     DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 1
     DISTURBANCE_VELOCITY_VARIANCE_WIND = 0. # m/s
@@ -74,7 +74,7 @@ MAP_CONFIGS = {
         "metres_per_pixel": METRES_PER_PIXEL,
         "start_coord_metres": (1.5, 8),
         "finish_coord_metres": (27.5, 8),
-        "fudge_factor": 1.6,
+        "fudge_factor": 2.2,
     },
     "grapevine": {
         "filename": "grapevine2x.png",

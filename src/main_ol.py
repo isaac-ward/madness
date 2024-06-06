@@ -78,7 +78,7 @@ if __name__ == "__main__":
         path_there = path_there.downsample_every_n(5)
 
         # Need bounding boxes that encapsulate traversable space
-        boxes = map1.path_box(path_there,percent_overlap=60)
+        boxes = map1.path_box(path_there,percent_overlap=70)
 
         # Create a 2D Quadrotor
         quad = dynamics.Quadrotor2D(0.1)
