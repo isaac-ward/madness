@@ -1,6 +1,6 @@
 # Disturbance-Resilient Optimal Control of Quadrotors for Cave Exploration and Sample Retrieval Missions
 
-![Model Predictive Path Integral Control (MPPI) uses random sampling and a hand-defined cost function to determine the optimal cost-weighted control.](https://drive.google.com/file/d/152SvVOcochDk2pKb6LQl1mITAQtQixCl/view?usp=sharing)
+![Model Predictive Path Integral Control (MPPI) uses random sampling and a hand-defined cost function to determine the optimal cost-weighted control. This can result in interesting and dynamic behavior, depending on the properties of the cost function.](https://drive.google.com/file/d/152SvVOcochDk2pKb6LQl1mITAQtQixCl/view?usp=sharing)
 
 This work investigates and compares multiple optimal control methods in the context of a cave exploration and sample retrieval mission. We use state of the art path planning techniques in tandem with iterative linear quadratic regulator (iLQR) and model predictive path integral control (MPPI) control to demonstrate that a quadrotor can be optimally controlled 1) within a complex environment and 2) in the presence of motor and wind-based model disturbances. We provide quantitative results benchmarking the performance and resilience of these control schemes in the face of realistic environmental and actuator disturbances.
 
