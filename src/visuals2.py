@@ -10,8 +10,64 @@ from tqdm import tqdm
 import math
 from concurrent.futures import ProcessPoolExecutor
 
+from path import Path
 import utils
 import globals
+
+def state_trajectory_analysis(
+    filepath,
+    state_trajectory,
+):
+    
+    
+    # Create a path and report the total length along it
+    state_trajectory = np.array(state_trajectory)
+    xs = state_trajectory[:, 0]
+    ys = state_trajectory[:, 2]
+    path = Path(list(zip(xs, ys)))
+
+    print(f"Total path length: {path.length_along_path():.4f} m")
+
+    # Print this information to a file
+    folder = os.path.dirname(filepath)
+    with open(f"{folder}/state_trajectory_analysis.txt", "w") as f:
+        f.write(f"Total path length: {path.length_along_path():.4f} m\n")
+
+def control_trajectory_analysis(
+    filepath,
+    control_trajectory,
+):
+    # Creature a figure at 600dpi 
+    fig = plt.figure(figsize=(6, 4), dpi=600)
+
+    # Make all the test big and readable
+    plt.rcParams.update({'font.size': 12})
+
+    # The control effort is a list of (T1, T2)
+    T1, T2 = zip(*control_trajectory)
+    norm = np.linalg.norm(np.array(control_trajectory), axis=1)
+
+    # Report the average and stdev for the control effort norm
+    average_control_effort = np.mean(norm)
+    print(f"Average control effort norm: {average_control_effort:.4f}")
+    stdev_control_effort = np.std(norm)
+    print(f"Standard deviation of control effort norm: {stdev_control_effort:.4f}")
+    # Look at the difference between subsequent control actions
+    differences = np.diff(control_trajectory, axis=0)
+    average_difference = np.mean(np.linalg.norm(differences, axis=1))
+    print(f"Average difference between subsequent control actions: {average_difference:.4f}")
+
+    # As a line plot we want 
+
+
+
+    # Print this information to a file as well
+    folder = os.path.dirname(filepath)
+    with open(f"{folder}/control_trajectory_analysis.txt", "w") as f:
+        f.write(f"Average control effort norm: {average_control_effort:.4f}\n")
+        f.write(f"Standard deviation of control effort norm: {stdev_control_effort:.4f}\n")
+        f.write(f"Average difference between subsequent control actions: {average_difference:.4f}\n")
+
 
 def plot_experiment_video(
     filepath,
@@ -19,7 +75,7 @@ def plot_experiment_video(
     start_point,
     finish_point,
     paths,
-    simulation_dt,
+    simulation_dts,
     state_trajectory=[],
     control_trajectory=[],
     scored_rollouts_per_step=[],
@@ -32,7 +88,7 @@ def plot_experiment_video(
 
     # So how many frames are there to render?
     num_frames_simulation = len(state_trajectory)
-    T = num_frames_simulation * simulation_dt
+    T = np.sum(simulation_dts)
     num_frames_to_render = int(T * fps)
 
     # What were the highest and lowest non infinity scores encountered 
@@ -77,7 +133,7 @@ def plot_experiment_video(
             start_point,
             finish_point,
             paths,
-            simulation_dt,
+            simulation_dts[sim_frame_index],
             state_trajectory=state_trajectory,
             control_trajectory=control_trajectory,
             scored_rollouts=scored_rollouts_per_step[sim_frame_index] if len(scored_rollouts_per_step) > 0 else [],
