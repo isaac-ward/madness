@@ -32,6 +32,7 @@ if __name__ == "__main__":
     # Compute a unique hash for the current configuration
     config_hash = utils.compute_hash(
         "ilqr",
+        fudge_factor,
         filename, 
         metres_per_pixel, 
         start_coord_metres, 
