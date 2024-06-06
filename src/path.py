@@ -47,6 +47,17 @@ class Path:
             return self
         # Downsample
         return self.downsample_every_n(factor)
+    
+    def remove_one_of_two_most_adjacent_points(self):
+        """
+        Removes one of the two most adjacent points in the path
+        """
+        # Calculate the distances between adjacent points
+        distances = np.linalg.norm(np.diff(self.path_metres, axis=0), axis=1)
+        # Find the index of the smallest distance
+        min_distance_index = np.argmin(distances)
+        # Remove one of the two points
+        return Path(np.delete(self.path_metres, min_distance_index, axis=0)), min_distance_index
 
     def upsample(self, num_desired_points):
         """

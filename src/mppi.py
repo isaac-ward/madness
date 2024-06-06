@@ -76,6 +76,9 @@ class MPPI:
 
         # Generate Sobol sequences
         for i in range(self.H):
+            # I want some randomness or an offset in the sequence between timesteps
+            # so that we don't get stuck in a local minimum
+            # TODO
             sobol_samples = i4_sobol_generate(self.control_dimensions, self.K)
             for j in range(self.control_dimensions):
                 sobol_samples[:, j] = sobol_samples[:, j] * (bounds[1, j] - bounds[0, j]) + bounds[0, j]
@@ -197,6 +200,9 @@ class MPPI:
 
         # Having a handle to the most recent state is convienient
         x0 = prev_X[-1]
+
+        # If we're doing adaptive improvement, then we'll 
+        # 
 
         # Define a function for parallel execution of a sample
         Us = self.sample_all_action_sequences()

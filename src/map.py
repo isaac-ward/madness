@@ -6,6 +6,8 @@ import scipy.ndimage
 import scipy.spatial    
 import networkx as nx
 from tqdm import tqdm
+import visuals
+import copy
 
 import globals
 from path import Path
@@ -350,11 +352,263 @@ class Map:
         """
         return x < 0 or y < 0 or x > self.occupancy_grid.shape[1] * self.metres_per_pixel or y > self.occupancy_grid.shape[0] * self.metres_per_pixel
     
-    def path_box(self,path,percent_overlap=60):
+
+    # ----------------------
+    # From here on out, we're doing box stuff
+
+    # Some helper functions here
+    def make_box_at_point(self, center_point, half_extent):
+        # The extent is the desired distance from the center point to the edge
+        return np.array([
+            center_point[1] + half_extent, # up
+            center_point[0] + half_extent, # right
+            center_point[1] - half_extent, # down
+            center_point[0] - half_extent, # left
+        ])
+        
+    def box_area(self, box):
+        return (box[0] - box[2]) * (box[1] - box[3])    
+    
+    def maximum_legal_box(self, center_point):
+        # We'll start with a box that is the maximum size that is legal
+        # We'll expand it until it hits a boundary
+        max_iterations = 10
+        iterations = 0
+        step_increase = 0.1
+        half_extent = step_increase
+        while True and iterations < max_iterations:
+            box = self.make_box_at_point(center_point, half_extent)
+            if not self.is_box_legal(box):
+                break
+            half_extent += step_increase
+            iterations += 1
+        return self.make_box_at_point(center_point, half_extent - step_increase)                
+    
+    def is_box_legal(self, box):
+        width = box[1] - box[3]
+        height = box[0] - box[2]
+        
+        if width <= 0 or height <= 0:
+            return False
+
+        # A box is legal if all around the edge of the box, the point is not in an obstacle
+        points_per_metre = 10
+        for x in np.linspace(box[3], box[1], int(width * points_per_metre)):
+            if self.does_point_hit_boundary(x, box[0]) or self.does_point_hit_boundary(x, box[2]):
+                return False
+        for y in np.linspace(box[2], box[0], int(height * points_per_metre)):
+            if self.does_point_hit_boundary(box[1], y) or self.does_point_hit_boundary(box[3], y):
+                return False
+        return True     
+    
+    def do_boxes_intersect(self, box_a, box_b):
+        # Check if the boxes intersect
+        # Recall that structure is (up, right, down, left)
+        up_a, right_a, down_a, left_a = box_a
+        up_b, right_b, down_b, left_b = box_b
+
+        # Check if there is no overlap
+        if left_a > right_b or left_b > right_a or up_a < down_b or up_b < down_a:
+            return False
+
+        # Otherwise, there is an overlap
+        return True
+
+    def box_intersection(self, box_a, box_b):
+        # Assume they intersect (up, right, down, left)
+        return np.array([
+            min(box_a[0], box_b[0]),
+            min(box_a[1], box_b[1]),
+            max(box_a[2], box_b[2]),
+            max(box_a[3], box_b[3])
+        ])
+
+    def box_union(self, box_a, box_b):
+        # Get the union of the two boxes - it's always possible
+        # to find a box that contains both
+        return np.array([
+            max(box_a[0], box_b[0]),
+            max(box_a[1], box_b[1]),
+            min(box_a[2], box_b[2]),
+            min(box_a[3], box_b[3])
+        ])
+    
+    def max_overlap_between_boxes(self, box_a, box_b):
+        # Compute the overlap of one box into the other and return the maximum
+        # as a percentage
+        # Get the overlap borders
+        min_up = min(box_a[0], box_b[0])
+        max_down = max(box_a[2], box_b[2])
+        min_right = min(box_a[1], box_b[1])
+        max_left = max(box_a[3], box_b[3])
+
+        # Check if no overlap
+        if not self.do_boxes_intersect(box_a, box_b):
+            return 0
+        
+        # Get rectangle areas (the overlap should be the intersection of the two, 
+        # and must be a rectangle)
+        overlap_box = self.box_intersection(box_a, box_b)
+
+        # Calc percent overlaps
+        box_a_percent = self.box_area(overlap_box) / self.box_area(box_a) * 100
+        box_b_percent = self.box_area(overlap_box) / self.box_area(box_b) * 100
+        return max(box_a_percent, box_b_percent)
+
+    def min_overlap_among_adjacent_boxes(self, boxes):
+        #print("Checking box overlaps")
+        # We need to check the overlap between all adjacent boxes
+        # and return the minimum overlap
+        overlaps = []
+        for i in tqdm(range(len(boxes) - 1), desc="Checking box overlaps", leave=False, disable=True):
+            overlaps.append(self.max_overlap_between_boxes(boxes[i], boxes[i+1]))
+        return min(overlaps)
+    
+    def union_boxes_where_possible(self, boxes):
+        # Now we need to look at each pair of boxes - if they intersect, and their
+        # union is legal, then we replace them with the union
+        removed_boxes = np.inf # We want to actually enter the loop
+        max_iterations = 64 # arbitrary - should just continue until no improvement
+        iteration = 0
+        pbar = tqdm(total=max_iterations, desc="Unioning boxes")
+        remaining_boxes = []
+        while removed_boxes > 0 and iteration < max_iterations:
+
+            # Track what we've removed and the remaining boxes
+            removed_boxes = 0
+            remaining_boxes = []
+
+            # We'll check every pair of boxes
+            for i in range(0, len(boxes) - 1, 2):
+                # Get their union
+                union = self.box_union(boxes[i], boxes[i+1])
+                
+                # If these boxes intersect, then we'll replace them with their union
+                if self.do_boxes_intersect(boxes[i], boxes[i+1]) and self.is_box_legal(union):
+                    remaining_boxes.append(union)
+                    removed_boxes += 1
+                else:
+                    # Otherwise we'll keep them as they are
+                    remaining_boxes.append(boxes[i])
+                    remaining_boxes.append(boxes[i+1])
+
+            # Always keep the last box if there is an odd number
+            if len(boxes) % 2 == 1:
+                remaining_boxes.append(boxes[-1])
+
+            # Report progress
+            pbar.update(1)
+            iteration += 1
+            pbar.set_postfix({
+                "boxes_remaining": len(remaining_boxes),
+                "boxes_removed_this_iteration": removed_boxes
+            })   
+
+            # If we remove no boxes, we're done
+            if removed_boxes == 0:
+                break
+            else:
+                # Otherwise we'll set up for another iteration
+                boxes = remaining_boxes
+        return remaining_boxes
+
+    def remove_middle_boxes(self, boxes):
+        # Now we look at triplets of adjacent boxes, which
+        # we'll label A,B,C. If A and C intersect, then
+        # we can remove B 
+        i = 0 
+        pbar = tqdm(total=len(boxes), desc="Removing middle boxes")
+        while i < len(boxes) - 2:
+            if self.do_boxes_intersect(boxes[i], boxes[i+2]):
+                boxes.pop(i+1)
+                # If i pop the list is shorter
+                # so I don't increment i
+            else:
+                i += 1
+            pbar.set_postfix({
+                "boxes_remaining": len(boxes)
+            })
+            pbar.update(1)
+        return boxes
+
+    def path_box(self, path, percent_overlap=60):
         """
         Return boxes bounding the operational space of the trajectory
         TODO: Generalize method to 3D
         """
+
+        # TODO whole thing should be replaced with convex solver
+
+        # percent overlap is the threshold - any higher and we'll remove a box
+        # a box looks like this:
+        # (positive y, positive x, negative y, negative x)
+        # aka (up, right, down, left)
+        # boxes needs to be a list of those  
+
+        # We'll basically just refit the boxes to the path with decreasing path density
+        # We start with a very high density, and then decrease it until we have a series
+        # of boxes with a percent overlap that is just under the threshold, then we'll
+        # return the last solution
+
+        # We assume that the path we feed in is very high density
+        # TODO should check this
+        
+        # Find all the boxes along the path
+        boxes = []
+        pbar = tqdm(total=len(path.path_metres), desc="Creating maximum legal boxes")
+        for point in path.path_metres:
+            boxes.append(self.maximum_legal_box(point))
+            pbar.update(1)
+
+        # Track the last boxes
+        last_boxes = copy.deepcopy(boxes)
+        num_points_to_remove_per_iteration = 1
+        max_iterations = 256
+        actual_percent_overlap = np.inf
+        iteration = 0
+        pbar = tqdm(total=max_iterations, desc="Finding least overlapping boxes")
+        while actual_percent_overlap > percent_overlap and iteration < max_iterations:
+
+            # Track the current percent overlap and adjacent distance and number of boxes
+            pbar.set_postfix({
+                "percent_overlap": actual_percent_overlap,
+                "num_boxes": len(boxes)
+            })
+
+            # Get a smaller path until we have a percent overlap that is just under the threshold
+            last_boxes = copy.deepcopy(boxes)
+            for _ in range(num_points_to_remove_per_iteration):
+                path, index = path.remove_one_of_two_most_adjacent_points()
+                # Remove the box at the same index
+                boxes.pop(index)
+
+            # Recompute the actual percent overlap
+            actual_percent_overlap = self.min_overlap_among_adjacent_boxes(boxes)
+
+            # Increment the iteration
+            iteration += 1
+            pbar.update(1)
+
+        # If we break out of the loop, we've found the least overlapping boxes at 
+        # the last iteration
+        boxes = last_boxes
+        #print(f"Found least overlapping {len(boxes)} boxes in {iteration} iterations")
+        pbar.close()
+
+        for _ in range(1):
+            boxes = self.union_boxes_where_possible(boxes)
+            boxes = self.remove_middle_boxes(boxes)
+
+        # Do a quick check to check that:
+        # - up is greater than down, right is greater than left
+        # - all boxes are legal
+        for box in boxes:
+            assert self.is_box_legal(box), f"Box {box} is not legal (hits boundary)"
+
+        boxes = np.array(boxes)
+        print(f"Optimal boxes found, shaped {boxes.shape}")
+
+        return np.array(boxes)    
 
         # Create array of box corners starting at path
         expansion_direct = 4
