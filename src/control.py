@@ -12,7 +12,7 @@ def optimal_control(path):
 
     pass
 
-def ilqr(x_track, u_track, dt, N, quadrotor: dynamics.Quadrotor2D, Q, R, QN, eps=1e-3, max_iters=1000):
+def ilqr(x_track, u_track, N, quadrotor: dynamics.Quadrotor2D, Q, R, QN, eps=1e-3, max_iters=1000):
     """
     Compute controls to track trajectory with iLQR
     Based on code from AA203 HW2
@@ -34,7 +34,9 @@ def ilqr(x_track, u_track, dt, N, quadrotor: dynamics.Quadrotor2D, Q, R, QN, eps
     x_bar = np.zeros(np.shape(x_track))
     u_bar = np.copy(u_track)
     x_bar[0] = np.copy(x_track[0])
+    dt = np.zeros(u_track.shape[0])
     for k in range(N):
+        dt[k] = np.linalg.norm(x_track[k+1,[0,2]]-x_track[k,[0,2]])/np.linalg.norm(x_track[k,[1,3]])
         x_bar[k + 1] = quadrotor.dynamics_true_no_disturbances(x_bar[k], u_bar[k], dt=dt[k])
     dx = np.zeros((N + 1, n))
     du = np.zeros((N, m))
@@ -80,12 +82,6 @@ def ilqr(x_track, u_track, dt, N, quadrotor: dynamics.Quadrotor2D, Q, R, QN, eps
             u[k] = u_bar[k] + du[k]
             dt[k] = np.linalg.norm(x_bar[k+1,[0,2]]-x_bar[k,[0,2]])/np.linalg.norm(x_bar[k,[1,3]])
             x[k + 1] = quadrotor.dynamics_true_no_disturbances(x[k], u[k], dt=dt[k])
-            """print(x[k + 1])
-            print(x_bar[k + 1])
-            print("_______________________")
-            if k == 5:
-                break
-                converged = True"""
         x_bar = np.copy(x)
         u_bar = np.copy(u)
 
