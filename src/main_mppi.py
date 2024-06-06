@@ -17,7 +17,7 @@ from mppi import MPPI
 if __name__ == "__main__":
     
     # Will log everything to here
-    log_folder = utils.make_log_folder(name="run")
+    log_folder = utils.make_log_folder(name="run_mppi")
 
     # Get the map info for the map that we'll be using
     map_config = globals.MAP_CONFIGS["downup-o"]
