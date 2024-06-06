@@ -109,6 +109,9 @@ class Quadrotor2D:
         T1 = uk[0] + uk_disturbance[0]
         T2 = uk[1] + uk_disturbance[1]
 
+        # print(f"first_order_disturbances: {first_order_disturbances}")
+        # print(f"uk_disturbance inside: {uk_disturbance}")
+
         # Compute x(k+1)
         x_next = np.zeros(6)
         x_next[0] = x + dt*vx
@@ -121,17 +124,24 @@ class Quadrotor2D:
         return x_next
     
     def dynamics_true(self, xk, uk, dt=None):
+        #print(globals.DISTURBANCE_VARIANCE_ROTORS)
+        # np random normal likes standard deviations
+        first_order_disturbances = [
+            np.random.normal(0, globals.DISTURBANCE_VELOCITY_VARIANCE_WIND**0.5), 
+            np.random.normal(0, globals.DISTURBANCE_VELOCITY_VARIANCE_WIND**0.5),
+            np.random.normal(0, globals.DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND**0.5)
+        ]
+        uk_disturbance = [
+            np.random.normal(0, globals.DISTURBANCE_VARIANCE_ROTORS**0.5),
+            np.random.normal(0, globals.DISTURBANCE_VARIANCE_ROTORS**0.5)
+        ]
+        #print(f"first_order_disturbances: {first_order_disturbances}")
         return self.dynamics_true_no_disturbances(
             xk, 
             uk, 
-            dt,
-            first_order_disturbances=[
-                np.random.normal(0, globals.DISTURBANCE_VELOCITY_VARIANCE_WIND**0.5), 
-                np.random.normal(0, globals.DISTURBANCE_VELOCITY_VARIANCE_WIND**0.5),
-                np.random.normal(0, globals.DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND**0.5)
-            ], 
-            # np random normal likes standard deviations
-            uk_disturbance=np.random.normal(0, globals.DISTURBANCE_VARIANCE_ROTORS**0.5, size=self.m_dim)
+            dt=dt,
+            first_order_disturbances=first_order_disturbances,
+            uk_disturbance=uk_disturbance,
         )
     
     def linearize(self, x_bar, u_bar, dt=None):

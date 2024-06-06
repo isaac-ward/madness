@@ -27,6 +27,7 @@ if __name__ == "__main__":
     filename            = map_config["filename"]
     start_coord_metres  = map_config["start_coord_metres"]
     finish_coord_metres = map_config["finish_coord_metres"]
+    fudge_factor        = map_config["fudge_factor"]
 
     # Compute a unique hash for the current configuration
     config_hash = utils.compute_hash(
@@ -71,12 +72,23 @@ if __name__ == "__main__":
         # Generate a path from start to finish
         path_there = map1.path_a_to_b_metres(
             a_coord_metres=start_coord_metres,
-            b_coord_metres=finish_coord_metres
+            b_coord_metres=finish_coord_metres,
+            fudge_factor=fudge_factor,
         )
         path_there = path_there.downsample_every_n(5)
 
+        visuals.vis_occupancy_grid(
+            filepath=f"{log_folder}/occupancy_grid.png",
+            occupancy_grid=map1.occupancy_grid,
+            metres_per_pixel=map1.metres_per_pixel,
+            # start and finish points (in metres)
+            points_metres=[start_coord_metres, finish_coord_metres],
+            path_metres=path_there.path_metres,
+            #path_boxes=boxes
+        )
+
         # Need bounding boxes that encapsulate traversable space
-        boxes = map1.path_box(path_there,percent_overlap=60)
+        boxes = map1.path_box(path_there,percent_overlap=70)
 
         # Create a 2D Quadrotor
         quad = dynamics.Quadrotor2D(0.1)
@@ -121,7 +133,7 @@ if __name__ == "__main__":
         dt[k] = np.linalg.norm(x_bar[k+1,[0,2]]-x_bar[k,[0,2]])/np.linalg.norm(x_bar[k,[1,3]])
         ilqr_control[k] = u_bar[k] + y[k] + Y[k]@(ilqr_states[k]-x_bar[k])
         ilqr_states[k+1] = quad.dynamics_true(ilqr_states[k], ilqr_control[k], dt=dt[k])
-        if map1.out_of_bounds(ilqr_states[k,[0]],ilqr_states[k,[2]]):
+        if map1.out_of_bounds(ilqr_states[k,[0]],ilqr_states[k,[2]]) or map1.does_point_hit_boundary(ilqr_states[k,[0]],ilqr_states[k,[2]]):
             ilqr_states = ilqr_states[:k]
             break
     iLQR_follow_path_metres = ilqr_states[:,[0,2]]
@@ -152,7 +164,8 @@ if __name__ == "__main__":
     start_coord_metres = np.copy(ilqr_states[-1,[0,2]])
     path_back = map1.path_a_to_b_metres(
         a_coord_metres=start_coord_metres,
-        b_coord_metres=finish_coord_metres
+        b_coord_metres=finish_coord_metres,
+        fudge_factor=fudge_factor,
     )
 
     # Which must be downsampled aggressively
@@ -185,7 +198,7 @@ if __name__ == "__main__":
         dt_back[k] = np.linalg.norm(x_bar[k+1,[0,2]]-x_bar[k,[0,2]])/np.linalg.norm(x_bar[k,[1,3]])
         ilqr_control_back[k] = u_bar[k] + y[k] + Y[k]@(ilqr_states_back[k]-x_bar[k])
         ilqr_states_back[k+1] = quad.dynamics_true(ilqr_states_back[k], ilqr_control_back[k], dt=dt_back[k])
-        if map1.out_of_bounds(ilqr_states_back[k,[0]],ilqr_states_back[k,[2]]):
+        if map1.out_of_bounds(ilqr_states_back[k,[0]],ilqr_states_back[k,[2]]) or map1.does_point_hit_boundary(ilqr_states_back[k,[0]],ilqr_states_back[k,[2]]):
             ilqr_states_back = ilqr_states_back[:k]
             break
     iLQR_follow_path_metres = ilqr_states_back[:,[0,2]]
