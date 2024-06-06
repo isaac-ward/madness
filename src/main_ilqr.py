@@ -4,6 +4,7 @@ import scipy
 import os
 import pickle
 import csv
+import time
 
 from map import Map
 from path import Path
@@ -18,7 +19,7 @@ import visuals2
 if __name__ == "__main__":
 
     # Will log everything to here
-    log_folder = utils.make_log_folder(name="run")
+    log_folder = utils.make_log_folder(name="run_ilqr")
 
     # Get the map info for the map that we'll be using
     map_config = globals.MAP_CONFIGS["downup-o"]
@@ -29,6 +30,7 @@ if __name__ == "__main__":
 
     # Compute a unique hash for the current configuration
     config_hash = utils.compute_hash(
+        "ilqr",
         filename, 
         metres_per_pixel, 
         start_coord_metres, 
@@ -94,6 +96,9 @@ if __name__ == "__main__":
 
     # Run Bezier-curve path planning
     fitted_path_metres = state_vector[:,[0,2]]
+
+    # Start your timers
+    start_time = time.time()
 
     # Test ILQR controls on dynamic model
     print("Implementing iLQR control")
@@ -175,16 +180,28 @@ if __name__ == "__main__":
     ilqr_states_back = np.zeros(state_vector.shape)
     ilqr_control_back = np.zeros(control_vector.shape)
     ilqr_states_back[0] = np.copy(x_bar[0])
-    dt = np.zeros(control_vector.shape[0])
+    dt_back = np.zeros(control_vector.shape[0])
     for k in range(N-1):
-        dt[k] = np.linalg.norm(x_bar[k+1,[0,2]]-x_bar[k,[0,2]])/np.linalg.norm(x_bar[k,[1,3]])
+        dt_back[k] = np.linalg.norm(x_bar[k+1,[0,2]]-x_bar[k,[0,2]])/np.linalg.norm(x_bar[k,[1,3]])
         ilqr_control_back[k] = u_bar[k] + y[k] + Y[k]@(ilqr_states_back[k]-x_bar[k])
-        ilqr_states_back[k+1] = quad.dynamics_true(ilqr_states_back[k], ilqr_control_back[k], dt=dt[k])
+        ilqr_states_back[k+1] = quad.dynamics_true(ilqr_states_back[k], ilqr_control_back[k], dt=dt_back[k])
         if map1.out_of_bounds(ilqr_states_back[k,[0]],ilqr_states_back[k,[2]]):
             ilqr_states_back = ilqr_states_back[:k]
             break
     iLQR_follow_path_metres = ilqr_states_back[:,[0,2]]
     iLQR_fitted_path_metres_back = x_bar[:,[0,2]]
+
+    # report time and control trajectories
+    print(f"Time to compute: {time.time()-start_time}")
+    print(f"Time in simulation: {np.sum(dt)+np.sum(dt_back)}")
+    visuals2.state_trajectory_analysis(
+        filepath=f"{log_folder}/iLQR_Control_Back_Analysis.png",
+        state_trajectory=np.vstack([ilqr_states,ilqr_states_back]),
+    )
+    visuals2.control_trajectory_analysis(
+        filepath=f"{log_folder}/iLQR_Control_Back_Analysis.png",
+        control_trajectory=np.vstack([ilqr_control,ilqr_control_back]),
+    )
 
     # Visualize the occupancy grid with OL trajectory
     visuals.vis_occupancy_grid(
@@ -219,6 +236,6 @@ if __name__ == "__main__":
                                         {"path":Path(iLQR_fitted_path_metres_back),"color":"purple"},
                                         {"path":Path(state_vector[:,[0,2]]),"color":"red"}
                                     ],
-                                    simulation_dt=dt,
+                                    simulation_dts=np.hstack([dt,dt_back]),
                                     state_trajectory=np.vstack([ilqr_states,ilqr_states_back]),
                                     control_trajectory=np.vstack([ilqr_control,ilqr_control_back]))

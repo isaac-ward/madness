@@ -15,23 +15,26 @@ REACHED_SAMPLE_REGION_THRESHOLD = 0.5 # m
 REACHED_ENTRY_POINT_THRESHOLD   = 0.25 # m
 
 # For testing disturbances
-wind_rotor_var = "none"
-if wind_rotor_var == "both":
+disturbance_config = "none"
+if disturbance_config == "both":
     DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.33
     DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.0003 # m/s
     DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.0001 # rad/s
-elif wind_rotor_var == "wind":
+elif disturbance_config == "wind":
     DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.
     DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.0003 # m/s
     DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.0001 # rad/s
-elif wind_rotor_var == "rotor":
+elif disturbance_config == "rotor":
     DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.33
+    DISTURBANCE_VELOCITY_VARIANCE_WIND = 0. # m/s
+    DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0. # rad/s
+elif disturbance_config == "none":
+    DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.
     DISTURBANCE_VELOCITY_VARIANCE_WIND = 0. # m/s
     DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0. # rad/s
 else:
-    DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.
-    DISTURBANCE_VELOCITY_VARIANCE_WIND = 0. # m/s
-    DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0. # rad/s
+    raise ValueError(f"Unknown disturbance configuration: {disturbance_config}")
+
 print(f"Disturbance variances:")
 print(f"\tRotor: {DISTURBANCE_VARIANCE_ROTORS}")
 print(f"\tWind velocity: {DISTURBANCE_VELOCITY_VARIANCE_WIND}")

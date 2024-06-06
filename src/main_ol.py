@@ -4,6 +4,7 @@ import scipy
 import os
 import pickle
 import csv
+import time
 
 from map import Map
 from path import Path
@@ -18,7 +19,7 @@ import visuals2
 if __name__ == "__main__":
 
     # Will log everything to here
-    log_folder = utils.make_log_folder(name="run")
+    log_folder = utils.make_log_folder(name="run_ol")
 
     # Get the map info for the map that we'll be using
     map_config = globals.MAP_CONFIGS["downup-o"]
@@ -29,6 +30,7 @@ if __name__ == "__main__":
 
     # Compute a unique hash for the current configuration
     config_hash = utils.compute_hash(
+        "open loop",
         filename, 
         metres_per_pixel, 
         start_coord_metres, 
@@ -95,6 +97,9 @@ if __name__ == "__main__":
     # Run Bezier-curve path planning
     fitted_path_metres = state_vector[:,[0,2]]
 
+    # Start timeing here
+    start_time = time.time()
+
     # Test OL controls on dynamic model
     print("Implementing Open-Loop control model")
     N = np.shape(state_vector)[0]
@@ -154,15 +159,27 @@ if __name__ == "__main__":
     OL_states_back = np.zeros(state_vector.shape)
     OL_control_back = np.copy(control_vector)
     OL_states_back[0] = np.copy(state_vector[0])
-    dt = np.zeros(control_vector.shape[0])
+    dt_back = np.zeros(control_vector.shape[0])
     for i in range(1,N):
-        dt[i-1] = np.linalg.norm(state_vector[i,[0,2]]-state_vector[i-1,[0,2]])/np.linalg.norm(state_vector[i-1,[1,3]])
-        OL_states_back[i] = quad.dynamics_true(OL_states_back[i-1], control_vector[i-1],dt=dt[i-1])
+        dt_back[i-1] = np.linalg.norm(state_vector[i,[0,2]]-state_vector[i-1,[0,2]])/np.linalg.norm(state_vector[i-1,[1,3]])
+        OL_states_back[i] = quad.dynamics_true(OL_states_back[i-1], control_vector[i-1],dt=dt_back[i-1])
         if map1.out_of_bounds(OL_states_back[i,[0]],OL_states_back[i,[2]]):
             OL_states_back = OL_states_back[:i]
             break
         
     follow_path_metres = OL_states_back[:,[0,2]]
+
+    # report time and control trajectories
+    print(f"Time to compute: {time.time()-start_time}")
+    print(f"Time in simulation: {np.sum(dt)+np.sum(dt_back)}")
+    visuals2.state_trajectory_analysis(
+        filepath=f"{log_folder}/OL_Control_Back_Analysis.png",
+        state_trajectory=np.vstack([OL_states,OL_states_back]),
+    )
+    visuals2.control_trajectory_analysis(
+        filepath=f"{log_folder}/OL_Control_Back_Analysis.png",
+        control_trajectory=np.vstack([OL_control,OL_control_back]),
+    )
 
     # Visualize the occupancy grid with OL trajectory
     visuals.vis_occupancy_grid(
@@ -188,7 +205,7 @@ if __name__ == "__main__":
         for row in control_effort:
             csvwriter.writerow(row)
         
-    visuals2.plot_experiment_video(filepath=f"{log_folder}/iLQR_Control.mp4",
+    visuals2.plot_experiment_video(filepath=f"{log_folder}/OL_Control.mp4",
                                     map=map1,
                                     start_point=start_coord_metres,
                                     finish_point=finish_coord_metres,
@@ -197,6 +214,6 @@ if __name__ == "__main__":
                                         {"path":Path(fitted_path_metres_back),"color":"purple"},
                                         {"path":Path(state_vector[:,[0,2]]),"color":"red"}
                                     ],
-                                    simulation_dt=dt,
+                                    simulation_dts=np.hstack([dt,dt_back]),
                                     state_trajectory=np.vstack([OL_states,OL_states_back]),
                                     control_trajectory=np.vstack([OL_control,OL_control_back]))
