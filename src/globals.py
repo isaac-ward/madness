@@ -17,10 +17,10 @@ REACHED_ENTRY_POINT_THRESHOLD   = 0.25 # m
 # For testing disturbances
 disturbance_config = "both-minor"
 if disturbance_config == "both-major":
-    DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 0.33
-    DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.0003 # m/s
+    DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 2
+    DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.0001 # m/s
     DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.0001 # rad/s
-if disturbance_config == "both-minor":
+elif disturbance_config == "both-minor":
     DISTURBANCE_VARIANCE_ROTORS = MAX_THRUST_PER_PROP * 1
     DISTURBANCE_VELOCITY_VARIANCE_WIND = 0.00005 # m/s
     DISTURBANCE_ANGULAR_VELOCITY_VARIANCE_WIND = 0.00005 # rad/s

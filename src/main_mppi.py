@@ -132,7 +132,7 @@ if __name__ == "__main__":
     )
     print(f"Created MPPI controller with {controller.K} samples and horizon {controller.H} ({controller.H * dt} seconds lookahead)")
 
-    disturbances_on = False
+    disturbances_on = True
 
     # Enter a loop where we apply the controller, get a control, roll forward
     # the dynamics and repeat
@@ -169,7 +169,8 @@ if __name__ == "__main__":
             x = dyn.dynamics_true_no_disturbances(x, u)
 
         # The game is over if we hit a wall, or if we go out of bounds
-        if map.does_point_hit_boundary(x[0], x[2]) or map.out_of_bounds(x[0], x[2]):
+        #if map.does_point_hit_boundary(x[0], x[2]) or map.out_of_bounds(x[0], x[2]):
+        if False:
             pbar.set_description("Out of bounds or hit a wall")
             pbar.close()
             state_trajectory   = state_trajectory[:i]
