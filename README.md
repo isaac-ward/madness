@@ -95,3 +95,8 @@ To remove all logs (minus the gitkeep file)
 ```
 rm -rf logs/*
 ```
+
+Benchmarking all methods
+```
+python src/main_ilqr.py && python src/main_mppi.py && python src/main_ol.py
+```

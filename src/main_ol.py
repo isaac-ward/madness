@@ -27,6 +27,7 @@ if __name__ == "__main__":
     filename            = map_config["filename"]
     start_coord_metres  = map_config["start_coord_metres"]
     finish_coord_metres = map_config["finish_coord_metres"]
+    fudge_factor        = map_config["fudge_factor"]
 
     # Compute a unique hash for the current configuration
     config_hash = utils.compute_hash(
@@ -71,7 +72,8 @@ if __name__ == "__main__":
         # Generate a path from start to finish
         path_there = map1.path_a_to_b_metres(
             a_coord_metres=start_coord_metres,
-            b_coord_metres=finish_coord_metres
+            b_coord_metres=finish_coord_metres,
+            fudge_factor=fudge_factor,
         )
         path_there = path_there.downsample_every_n(5)
 
@@ -110,7 +112,7 @@ if __name__ == "__main__":
     for i in range(1,N):
         dt[i-1] = np.linalg.norm(state_vector[i,[0,2]]-state_vector[i-1,[0,2]])/np.linalg.norm(state_vector[i-1,[1,3]])
         OL_states[i] = quad.dynamics_true(OL_states[i-1], control_vector[i-1],dt=dt[i-1])
-        if map1.out_of_bounds(OL_states[i,[0]],OL_states[i,[2]]):
+        if map1.out_of_bounds(OL_states[i,[0]],OL_states[i,[2]]) or map1.does_point_hit_boundary(OL_states[i,[0]],OL_states[i,[2]]):
             OL_states = OL_states[:i]
             break
         
@@ -124,7 +126,7 @@ if __name__ == "__main__":
         # start and finish points (in metres)
         points_metres=[
             start_coord_metres,
-            finish_coord_metres
+            finish_coord_metres,
         ],
         path_metres=path_there.path_metres,
         path2_metres=fitted_path_metres,
@@ -141,7 +143,8 @@ if __name__ == "__main__":
     start_coord_metres = np.copy(OL_states[-1,[0,2]])
     path_back = map1.path_a_to_b_metres(
         a_coord_metres=start_coord_metres,
-        b_coord_metres=finish_coord_metres
+        b_coord_metres=finish_coord_metres,
+        fudge_factor=fudge_factor,
     )
 
     # Which must be downsampled aggressively
@@ -163,7 +166,7 @@ if __name__ == "__main__":
     for i in range(1,N):
         dt_back[i-1] = np.linalg.norm(state_vector[i,[0,2]]-state_vector[i-1,[0,2]])/np.linalg.norm(state_vector[i-1,[1,3]])
         OL_states_back[i] = quad.dynamics_true(OL_states_back[i-1], control_vector[i-1],dt=dt_back[i-1])
-        if map1.out_of_bounds(OL_states_back[i,[0]],OL_states_back[i,[2]]):
+        if map1.out_of_bounds(OL_states_back[i,[0]],OL_states_back[i,[2]]) or map1.does_point_hit_boundary(OL_states_back[i,[0]],OL_states_back[i,[2]]):
             OL_states_back = OL_states_back[:i]
             break
         
