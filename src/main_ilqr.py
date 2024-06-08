@@ -133,6 +133,10 @@ if __name__ == "__main__":
     for k in range(N-1):
         dt[k] = np.linalg.norm(x_bar[k+1,[0,2]]-x_bar[k,[0,2]])/np.linalg.norm(x_bar[k,[1,3]])
         ilqr_control[k] = u_bar[k] + y[k] + Y[k]@(ilqr_states[k]-x_bar[k])
+        if ilqr_control[k][0] >= globals.MAX_THRUST_PER_PROP:
+            ilqr_control[k][0] = globals.MAX_THRUST_PER_PROP
+        if ilqr_control[k][1] >= globals.MAX_THRUST_PER_PROP:
+            ilqr_control[k][1] = globals.MAX_THRUST_PER_PROP
         ilqr_states[k+1] = quad.dynamics_true(ilqr_states[k], ilqr_control[k], dt=dt[k])
         if map1.out_of_bounds(ilqr_states[k,[0]],ilqr_states[k,[2]]) or map1.does_point_hit_boundary(ilqr_states[k,[0]],ilqr_states[k,[2]]):
             ilqr_states = ilqr_states[:k]
@@ -198,6 +202,10 @@ if __name__ == "__main__":
     for k in range(N-1):
         dt_back[k] = np.linalg.norm(x_bar[k+1,[0,2]]-x_bar[k,[0,2]])/np.linalg.norm(x_bar[k,[1,3]])
         ilqr_control_back[k] = u_bar[k] + y[k] + Y[k]@(ilqr_states_back[k]-x_bar[k])
+        if ilqr_control_back[k][0] >= globals.MAX_THRUST_PER_PROP:
+            ilqr_control_back[k][0] = globals.MAX_THRUST_PER_PROP
+        if ilqr_control_back[k][1] >= globals.MAX_THRUST_PER_PROP:
+            ilqr_control_back[k][1] = globals.MAX_THRUST_PER_PROP
         ilqr_states_back[k+1] = quad.dynamics_true(ilqr_states_back[k], ilqr_control_back[k], dt=dt_back[k])
         if map1.out_of_bounds(ilqr_states_back[k,[0]],ilqr_states_back[k,[2]]) or map1.does_point_hit_boundary(ilqr_states_back[k,[0]],ilqr_states_back[k,[2]]):
             ilqr_states_back = ilqr_states_back[:k]
