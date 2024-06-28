@@ -128,6 +128,12 @@ class Visual:
         # The state is set up as [x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz]
         # The action is set up as [w1, w2, w3, w4] corresponding to the forward, left, backward, right rotor inputs
 
+        # We also want the policy path, if it exists
+        try:
+            path_xyz =  utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "policy", "path_xyz.pkl"))
+        except:
+            path_xyz = None
+
         # The dynamics model has information about the quadcopter that we need
         quadcopter_diameter = dynamics.diameter
 
@@ -287,6 +293,15 @@ class Visual:
 
             render_agent_to_axes(ax0, world_view=True)
             render_agent_to_axes(ax1, world_view=False)
+
+            # If we have the path, then render it to ax0
+            if path_xyz is not None:
+                ax0.plot(
+                    path_xyz[:, 0],
+                    path_xyz[:, 1],
+                    path_xyz[:, 2],
+                    'g--',
+                )
 
             pbar.update(1)
 

@@ -17,6 +17,7 @@ class PolicyMPPI:
         self.state_size = state_size
         self.action_size = action_size
         self.dynamics = dynamics
+        self.path_xyz = None
 
     def reward(
         self,
@@ -27,29 +28,43 @@ class PolicyMPPI:
         Given a potential plan, return a scalar reward (higher is better)
         """
 
-        # We want the quadcopter to hover at x=10, y=0, z=0, in a specific orientation
-        desired_position = np.array([10, 0, 0])
-        desired_orientation_euler_angles = np.array([0, 0, 0])
+        # We compute the shortest distance between every point in
+        # our plan and the path we want to follow, and add this distance
+        # as a cost (ideally they'd be aligned)
+        path_deviation = 0
+        path_xyz_plan = state_trajectory_plan[:, 0:3]
+        # Do an average so its interpretable across different path
+        # lengths
+        path_deviation = np.mean([
+            utils.geometric.shortest_distance_between_path_and_point(
+                self.path_xyz,
+                path_xyz_plan[i],
+            ) for i in range(len(path_xyz_plan))
+        ])
 
-        # Look at the final state in the plan, is it our goal state?
-        final_state = state_trajectory_plan[-1]
-        position = final_state[:3]
-        orientation = final_state[3:7]
-        orientation_euler_angles = utils.geometric.quaternion_to_euler_angles_rad(*orientation)
+        # Assemble the reward
+        reward = -path_deviation
+        return reward     
 
-        # But its especially bad to go below z=0
-        position_penalty = np.array([1, 1, 10])
-
-        # Compute the reward
-        position_deviation = np.linalg.norm(position_penalty*(position - desired_position))
-        orientation_deviation = np.linalg.norm(orientation_euler_angles - desired_orientation_euler_angles)
-        reward = - 10 * position_deviation - orientation_deviation
+    def update_path_xyz(
+        self,
+        path_xyz,
+    ):
+        """
+        Update the path to follow
+        """
+        self.path_xyz = path_xyz
 
     def act(
         self,
         state_history,
         action_history,
     ):
+
+        # Check if we have a path to follow
+        if self.path_xyz is None:
+            raise ValueError(f"{self.__class__.__name__} requires a path to follow")
+
         K = 100
         H = 1
 

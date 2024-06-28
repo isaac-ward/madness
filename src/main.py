@@ -61,7 +61,7 @@ if __name__ == "__main__":
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = [10, 0, 10]
-    path = map_.plan_path(xyz_initial, xyz_goal, 0.1)
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, 0.1)
 
     # Create the agent, which has an initial state and a policy
     # policy = PolicyRandom(
@@ -79,6 +79,7 @@ if __name__ == "__main__":
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
     )
+    policy.update_path_xyz(path_xyz)
     agent = Agent(
         state_initial=state_initial,
         policy=policy,
@@ -105,6 +106,10 @@ if __name__ == "__main__":
     # Log everything of interest
     agent.log(log_folder)
     environment.log(log_folder)
+    utils.logging.pickle_to_filepath(
+        f"{log_folder}/policy/path_xyz.pkl",
+        path_xyz,
+    )
 
     # Render visuals
     visual = Visual(log_folder)
