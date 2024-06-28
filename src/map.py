@@ -20,7 +20,7 @@ class Map:
         self,
         map_filepath,
         voxel_per_x_metres,
-        extents_metres
+        extents_metres_xyz
     ):
         """
         Input filepath is where we can find the map file. Maps are represented with
@@ -33,40 +33,25 @@ class Map:
         # Load the occupancy grid 
         self.map_filepath = map_filepath
         self.voxel_per_x_metres = voxel_per_x_metres
-        self.extents_metres = extents_metres
+        self.extents_metres_xyz = extents_metres_xyz
         
         # Load the map file as an occupancy grid
         self.points = test_points()
 
-        # What are the extents of the point cloud?
-        def min_max_in_axis(points, axis):
-            # Return the mid max, ensure they are separated by at least 
-            # voxel_per_x_metres
-            min_val = np.min(points[:,axis])
-            max_val = np.max(points[:,axis])
-            difference = max_val - min_val
-            if difference < self.voxel_per_x_metres:
-                min_val -= (self.voxel_per_x_metres - difference) / 2
-                max_val += (self.voxel_per_x_metres - difference) / 2
-            return min_val, max_val
-        extents_x = min_max_in_axis(self.points, 0)
-        extents_y = min_max_in_axis(self.points, 1)
-        extents_z = min_max_in_axis(self.points, 2)
-
         # Create a voxel grid representation of the map
-        num_voxels_per_axis = self.metres_to_voxel_coords([
-            extents_x[1] - extents_x[0],
-            extents_y[1] - extents_y[0],
-            extents_z[1] - extents_z[0],
-        ])
+        num_voxels_per_axis = [
+            int((extents_metres_xyz[i][1] - extents_metres_xyz[i][0]) / voxel_per_x_metres)
+            for i in range(3)
+        ]
         self.voxel_grid = np.zeros(num_voxels_per_axis)
 
         # Fill in the voxel grid
-        for point in self.points:
+        for point in tqdm(self.points, desc="Loading point cloud into voxel grid"):
             x, y, z = point
             i, j, k = self.metres_to_voxel_coords([x, y, z])
             # If it's outside the grid, skip
             if not self.voxel_coord_in_bounds([i, j, k]):
+                print(f"Point {point} or voxel {i, j, k} is out of bounds")
                 continue
             else:
                 self.voxel_grid[i, j, k] = 1
@@ -75,26 +60,71 @@ class Map:
         print(f"\t-map_filepath: {self.map_filepath}")
         print(f"\t-voxel_per_x_metres: {self.voxel_per_x_metres}")
         print(f"\t-num_points: {len(self.points)}")
-        print(f"\t-extents: x={extents_x}, y={extents_y}, z={extents_z}")
+        print(f"\t-extents: x={self.extents_metres_xyz[0]}, y={self.extents_metres_xyz[1]}, z={self.extents_metres_xyz[2]}")
         print(f"\t-voxel_grid (shape): {self.voxel_grid.shape}")
+        print(f"\t-voxel_grid (total): {np.prod(self.voxel_grid.shape)}")
+    
+    # ----------------------------------------------------------------
+        
+    def metres_to_voxel_coords(
+        self,
+        metres_coords,
+    ):
+        """
+        Say we have the point [0, 0, 10] and the extents are
+        [[-10, 20], [-10, 10], [0, 20]], with a voxel_per_x_metres of 0.5
+
+        Then the voxel grid is 60x40x40, and the point [0, 0, 10] should be
+        at [20, 20, 20] in the voxel grid. Return as an integer and always
+        round down
+        """
+
+        # Look to see our progression through the extents in metres
+        progression = [
+            (metres_coords[i] - self.extents_metres_xyz[i][0]) / (self.extents_metres_xyz[i][1] - self.extents_metres_xyz[i][0])
+            for i in range(3)
+        ]
+
+        # Multiply through by the extents in voxels
+        num_voxels_per_axis = self.voxel_grid.shape
+        voxel_coords = [
+            int(progression[i] * num_voxels_per_axis[i])
+            for i in range(3)
+        ]
+
+        # Return as an integer and round down
+        voxel_coords = np.floor(voxel_coords).astype(int)
+        return voxel_coords
 
     def voxel_coords_to_metres(
         self,
         voxel_coords,
     ):
-        return np.array(voxel_coords) * self.voxel_per_x_metres
-    def metres_to_voxel_coords(
-        self,
-        metres_coords,
-    ):
-        _ = (np.array(metres_coords) / self.voxel_per_x_metres)
-        _ = np.floor(_).astype(int)
-        return _
+        # Inverse of the above
+        num_voxels_per_axis = self.voxel_grid.shape
+        progression = [
+            voxel_coords[i] / num_voxels_per_axis[i]
+            for i in range(3)
+        ]
+        metres_coords = [
+            progression[i] * (self.extents_metres_xyz[i][1] - self.extents_metres_xyz[i][0]) + self.extents_metres_xyz[i][0]
+            for i in range(3)
+        ]
+        return metres_coords
+    
     def voxel_coord_in_bounds(
         self,
         voxel_coords,
     ):
         return all([0 <= x < self.voxel_grid.shape[i] for i, x in enumerate(voxel_coords)])
+    
+    def is_voxel_occupied(
+        self,
+        voxel_coords,
+    ):
+        return self.voxel_grid[tuple(voxel_coords)] == 1
+    
+    # ----------------------------------------------------------------
 
     def plan_path(
         self,
@@ -113,51 +143,63 @@ class Map:
         Returns a list of coordinates in metres that define the points along the path
         """
 
-        a_voxel_coord = (np.array(a_coord_metres) / self.voxel_per_x_metres).astype(int)
-        b_voxel_coord = (np.array(b_coord_metres) / self.voxel_per_x_metres).astype(int)
+        a_coord_metres = np.array(a_coord_metres)
+        b_coord_metres = np.array(b_coord_metres)
 
-        # TODO dilate grid to allow for avoidance
+        a_voxel_coord = self.metres_to_voxel_coords(a_coord_metres)
+        b_voxel_coord = self.metres_to_voxel_coords(b_coord_metres)
+
+        # Define a custom heuristic function for A* (Euclidean distance)
+        def euclidean_distance(u, v):
+            return np.linalg.norm(np.array(u) - np.array(v))
+
+        print(f"Planning path from :")
+        print(f"\t-m: {a_coord_metres} -> {b_coord_metres}")
+        print(f"\t-v: {a_voxel_coord} -> {b_voxel_coord}")
 
         # Use A* algorithm for pathfinding
         print(f"Making graph with shape {self.voxel_grid.shape}")
-        graph = nx.grid_graph(dim=self.voxel_grid.shape, periodic=False)
-        print(f"Graph has {len(graph.nodes)} nodes and {len(graph.edges)} edges")
-
-        # Define a custom heuristic function for A* (Euclidean distance)
-        def heuristic_euclidean(u, v):
-            (x1, y1, z1) = u
-            (x2, y2, z2) = v
-            return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
-
-        # Define a custom weight function for A* (considering obstacle dilation)
-        def weight(u, v, data):
-            return data.get("weight", 1)
-
-        # Set weights for edges based on the dilated grid
-        edges = list(graph.edges(data=True))
-        with tqdm(total=len(edges), desc="Setting graph weights to encode obstacles", disable=True) as pbar:
-            for (u, v, data) in edges:
-                # u and v are both nodes, that are tuples of (x, y) coordinates, but they
-                # need to be transposed 
-                # u = (u[1], u[0])
-                # v = (v[1], v[0])
-                u = (u[2], u[1], u[0])
-                v = (v[2], v[1], v[0])
-                # TODO: > 0.5?
-                if self.voxel_grid[u] == 1 or self.voxel_grid[v] == 1:
-                    data["weight"] = float('inf')
-                pbar.update(1)
+        graph = nx.Graph()
+        voxel_grid_shape = self.voxel_grid.shape
+        # Nodes
+        for i in tqdm(range(voxel_grid_shape[0]), desc="Making graph nodes"):
+            for j in range(voxel_grid_shape[1]):
+                for k in range(voxel_grid_shape[2]):
+                    graph.add_node((i, j, k))
+        # Edges
+        edges_to_add = []
+        for node in tqdm(graph.nodes, desc="Making graph edges"):
+            i, j, k = node
+            # 6 connectivity
+            neighbours = [
+                (i+1, j, k), (i-1, j, k),
+                (i, j+1, k), (i, j-1, k),
+                (i, j, k+1), (i, j, k-1),
+            ]
+            # If either of the nodes is occupied, don't add the edge
+            for neighbour in neighbours:
+                # Check if the neighbour is out of bounds
+                if not self.voxel_coord_in_bounds(neighbour):
+                    continue
+                if self.is_voxel_occupied(node) or self.is_voxel_occupied(neighbour):
+                    continue
+                else:
+                    edges_to_add.append((node, neighbour))
+        graph.add_edges_from(edges_to_add, weight=1)
+        print("Graph constructed")
+        print(graph)
 
         # Compute the path using A* algorithm
         try:
-            path_coords = nx.astar_path(graph, a_voxel_coord, b_voxel_coord, heuristic=heuristic_euclidean, weight=weight)
+            path_coords = nx.astar_path(
+                graph, 
+                tuple(a_voxel_coord), 
+                tuple(b_voxel_coord), 
+                heuristic=euclidean_distance
+            )
             # Convert path nodes back to coordinates in metres
-            path_metres = np.array(path_coords) * self.voxel_per_x_metres
-            
-            # Subsample so that we definitely have the start and final point, but otherwise
-            # only a point every X metres
-            # TODO
+            path_metres = [self.voxel_coords_to_metres(np.array([x, y, z])) for x, y, z in path_coords]
 
-            return path_metres
+            return np.array(path_metres)
         except nx.NetworkXNoPath:
             raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape})")
