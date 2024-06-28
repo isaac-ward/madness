@@ -44,7 +44,12 @@ if __name__ == "__main__":
     # Create the environment
     map_ = Map(
         map_filepath="maps/empty.csv",
-        voxel_per_x_metres=0.1,
+        voxel_per_x_metres=10,
+        extents_metres_xyz=[
+            [-10, 20], 
+            [-10, 10], 
+            [0, 20]
+        ],
     )
     environment = Environment(
         state_initial=state_initial,
