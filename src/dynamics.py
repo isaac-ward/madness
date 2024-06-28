@@ -64,6 +64,71 @@ class DynamicsQuadcopter3D:
     def action_labels(self):
         return ["w1", "w2", "w3", "w4"]
 
+    def _compute_second_derivatives_batch(
+        self,
+        states_batch,
+        actions_batch,
+    ):
+        """
+        Uses the equations of motion to compute the second derivatives of the state
+        given a batch of corresponding states and actions
+
+        states_batch is of the shape (N, state_size) 
+        actions_batch is of the shape (N, action_size)
+
+        and we return the second derivatives for each state in the batch in a vectorized way
+        """
+
+        states_batch = np.array(states_batch)
+        actions_batch = np.array(actions_batch)
+
+        # Constants for convienience
+        k = self.lift_coef
+        b = self.thrust_coef
+        d = self.drag_coef
+        m = self.mass
+        g = self.g
+        Ixx = self.Ix
+        Iyy = self.Iy
+        Izz = self.Iz
+
+        # Unpack the state and action elements (each N length vectors)
+        # Don't use np split here, the shape is known to be (N, state_size) and (N, action_size)
+        x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz = states_batch.T
+        w1, w2, w3, w4 = actions_batch.T
+
+        # Convert to euler angles as a batch operation
+        phi, theta, psi = geometric.quaternion_to_euler_angles_rad(qx, qy, qz, qw)
+
+        # These will be repeatedly used in the operations
+        # ** is elementwise in numpy
+        w1_sq = w1**2
+        w2_sq = w2**2
+        w3_sq = w3**2
+        w4_sq = w4**2
+        # so is +
+        w_sq_sum  = w1_sq + w2_sq + w3_sq + w4_sq
+        # and trig functions
+        cos_theta = np.cos(theta)
+        cos_phi   = np.cos(phi)
+        cos_psi   = np.cos(psi)
+        sin_theta = np.sin(theta)
+        sin_phi   = np.sin(phi)
+        sin_psi   = np.sin(psi)
+
+        # The following are derived in the mathematica notebooks
+        # Translation accelerations
+        x_ddot = (-k * w_sq_sum * (cos_theta * cos_psi * sin_phi + sin_theta * sin_psi) + d * vx) / m
+        y_ddot = (+k * w_sq_sum * (cos_theta * sin_phi * sin_psi - cos_psi * sin_theta) - d * vy) / m
+        z_ddot = (-g + k * w_sq_sum * cos_theta * cos_phi - d * vz) / m
+
+        # Rotational accelerations
+        theta_ddot = (+k * self.diameter * (w2_sq - w4_sq)) / Ixx
+        phi_ddot   = (-k * self.diameter * (w1_sq - w3_sq)) / Iyy
+        psi_ddot   = (b * (w1_sq - w2_sq + w3_sq - w4_sq)) / Izz
+
+        return np.column_stack([x_ddot, y_ddot, z_ddot, theta_ddot, phi_ddot, psi_ddot])
+
     def _compute_second_derivatives(
         self,
         state,
@@ -91,16 +156,35 @@ class DynamicsQuadcopter3D:
         Iyy = self.Iy
         Izz = self.Iz
 
+        # These will be repeatedly used in the operations
+        w1_sq = w1**2
+        w2_sq = w2**2
+        w3_sq = w3**2
+        w4_sq = w4**2
+        w_sq_sum = w1_sq + w2_sq + w3_sq + w4_sq
+        cos_theta = np.cos(theta)  
+        cos_phi = np.cos(phi)
+        cos_psi = np.cos(psi)
+        sin_theta = np.sin(theta)
+        sin_phi = np.sin(phi)
+        sin_psi = np.sin(psi)
+
         # The following are derived in the mathematica notebooks
-        # Translational accelerations
-        x_ddot = (-k * (w1**2 + w2**2 + w3**2 + w4**2) * (np.cos(theta) * np.cos(psi) * np.sin(phi) + np.sin(theta) * np.sin(psi)) + d * vx) / m
-        y_ddot = (+k * (w1**2 + w2**2 + w3**2 + w4**2) * (np.cos(theta) * np.sin(phi) * np.sin(psi) - np.cos(psi) * np.sin(theta)) - d * vy) / m
-        z_ddot = (-g * m + k * w1**2 * np.cos(theta) * np.cos(phi) + k * w2**2 * np.cos(theta) * np.cos(phi) + k * w3**2 * np.cos(theta) * np.cos(phi) + k * w4**2 * np.cos(theta) * np.cos(phi) - d * vz) / m
+        # Translation accelerations
+        x_ddot = (-k * w_sq_sum * (cos_theta * cos_psi * sin_phi + sin_theta * sin_psi) + d * vx) / m
+        y_ddot = (+k * w_sq_sum * (cos_theta * sin_phi * sin_psi - cos_psi * sin_theta) - d * vy) / m
+        z_ddot = (-g + k * w_sq_sum * cos_theta * cos_phi - d * vz) / m
 
         # Rotational accelerations
-        theta_ddot = (+k * self.diameter * (w2**2 - w4**2)) / Ixx
-        phi_ddot   = (-k * self.diameter * (w1**2 - w3**2)) / Iyy
-        psi_ddot   = (b * (w1**2 - w2**2 + w3**2 - w4**2)) / Izz
+        theta_ddot = (+k * self.diameter * (w2_sq - w4_sq)) / Ixx
+        phi_ddot   = (-k * self.diameter * (w1_sq - w3_sq)) / Iyy
+        psi_ddot   = (b * (w1_sq - w2_sq + w3_sq - w4_sq)) / Izz
+
+        # In full:
+        # # Translational accelerations
+        # x_ddot = (-k * (w1**2 + w2**2 + w3**2 + w4**2) * (np.cos(theta) * np.cos(psi) * np.sin(phi) + np.sin(theta) * np.sin(psi)) + d * vx) / m
+        # y_ddot = (+k * (w1**2 + w2**2 + w3**2 + w4**2) * (np.cos(theta) * np.sin(phi) * np.sin(psi) - np.cos(psi) * np.sin(theta)) - d * vy) / m
+        # z_ddot = (-g * m + k * w1**2 * np.cos(theta) * np.cos(phi) + k * w2**2 * np.cos(theta) * np.cos(phi) + k * w3**2 * np.cos(theta) * np.cos(phi) + k * w4**2 * np.cos(theta) * np.cos(phi) - d * vz) / m
 
         return x_ddot, y_ddot, z_ddot, theta_ddot, phi_ddot, psi_ddot
     
@@ -161,11 +245,3 @@ class DynamicsQuadcopter3D:
         """
 
         return self._euler_method_propagate(state, action)
-
-    def save(self, folder):
-        """
-        Ensure the folder exists and then save oneself using pickle
-        """
-        os.makedirs(folder, exist_ok=True)
-        with open(os.path.join(folder, "dynamics.pkl"), "wb") as f:
-            pickle.dump(self, f)

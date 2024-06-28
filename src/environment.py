@@ -57,4 +57,7 @@ class Environment:
         )
 
         # Save the dynamics object
-        self.dynamics_model.save(folder_environment)
+        utils.logging.pickle_to_filepath(
+            os.path.join(folder_environment, "dynamics.pkl"),
+            self.dynamics_model,
+        )
