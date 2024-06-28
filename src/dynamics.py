@@ -64,7 +64,23 @@ class DynamicsQuadcopter3D:
     def action_labels(self):
         return ["w1", "w2", "w3", "w4"]
 
-    def _compute_second_derivatives_batch(
+    def _ensure_states_and_actions_valid_and_batched(self, states_batch, actions_batch):
+        """
+        Ensure that the states and actions are valid and batched
+        """
+        states_batch = np.array(states_batch)
+        actions_batch = np.array(actions_batch)
+        is_batch = not (states_batch.ndim == 1 and actions_batch.ndim == 1)
+        if not is_batch:
+            states_batch = np.array([states_batch])
+            actions_batch = np.array([actions_batch])
+        # Assert that the states and actions are the right shape
+        assert states_batch.shape[1] == self.state_size(), f"states_batch.shape[1] = {states_batch.shape[1]}, self.state_size() = {self.state_size()}, must be equal"
+        assert actions_batch.shape[1] == self.action_size(), f"actions_batch.shape[1] = {actions_batch.shape[1]}, self.action_size() = {self.action_size()}, must be equal"
+        assert states_batch.shape[0] == actions_batch.shape[0], f"states_batch.shape[0] = {states_batch.shape[0]}, actions_batch.shape[0] = {actions_batch.shape[0]}, must be equal"
+        return states_batch, actions_batch, is_batch
+
+    def _compute_second_derivatives(
         self,
         states_batch,
         actions_batch,
@@ -79,8 +95,7 @@ class DynamicsQuadcopter3D:
         and we return the second derivatives for each state in the batch in a vectorized way
         """
 
-        states_batch = np.array(states_batch)
-        actions_batch = np.array(actions_batch)
+        states_batch, actions_batch, is_batch = self._ensure_states_and_actions_valid_and_batched(states_batch, actions_batch)
 
         # Constants for convienience
         k = self.lift_coef
@@ -98,7 +113,7 @@ class DynamicsQuadcopter3D:
         w1, w2, w3, w4 = actions_batch.T
 
         # Convert to euler angles as a batch operation
-        phi, theta, psi = geometric.quaternion_to_euler_angles_rad(qx, qy, qz, qw)
+        phi, theta, psi = geometric.quaternion_to_euler_angles_rad(qx, qy, qz, qw).T
 
         # These will be repeatedly used in the operations
         # ** is elementwise in numpy
@@ -127,105 +142,65 @@ class DynamicsQuadcopter3D:
         phi_ddot   = (-k * self.diameter * (w1_sq - w3_sq)) / Iyy
         psi_ddot   = (b * (w1_sq - w2_sq + w3_sq - w4_sq)) / Izz
 
-        return np.column_stack([x_ddot, y_ddot, z_ddot, theta_ddot, phi_ddot, psi_ddot])
+        second_derivatives = np.column_stack([x_ddot, y_ddot, z_ddot, theta_ddot, phi_ddot, psi_ddot])
 
-    def _compute_second_derivatives(
-        self,
-        state,
-        action,
-    ):
-        """
-        Uses the equations of motion to compute the second derivatives of the state
-        given the current state and action
-        """
+        if is_batch:
+            return second_derivatives
+        else:
+            return second_derivatives[0]
 
-        # Unpack the state and action
-        x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz = state
-        w1, w2, w3, w4 = action
-
-        # Convert to euler angles
-        phi, theta, psi = geometric.quaternion_to_euler_angles_rad(qx, qy, qz, qw)
-
-        # Constants for convienience
-        k = self.lift_coef
-        b = self.thrust_coef
-        d = self.drag_coef
-        m = self.mass
-        g = self.g
-        Ixx = self.Ix
-        Iyy = self.Iy
-        Izz = self.Iz
-
-        # These will be repeatedly used in the operations
-        w1_sq = w1**2
-        w2_sq = w2**2
-        w3_sq = w3**2
-        w4_sq = w4**2
-        w_sq_sum = w1_sq + w2_sq + w3_sq + w4_sq
-        cos_theta = np.cos(theta)  
-        cos_phi = np.cos(phi)
-        cos_psi = np.cos(psi)
-        sin_theta = np.sin(theta)
-        sin_phi = np.sin(phi)
-        sin_psi = np.sin(psi)
-
-        # The following are derived in the mathematica notebooks
-        # Translation accelerations
-        x_ddot = (-k * w_sq_sum * (cos_theta * cos_psi * sin_phi + sin_theta * sin_psi) + d * vx) / m
-        y_ddot = (+k * w_sq_sum * (cos_theta * sin_phi * sin_psi - cos_psi * sin_theta) - d * vy) / m
-        z_ddot = (-g + k * w_sq_sum * cos_theta * cos_phi - d * vz) / m
-
-        # Rotational accelerations
-        theta_ddot = (+k * self.diameter * (w2_sq - w4_sq)) / Ixx
-        phi_ddot   = (-k * self.diameter * (w1_sq - w3_sq)) / Iyy
-        psi_ddot   = (b * (w1_sq - w2_sq + w3_sq - w4_sq)) / Izz
-
-        # In full:
-        # # Translational accelerations
-        # x_ddot = (-k * (w1**2 + w2**2 + w3**2 + w4**2) * (np.cos(theta) * np.cos(psi) * np.sin(phi) + np.sin(theta) * np.sin(psi)) + d * vx) / m
-        # y_ddot = (+k * (w1**2 + w2**2 + w3**2 + w4**2) * (np.cos(theta) * np.sin(phi) * np.sin(psi) - np.cos(psi) * np.sin(theta)) - d * vy) / m
-        # z_ddot = (-g * m + k * w1**2 * np.cos(theta) * np.cos(phi) + k * w2**2 * np.cos(theta) * np.cos(phi) + k * w3**2 * np.cos(theta) * np.cos(phi) + k * w4**2 * np.cos(theta) * np.cos(phi) - d * vz) / m
-
-        return x_ddot, y_ddot, z_ddot, theta_ddot, phi_ddot, psi_ddot
-    
     def _euler_method_propagate(
         self,
-        state,
-        action,
+        states_batch,
+        actions_batch,
     ):
-        # Unpack the state
-        x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz = state
+        """
+        Given a batch of states and actions, compute the next states
+        using the Euler method
+        """
+
+        states_batch, actions_batch, is_batch = self._ensure_states_and_actions_valid_and_batched(states_batch, actions_batch)
+
+        # Shapes are (N, state_size) and (N, action_size)
+        states_batch = np.array(states_batch)
+        actions_batch = np.array(actions_batch)
+
+        # Unpack the states
+        x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz = states_batch.T
 
         # We have the second derivatives, so we can use the Euler method to update the state
         # by first updating the velocities and then updating the positions
-        second_derivatives = self._compute_second_derivatives(state, action)
+        second_derivatives = self._compute_second_derivatives(states_batch, actions_batch)
 
         # Update the velocities as a vector
-        new_first_derivatives = np.array([vx, vy, vz, wx, wy, wz]) + np.array(second_derivatives) * self.dt
+        new_first_derivatives = np.column_stack([vx, vy, vz, wx, wy, wz]) + np.array(second_derivatives) * self.dt
 
         # Update the positions
-        new_positions = np.array([x, y, z]) + new_first_derivatives[:3] * self.dt
+        new_positions = np.column_stack([x, y, z]) + new_first_derivatives[:, :3] * self.dt
         
         # When we get the delta in the zeroth derivates we need to convert
         # back to quaternions. That's because the delta that we've computed 
         # is a change in euler angles
-        change_in_quaternion = geometric.euler_angles_rad_to_quaternion(*(new_first_derivatives[3:] * self.dt))
-        initial_quaternion   = [qx, qy, qz, qw]
+        change_in_quaternion = geometric.euler_angles_rad_to_quaternion(*(new_first_derivatives[:, 3:] * self.dt).T)
+        initial_quaternion   = np.column_stack([qx, qy, qz, qw])
         new_quaternion       = geometric.quaternion_multiply(initial_quaternion, change_in_quaternion)
         
         # Now we can assemble the new state
-        new_state = np.concatenate([
+        new_states = np.column_stack([
             new_positions, 
             new_quaternion, 
             new_first_derivatives
         ])
 
-        return new_state  
+        if is_batch:
+            return new_states
+        else:
+            return new_states[0]
 
     def step(
         self,
-        state,          # current state
-        action,         # control action
+        states_batch,          # current state
+        actions_batch,         # control action
     ):
         """
         Given a state and a control action, compute the next state
@@ -242,6 +217,18 @@ class DynamicsQuadcopter3D:
         that to update the positions
 
         Small time steps are better for accuracy
+
+        Designed to work in batches too
         """
 
-        return self._euler_method_propagate(state, action)
+        states_batch, actions_batch, is_batch = self._ensure_states_and_actions_valid_and_batched(states_batch, actions_batch)
+
+        # Compute the next state using the Euler method
+        new_states_batch = self._euler_method_propagate(states_batch, actions_batch)
+
+        if is_batch:
+            return new_states_batch
+        else:
+            return new_states_batch[0]
+
+

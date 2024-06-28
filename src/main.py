@@ -35,7 +35,7 @@ if __name__ == "__main__":
         lift_coef=1.0,
         thrust_coef=1.0,
         drag_coef=0.1,
-        dt=0.01,
+        dt=0.05,
     )
 
     # Define the initial state of the system
@@ -78,6 +78,8 @@ if __name__ == "__main__":
         state_size=dynamics.state_size(),
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
+        K=20000,
+        H=int(0.5/dynamics.dt), # X second horizon
     )
     policy.update_path_xyz(path_xyz)
     agent = Agent(
@@ -88,7 +90,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_steps = 300
+    num_steps = 100
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
         action = agent.act()

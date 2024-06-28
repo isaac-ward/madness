@@ -300,7 +300,8 @@ class Visual:
                     path_xyz[:, 0],
                     path_xyz[:, 1],
                     path_xyz[:, 2],
-                    'g--',
+                    # yellow dashed line
+                    'y--',
                 )
 
             pbar.update(1)
