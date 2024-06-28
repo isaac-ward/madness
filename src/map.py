@@ -7,6 +7,7 @@ import scipy.spatial
 import networkx as nx
 from tqdm import tqdm
 import copy
+from utils.general import Cacher
 
 def test_points():
     # It's gonna be N points from 0,0,0 to 10,0,0
@@ -142,64 +143,81 @@ class Map:
 
         Returns a list of coordinates in metres that define the points along the path
         """
+        
+        # This can be a computationally expensive operation, so we'll cache the results
+        # and only recompute if the inputs change
+        computation_inputs = (
+            a_coord_metres,
+            b_coord_metres,
+            avoid_radius,
+        )
+        cacher = Cacher(computation_inputs)
+        if cacher.exists():
+            return cacher.load()
+        else:
 
-        a_coord_metres = np.array(a_coord_metres)
-        b_coord_metres = np.array(b_coord_metres)
+            a_coord_metres = np.array(a_coord_metres)
+            b_coord_metres = np.array(b_coord_metres)
 
-        a_voxel_coord = self.metres_to_voxel_coords(a_coord_metres)
-        b_voxel_coord = self.metres_to_voxel_coords(b_coord_metres)
+            a_voxel_coord = self.metres_to_voxel_coords(a_coord_metres)
+            b_voxel_coord = self.metres_to_voxel_coords(b_coord_metres)
 
-        # Define a custom heuristic function for A* (Euclidean distance)
-        def euclidean_distance(u, v):
-            return np.linalg.norm(np.array(u) - np.array(v))
+            # Define a custom heuristic function for A* (Euclidean distance)
+            def euclidean_distance(u, v):
+                return np.linalg.norm(np.array(u) - np.array(v))
 
-        print(f"Planning path from :")
-        print(f"\t-m: {a_coord_metres} -> {b_coord_metres}")
-        print(f"\t-v: {a_voxel_coord} -> {b_voxel_coord}")
+            print(f"Planning path from:")
+            print(f"\t-m: {a_coord_metres} -> {b_coord_metres}")
+            print(f"\t-v: {a_voxel_coord} -> {b_voxel_coord}")
 
-        # Use A* algorithm for pathfinding
-        print(f"Making graph with shape {self.voxel_grid.shape}")
-        graph = nx.Graph()
-        voxel_grid_shape = self.voxel_grid.shape
-        # Nodes
-        for i in tqdm(range(voxel_grid_shape[0]), desc="Making graph nodes"):
-            for j in range(voxel_grid_shape[1]):
-                for k in range(voxel_grid_shape[2]):
-                    graph.add_node((i, j, k))
-        # Edges
-        edges_to_add = []
-        for node in tqdm(graph.nodes, desc="Making graph edges"):
-            i, j, k = node
-            # 6 connectivity
-            neighbours = [
-                (i+1, j, k), (i-1, j, k),
-                (i, j+1, k), (i, j-1, k),
-                (i, j, k+1), (i, j, k-1),
-            ]
-            # If either of the nodes is occupied, don't add the edge
-            for neighbour in neighbours:
-                # Check if the neighbour is out of bounds
-                if not self.voxel_coord_in_bounds(neighbour):
-                    continue
-                if self.is_voxel_occupied(node) or self.is_voxel_occupied(neighbour):
-                    continue
-                else:
-                    edges_to_add.append((node, neighbour))
-        graph.add_edges_from(edges_to_add, weight=1)
-        print("Graph constructed")
-        print(graph)
+            # Use A* algorithm for pathfinding
+            print(f"Making graph with shape {self.voxel_grid.shape}")
+            graph = nx.Graph()
+            voxel_grid_shape = self.voxel_grid.shape
+            # Nodes
+            for i in tqdm(range(voxel_grid_shape[0]), desc="Making graph nodes"):
+                for j in range(voxel_grid_shape[1]):
+                    for k in range(voxel_grid_shape[2]):
+                        graph.add_node((i, j, k))
+            # Edges
+            edges_to_add = []
+            for node in tqdm(graph.nodes, desc="Making graph edges"):
+                i, j, k = node
+                # 6 connectivity
+                neighbours = [
+                    (i+1, j, k), (i-1, j, k),
+                    (i, j+1, k), (i, j-1, k),
+                    (i, j, k+1), (i, j, k-1),
+                ]
+                # If either of the nodes is occupied, don't add the edge
+                for neighbour in neighbours:
+                    # Check if the neighbour is out of bounds
+                    if not self.voxel_coord_in_bounds(neighbour):
+                        continue
+                    if self.is_voxel_occupied(node) or self.is_voxel_occupied(neighbour):
+                        continue
+                    else:
+                        edges_to_add.append((node, neighbour))
+            graph.add_edges_from(edges_to_add, weight=1)
+            print("Graph constructed")
+            print(graph)
 
-        # Compute the path using A* algorithm
-        try:
-            path_coords = nx.astar_path(
-                graph, 
-                tuple(a_voxel_coord), 
-                tuple(b_voxel_coord), 
-                heuristic=euclidean_distance
-            )
-            # Convert path nodes back to coordinates in metres
-            path_metres = [self.voxel_coords_to_metres(np.array([x, y, z])) for x, y, z in path_coords]
+            # Compute the path using A* algorithm
+            try:
+                path_coords = nx.astar_path(
+                    graph, 
+                    # Needs to be tuples because the node representation
+                    # used earlier was tuples
+                    tuple(a_voxel_coord), 
+                    tuple(b_voxel_coord), 
+                    heuristic=euclidean_distance
+                )
+                # Convert path nodes back to coordinates in metres
+                path_metres = [self.voxel_coords_to_metres(np.array([x, y, z])) for x, y, z in path_coords]
 
-            return np.array(path_metres)
-        except nx.NetworkXNoPath:
-            raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape})")
+            except nx.NetworkXNoPath:
+                raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape})")
+            
+            outputs = np.array(path_metres)
+            cacher.save(outputs)
+            return outputs

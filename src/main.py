@@ -17,6 +17,7 @@ from visual import Visual
 from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
 from policies.mppi import PolicyMPPI
 
+
 if __name__ == "__main__":
 
     # Will log everything to here
@@ -44,7 +45,7 @@ if __name__ == "__main__":
     # Create the environment
     map_ = Map(
         map_filepath="maps/empty.csv",
-        voxel_per_x_metres=10,
+        voxel_per_x_metres=0.2,
         extents_metres_xyz=[
             [-10, 20], 
             [-10, 10], 

@@ -52,6 +52,7 @@ class Cacher:
     
     def load(self):
         # Assumes that existence has been checked for
+        print(f"Loading cache from {self.cache_filepath}")
         with open(self.cache_filepath, "rb") as f:
             return pickle.load(f)
     
