@@ -15,7 +15,6 @@ def euler_angles_rad_to_quaternion(phi, theta, psi):
         return r[0]
     return r
 
-
 def quaternion_to_euler_angles_rad(x, y, z, w):
     """
     Converts a quaternion to euler angles works for
@@ -37,7 +36,8 @@ def quaternion_multiply(q1, q2):
     r1 = R.from_quat(q1)
     r2 = R.from_quat(q2)
     r3 = r1 * r2
-    return r3.as_quat()
+    r3 = r3.as_quat()
+    return r3
 
 def shortest_distance_between_path_and_point(path, point):
     """
