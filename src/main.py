@@ -11,6 +11,7 @@ import utils.general
 import utils.logging
 import dynamics
 from environment import Environment
+from map import Map
 from agent import Agent
 from visual import Visual
 from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
@@ -38,33 +39,40 @@ if __name__ == "__main__":
 
     # Define the initial state of the system
     # Positions, rotations (quaternions), velocities, angular velocities
-    state_initial = [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]
+    state_initial = [0, 0, 10, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]
 
     # Create the environment
-    # TODO map representations
-    map_ = None
+    map_ = Map(
+        map_filepath="maps/empty.csv",
+        voxel_per_x_metres=0.1,
+    )
     environment = Environment(
         state_initial=state_initial,
         dynamics_model=dynamics,
         map_=map_,
     )
 
+    # We need a path from the initial state to the goal state
+    xyz_initial = state_initial[0:3]
+    xyz_goal = [10, 0, 10]
+    path = map_.plan_path(xyz_initial, xyz_goal, 0.1)
+
     # Create the agent, which has an initial state and a policy
     # policy = PolicyRandom(
     #     state_size=dynamics.state_size(),
     #     action_size=dynamics.action_size(),
     # )
-    policy = PolicyConstant(
-        state_size=dynamics.state_size(),
-        action_size=dynamics.action_size(),
-        constant_action=np.ones((4,))*2.75,
-        perturb=True,
-    )
-    # policy = PolicyMPPI(
+    # policy = PolicyConstant(
     #     state_size=dynamics.state_size(),
     #     action_size=dynamics.action_size(),
-    #     dynamics=copy.deepcopy(dynamics),
+    #     constant_action=np.ones((4,))*2.75,
+    #     perturb=True,
     # )
+    policy = PolicyMPPI(
+        state_size=dynamics.state_size(),
+        action_size=dynamics.action_size(),
+        dynamics=copy.deepcopy(dynamics),
+    )
     agent = Agent(
         state_initial=state_initial,
         policy=policy,
