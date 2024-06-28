@@ -1,6 +1,8 @@
 import math
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+import pickle
+import os
 
 import utils.general as general
 import utils.geometric as geometric
@@ -36,6 +38,7 @@ class DynamicsQuadcopter3D:
         lift_coef,       # lift coefficient (relates rotor angular velocity to lift force)
         thrust_coef,     # thrust coefficient (relates rotor angular velocity to yaw torque)
         drag_coef,       # drag coefficient (relates velocity to drag force)
+        dt,              # time step
     ):
         self.diameter = diameter
         self.mass = mass
@@ -46,6 +49,20 @@ class DynamicsQuadcopter3D:
         self.lift_coef = lift_coef
         self.thrust_coef = thrust_coef
         self.drag_coef = drag_coef
+        self.dt = dt
+
+    def state_size(self):
+        return 13
+    def action_size(self):
+        return 4
+    def state_plot_groups(self):
+        return [3, 4, 3, 3]
+    def action_plot_groups(self):
+        return [4]
+    def state_labels(self):
+        return ["x", "y", "z", "qx", "qy", "qz", "qw", "vx", "vy", "vz", "wx", "wy", "wz"]
+    def action_labels(self):
+        return ["w1", "w2", "w3", "w4"]
 
     def _compute_second_derivatives(
         self,
@@ -91,7 +108,6 @@ class DynamicsQuadcopter3D:
         self,
         state,
         action,
-        dt,
     ):
         # Unpack the state
         x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz = state
@@ -101,15 +117,15 @@ class DynamicsQuadcopter3D:
         second_derivatives = self._compute_second_derivatives(state, action)
 
         # Update the velocities as a vector
-        new_first_derivatives = np.array([vx, vy, vz, wx, wy, wz]) + np.array(second_derivatives) * dt
+        new_first_derivatives = np.array([vx, vy, vz, wx, wy, wz]) + np.array(second_derivatives) * self.dt
 
         # Update the positions
-        new_positions = np.array([x, y, z]) + new_first_derivatives[:3] * dt
+        new_positions = np.array([x, y, z]) + new_first_derivatives[:3] * self.dt
         
         # When we get the delta in the zeroth derivates we need to convert
         # back to quaternions. That's because the delta that we've computed 
         # is a change in euler angles
-        change_in_quaternion = geometric.euler_angles_rad_to_quaternion(*(new_first_derivatives[3:] * dt))
+        change_in_quaternion = geometric.euler_angles_rad_to_quaternion(*(new_first_derivatives[3:] * self.dt))
         initial_quaternion   = [qx, qy, qz, qw]
         new_quaternion       = geometric.quaternion_multiply(initial_quaternion, change_in_quaternion)
         
@@ -126,7 +142,6 @@ class DynamicsQuadcopter3D:
         self,
         state,          # current state
         action,         # control action
-        dt,             # time step
     ):
         """
         Given a state and a control action, compute the next state
@@ -145,4 +160,12 @@ class DynamicsQuadcopter3D:
         Small time steps are better for accuracy
         """
 
-        return self._euler_method_propagate(state, action, dt)
+        return self._euler_method_propagate(state, action)
+
+    def save(self, folder):
+        """
+        Ensure the folder exists and then save oneself using pickle
+        """
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "dynamics.pkl"), "wb") as f:
+            pickle.dump(self, f)
