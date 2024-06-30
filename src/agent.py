@@ -70,7 +70,7 @@ class Agent:
         self,
         folder,
     ):
-        utils.logging.log_histories(
+        utils.logging.save_state_and_action_trajectories(
             os.path.join(folder, "agent"),
             self.state_history,
             self.action_history,

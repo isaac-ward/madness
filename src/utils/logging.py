@@ -39,16 +39,32 @@ def unpickle_from_filepath(filepath):
     with open(filepath, "rb") as f:
         return pickle.load(f)
 
-def log_histories(
+def save_state_and_action_trajectories(
     folder_save,
-    state_history,
-    action_history,
+    state_trajectories,
+    action_trajectories,
+    suffix="",
 ):
     """
     Export the history of the environment to a folder
     as npz files
     """
 
-    # Save the state and action history to here
-    np.savez(os.path.join(folder_save, "state_history.npz"), np.array(state_history))
-    np.savez(os.path.join(folder_save, "action_history.npz"), np.array(action_history))
+    if suffix != "": suffix = f"_{suffix}"
+
+    np.savez(os.path.join(folder_save, f"state_trajectories{suffix}.npz"), np.array(state_trajectories))
+    np.savez(os.path.join(folder_save, f"action_trajectories{suffix}.npz"), np.array(action_trajectories))
+
+def load_state_and_action_trajectories(
+    folder_load,
+    suffix="",
+):
+    """
+    Load the state and action trajectories from a folder
+    """
+
+    if suffix != "": suffix = f"_{suffix}"
+
+    state_trajectories = np.load(os.path.join(folder_load, f"state_trajectories{suffix}.npz"))["arr_0"]
+    action_trajectories = np.load(os.path.join(folder_load, f"action_trajectories{suffix}.npz"))["arr_0"]
+    return state_trajectories, action_trajectories

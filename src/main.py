@@ -20,6 +20,9 @@ from policies.mppi import PolicyMPPI
 
 if __name__ == "__main__":
 
+    # Seed everything
+    utils.general.seed(0)
+
     # Will log everything to here
     log_folder = utils.logging.make_log_folder(name="run")
 
@@ -27,10 +30,10 @@ if __name__ == "__main__":
     # has an internal model of the environment
     dynamics = dynamics.DynamicsQuadcopter3D(
         diameter=0.5,
-        mass=3.0,
-        Ix=0.1,
-        Iy=0.1,
-        Iz=0.1,
+        mass=4.0,
+        Ix=0.25,
+        Iy=0.25,
+        Iz=0.15,
         g=9.81,
         lift_coef=1.0,
         thrust_coef=1.0,
@@ -47,7 +50,7 @@ if __name__ == "__main__":
         map_filepath="maps/empty.csv",
         voxel_per_x_metres=0.2,
         extents_metres_xyz=[
-            [-10, 20], 
+            [-10, 30], 
             [-10, 10], 
             [0, 20]
         ],
@@ -60,7 +63,7 @@ if __name__ == "__main__":
 
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
-    xyz_goal = [10, 0, 10]
+    xyz_goal = [20, 0, 10]
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, 0.1)
 
     # Create the agent, which has an initial state and a policy
@@ -78,9 +81,11 @@ if __name__ == "__main__":
         state_size=dynamics.state_size(),
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
-        K=20000,
+        K=1024,
         H=int(0.5/dynamics.dt), # X second horizon
+        action_ranges=dynamics.action_ranges(),
     )
+    policy.enable_logging(log_folder)
     policy.update_path_xyz(path_xyz)
     agent = Agent(
         state_initial=state_initial,
@@ -90,7 +95,8 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_steps = 100
+    num_seconds = 5
+    num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
         action = agent.act()
@@ -102,6 +108,8 @@ if __name__ == "__main__":
         a_string = ", ".join([f"{x:.1f}" for x in action])
         pbar.set_description(f"s: {s_string} | a: {a_string}")
         pbar.update(1)
+    # Close the bar
+    pbar.close()
 
     # ----------------------------------------------------------------
 
