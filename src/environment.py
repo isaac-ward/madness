@@ -50,7 +50,7 @@ class Environment:
         folder_environment = os.path.join(folder, "environment")
 
         # Save the history
-        utils.logging.log_histories(
+        utils.logging.save_state_and_action_trajectories(
             folder_environment,
             self.state_history,
             self.action_history,

@@ -1,8 +1,12 @@
 import numpy as np
-
 from tqdm import tqdm
+import os
+from numba import njit, prange
+
+from scipy.stats.qmc import Sobol
 
 import utils.geometric
+import utils.general
 
 class PolicyMPPI:
     def __init__(
@@ -12,6 +16,7 @@ class PolicyMPPI:
         dynamics,
         K,
         H,
+        action_ranges,
     ):
         """
         Roll out a bunch of random actions and select the best one
@@ -21,8 +26,17 @@ class PolicyMPPI:
         self.dynamics = dynamics
         self.K = K
         self.H = H
+        self.action_ranges = action_ranges
 
+        # Typically we'll sample about the previous best action plan
+        self._previous_optimal_action_plan = np.zeros((H, action_size))
+
+        # Will need a path to follow, but we want it to be
+        # updated separately (changeable)
         self.path_xyz = None
+
+        # Are we going to have logging? Defaultly no
+        self.log_folder = None
 
     def reward(
         self,
@@ -44,8 +58,9 @@ class PolicyMPPI:
         path_deviation = 0
         # Do an average so its interpretable across different path
         # lengths
+        decay = 0.98
         path_deviation = np.mean([
-            utils.geometric.shortest_distance_between_path_and_point(
+            (decay ** i) * utils.geometric.shortest_distance_between_path_and_point(
                 self.path_xyz,
                 p[i],
             ) for i in range(self.H)
@@ -61,11 +76,30 @@ class PolicyMPPI:
         )[:, :2]
         upright_deviation = np.mean(np.linalg.norm(xy_euler_angles - desired_xy_euler_angles, axis=1))
 
-        # Minimize angular velocity
-        angular_velocity_deviation = np.mean(np.linalg.norm(w, axis=1))
+        # Minimize angular velocity, especially in the z
+        penalty = np.array([1, 1, 5])
+        angular_velocity_deviation = np.mean(np.linalg.norm(w * penalty, axis=1))
+
+        # Stay at the origin
+        origin_deviation = np.mean(np.linalg.norm(p - np.array([0, 0, 10]), axis=1))
+
+        # Goal state
+        goal_state = np.array([0, 0, 10, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+        goal_deviation = np.sum([
+            (decay ** i) * np.linalg.norm(state_trajectory_plan[i] - goal_state) for i in range(self.H)
+        ])
+
+        # Maximize velocity 
+        # TODO doesn't work - can just fall very far
+        mean_velocity = np.mean(np.linalg.norm(v, axis=1))
+
+        # Punish action discontinuities
+        action_discontinuity = np.mean(np.linalg.norm(np.diff(action_trajectory_plan, axis=0), axis=1))
 
         # Assemble the reward
-        reward = -1*path_deviation -5*upright_deviation - 10*angular_velocity_deviation
+        # If we only minimize path deviation, we get a straight line, but the angular velocity becomes massive
+        # THe angular velocity deviation can be small
+        reward = -1*path_deviation - 0.05*angular_velocity_deviation - 0.1*action_discontinuity
         return reward     
 
     def update_path_xyz(
@@ -76,6 +110,54 @@ class PolicyMPPI:
         Update the path to follow
         """
         self.path_xyz = path_xyz
+
+    def enable_logging(
+        self,
+        run_folder,
+    ):
+        """
+        Enable logging to a folder
+        """
+        self.log_folder = os.path.join(run_folder, "policy", "mppi")
+
+    # ----------------------------------------------------------------
+
+    def _random_uniform_sample_actions(self):
+        return np.random.uniform(self.action_ranges[:,0], self.action_ranges[:,1], (self.K, self.H, self.action_size))
+    
+    def _sobol_sample_actions(self):
+        dim = self.action_size * self.H
+        sampler = Sobol(dim)
+        higher_power_of_two = np.ceil(np.log2(self.K)).astype(int)
+        samples = sampler.random_base2(higher_power_of_two) # 2^m samples
+        samples = samples[:self.K] # Take only K samples
+        samples = samples.reshape((self.K, self.H, self.action_size))
+        # Make sure they're in range
+        samples = samples * (self.action_ranges[:,1] - self.action_ranges[:,0]) + self.action_ranges[:,0]
+        return samples
+    
+    def _rollover_mean_gaussian(self):
+        """
+        Create a gaussian centered around the previous best action plan
+        and sample from it with some standard deviation (based off action_ranges)
+        """
+
+        # I essentially need K lots of (H, action_size) sized samples, where
+        # the standard devation of each element in the sample is according to 
+        # the std_dev vector
+
+        # Create a gaussian centered around the previous best action plan
+        # (H, action_size)
+        mean = self._previous_optimal_action_plan 
+        # (action_size)
+        std_dev = (self.action_ranges[:,1] - self.action_ranges[:,0]) / 8
+        # This will draw K * H * action_size samples
+        samples = np.random.normal(mean, std_dev, (self.K, self.H, self.action_size))
+        # Clip into the action ranges
+        samples = np.clip(samples, self.action_ranges[:,0], self.action_ranges[:,1])
+        return samples
+
+    # ----------------------------------------------------------------
 
     def act(
         self,
@@ -92,7 +174,9 @@ class PolicyMPPI:
         H = self.H
 
         # Sample actions from some distribution
-        action_plans = np.random.randn(K, H, self.action_size) * 3
+        #action_plans = self._random_uniform_sample_actions()
+        #action_plans = self._sobol_sample_actions()
+        action_plans = self._rollover_mean_gaussian()
 
         # We'll simulate those actions using dynamics and figure
         # out the states
@@ -110,19 +194,58 @@ class PolicyMPPI:
                 state_plans[:, h],
                 action_plans[:, h],
             )
+
+        # # Roll out futures not in parallel
+        # for k in tqdm(range(K), desc="Rolling out futures", leave=False, disable=True):
+        #     for h in range(H):
+        #         state_plans[k, h + 1] = self.dynamics.step(
+        #             state_plans[k, h],
+        #             action_plans[k, h],
+        #         )
+
+        # Actually don't want the first state (it's the current state)
+        state_plans = state_plans[:, 1:]
             
         # Compute all rewards
         # TODO parallelize
-        for k in range(K):
+        for k in tqdm(range(K), desc="Computing rewards", leave=False, disable=True):
             rewards[k] = self.reward(
                 state_plans[k],
                 action_plans[k],
             )
 
         # Select the best plan and return the immediate action from that plan
-        best_action_plan = action_plans[np.argmax(rewards)]
-        best_action = best_action_plan[0]
-        return best_action
+        optimal_action_plan = action_plans[np.argmax(rewards)]
+        optimal_state_plan  = state_plans[np.argmax(rewards)]
+        self._previous_optimal_action_plan = optimal_action_plan
+        optimal_action = optimal_action_plan[0]
+
+        # Log the state and action plans alongside the reward, 
+        # if we're logging
+        if self.log_folder is not None:
+            # Create a subfolder for this step
+            folder = os.path.join(self.log_folder, f"step_{utils.general.get_timestamp(ultra_precise=True)}")
+            os.makedirs(folder, exist_ok=True)
+            # Save the state and action plans
+            utils.logging.save_state_and_action_trajectories(
+                folder,
+                state_plans,
+                action_plans,
+            )
+            # Save the rewards
+            utils.logging.pickle_to_filepath(
+                os.path.join(folder, "rewards.pkl"),
+                rewards,
+            )
+            # Save the optimal plans
+            utils.logging.save_state_and_action_trajectories(
+                folder,
+                optimal_state_plan,
+                optimal_action_plan,
+                suffix="optimal",
+            )
+
+        return optimal_action
                 
 
 

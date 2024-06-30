@@ -3,8 +3,16 @@ import datetime
 import hashlib
 import pickle
 
-def get_timestamp():
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")  
+import numpy as np
+
+def seed(seed):
+    np.random.seed(seed)
+
+def get_timestamp(ultra_precise=False):
+    if ultra_precise:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+    else:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")  
     return timestamp
 
 def get_project_dir():

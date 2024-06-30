@@ -4,6 +4,8 @@ from scipy.spatial.transform import Rotation as R
 import pickle
 import os
 
+from sobol_seq import i4_sobol_generate
+
 import utils.general as general
 import utils.geometric as geometric
 
@@ -63,6 +65,14 @@ class DynamicsQuadcopter3D:
         return ["x", "y", "z", "qx", "qy", "qz", "qw", "vx", "vy", "vz", "wx", "wy", "wz"]
     def action_labels(self):
         return ["w1", "w2", "w3", "w4"]
+    def action_ranges(self):
+        magnitude = 4
+        return np.array([
+            [-magnitude, +magnitude],
+            [-magnitude, +magnitude],
+            [-magnitude, +magnitude],
+            [-magnitude, +magnitude],
+        ])
 
     def _ensure_states_and_actions_valid_and_batched(self, states_batch, actions_batch):
         """
@@ -135,12 +145,12 @@ class DynamicsQuadcopter3D:
         # Translation accelerations
         x_ddot = (-k * w_sq_sum * (cos_theta * cos_psi * sin_phi + sin_theta * sin_psi) + d * vx) / m
         y_ddot = (+k * w_sq_sum * (cos_theta * sin_phi * sin_psi - cos_psi * sin_theta) - d * vy) / m
-        z_ddot = (-g + k * w_sq_sum * cos_theta * cos_phi - d * vz) / m
+        z_ddot = (k * w_sq_sum * cos_theta * cos_phi - d * vz) / m - g
 
         # Rotational accelerations
         theta_ddot = (+k * self.diameter * (w2_sq - w4_sq)) / Ixx
         phi_ddot   = (-k * self.diameter * (w1_sq - w3_sq)) / Iyy
-        psi_ddot   = (b * (w1_sq - w2_sq + w3_sq - w4_sq)) / Izz
+        psi_ddot   = (b * ((w1_sq + w3_sq) - (w2_sq + w4_sq))) / Izz
 
         second_derivatives = np.column_stack([x_ddot, y_ddot, z_ddot, theta_ddot, phi_ddot, psi_ddot])
 

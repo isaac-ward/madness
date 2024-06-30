@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from numba import njit
+
 def euler_angles_rad_to_quaternion(phi, theta, psi):
     """
     Converts euler angles to a quaternion works for
