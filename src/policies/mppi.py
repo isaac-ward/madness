@@ -106,7 +106,7 @@ class PolicyMPPI:
         forwardness = utils.geometric.forwardness_of_path_a_wrt_path_b(p, self.path_xyz)
 
         # Try to keep the velocity magnitude under control
-        desired_velocity = 1
+        desired_velocity = 2
         velocity_deviation = np.mean(np.abs(np.linalg.norm(v, axis=1) - desired_velocity))
 
         # We prefer to take no actions (control inputs are expensive)
@@ -116,7 +116,9 @@ class PolicyMPPI:
         # If we only minimize path deviation, we get a straight line, but the angular velocity becomes massive
         # The angular velocity deviation can be small
         # The forwardness can be small - just enough to nudge us in the right direction
-        reward = -5*path_deviation - 0.025*angular_velocity_deviation #- 1*velocity_deviation #- 0.05*angular_velocity_deviation - 1*velocity_deviation #+ 0.2*forwardness   # +   #- action_magnitude
+        reward = -5*path_deviation - 0.025*angular_velocity_deviation - 1*upright_deviation 
+        
+        #- 1*velocity_deviation #- 0.05*angular_velocity_deviation - 1*velocity_deviation #+ 0.2*forwardness   # +   #- action_magnitude
         return reward     
 
     def update_path_xyz(
