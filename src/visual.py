@@ -319,7 +319,7 @@ class Visual:
                 assert len(moving_avg) == len(actions), f"Moving average length {len(moving_avg)} != actions length {len(actions)}"
                 
                 return moving_avg
-            action_history_smoothed = moving_average(action_history, window_size=1)
+            action_history_smoothed = moving_average(action_history, window_size=4)
             action_smoothed = action_history_smoothed[frame]
             action = action_history[frame]
 
