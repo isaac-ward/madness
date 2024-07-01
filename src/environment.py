@@ -61,3 +61,9 @@ class Environment:
             os.path.join(folder_environment, "dynamics.pkl"),
             self.dynamics_model,
         )
+
+        # Save the map
+        utils.logging.pickle_to_filepath(
+            os.path.join(folder_environment, "map.pkl"),
+            self.map,
+        )

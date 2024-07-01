@@ -8,6 +8,7 @@ import networkx as nx
 from tqdm import tqdm
 import copy
 from utils.general import Cacher
+import utils.logging
 
 def test_points():
     # It's gonna be N points from 0,0,0 to 10,0,0
@@ -15,6 +16,25 @@ def test_points():
     points = np.zeros((N,3))
     points[:,0] = np.linspace(0,10,N)
     return points
+
+def test_column():
+    # Put a big column in the way at x=20, y=0, at each z from 0 to 20
+    N = 1600
+    points = np.zeros((N,3))
+    num_slices = 20 * 8
+    points_per_slice = N // num_slices
+    count = 0
+    for i in range(num_slices):
+        # Go around the circle at each z
+        r = 0.5
+        xs = [20 + r*np.cos(2*np.pi*i/points_per_slice) for i in range(points_per_slice)]
+        ys = [2*np.sin(r*np.pi*i/points_per_slice) for i in range(points_per_slice)]
+        z = 20 * (i / num_slices)
+        for i in range(points_per_slice):
+            points[count] = [xs[i], ys[i], z]
+            count += 1
+    return points
+        
 
 class Map:
     def __init__(
@@ -37,7 +57,7 @@ class Map:
         self.extents_metres_xyz = extents_metres_xyz
         
         # Load the map file as an occupancy grid
-        self.points = test_points()
+        self.points = test_column()
 
         # Create a voxel grid representation of the map
         num_voxels_per_axis = [
@@ -64,6 +84,7 @@ class Map:
         print(f"\t-extents: x={self.extents_metres_xyz[0]}, y={self.extents_metres_xyz[1]}, z={self.extents_metres_xyz[2]}")
         print(f"\t-voxel_grid (shape): {self.voxel_grid.shape}")
         print(f"\t-voxel_grid (total): {np.prod(self.voxel_grid.shape)}")
+        print(f"\t-voxel_grid (occupied): {np.sum(self.voxel_grid)}")
     
     # ----------------------------------------------------------------
         
@@ -122,8 +143,11 @@ class Map:
     def is_voxel_occupied(
         self,
         voxel_coords,
+        voxel_grid=None,
     ):
-        return self.voxel_grid[tuple(voxel_coords)] == 1
+        if voxel_grid is None:
+            voxel_grid = self.voxel_grid
+        return voxel_grid[tuple(voxel_coords)] == 1
     
     # ----------------------------------------------------------------
 
@@ -143,32 +167,53 @@ class Map:
 
         Returns a list of coordinates in metres that define the points along the path
         """
+
+        a_coord_metres = np.array(a_coord_metres)
+        b_coord_metres = np.array(b_coord_metres)
+
+        a_voxel_coord = self.metres_to_voxel_coords(a_coord_metres)
+        b_voxel_coord = self.metres_to_voxel_coords(b_coord_metres)
+
+        print(f"Planning path from:")
+        print(f"\t-m: {a_coord_metres} -> {b_coord_metres}")
+        print(f"\t-v: {a_voxel_coord} -> {b_voxel_coord}")
         
         # This can be a computationally expensive operation, so we'll cache the results
         # and only recompute if the inputs change
         computation_inputs = (
+            self.voxel_grid,
             a_coord_metres,
             b_coord_metres,
             avoid_radius,
         )
         cacher = Cacher(computation_inputs)
         if cacher.exists():
-            return cacher.load()
+            outputs = cacher.load()
         else:
-
-            a_coord_metres = np.array(a_coord_metres)
-            b_coord_metres = np.array(b_coord_metres)
-
-            a_voxel_coord = self.metres_to_voxel_coords(a_coord_metres)
-            b_voxel_coord = self.metres_to_voxel_coords(b_coord_metres)
 
             # Define a custom heuristic function for A* (Euclidean distance)
             def euclidean_distance(u, v):
                 return np.linalg.norm(np.array(u) - np.array(v))
 
-            print(f"Planning path from:")
-            print(f"\t-m: {a_coord_metres} -> {b_coord_metres}")
-            print(f"\t-v: {a_voxel_coord} -> {b_voxel_coord}")
+            # We will need to account for the avoidance radius. If we have a voxel map,
+            # we want to use morphological dilation to effectively expand the obstacles
+            # by the radius of the agent. This will allow us to plan a path that is
+            # feasible for the agent to follow
+            if avoid_radius > 0:
+                print("Expanding obstacles / creating a buffer using morphological dilation with a spherical structuring element...", end="")
+                # Create a copy of the voxel grid
+                voxel_grid_expanded = np.copy(self.voxel_grid)
+                # Create a spherical structuring element
+                radius_voxels = int(avoid_radius / self.voxel_per_x_metres)
+                structuring_element = np.zeros((2*radius_voxels+1, 2*radius_voxels+1, 2*radius_voxels+1))
+                for i in range(2*radius_voxels+1):
+                    for j in range(2*radius_voxels+1):
+                        for k in range(2*radius_voxels+1):
+                            if np.linalg.norm([i-radius_voxels, j-radius_voxels, k-radius_voxels]) <= radius_voxels:
+                                structuring_element[i, j, k] = 1
+                # Dilate the voxel grid
+                voxel_grid_expanded = scipy.ndimage.binary_dilation(voxel_grid_expanded, structure=structuring_element)
+                print(" done")
 
             # Use A* algorithm for pathfinding
             print(f"Making graph with shape {self.voxel_grid.shape}")
@@ -194,16 +239,18 @@ class Map:
                     # Check if the neighbour is out of bounds
                     if not self.voxel_coord_in_bounds(neighbour):
                         continue
-                    if self.is_voxel_occupied(node) or self.is_voxel_occupied(neighbour):
+                    if self.is_voxel_occupied(node, voxel_grid=voxel_grid_expanded) or self.is_voxel_occupied(neighbour, voxel_grid=voxel_grid_expanded):
                         continue
                     else:
                         edges_to_add.append((node, neighbour))
+            print("Graph constructing...", end="")
             graph.add_edges_from(edges_to_add, weight=1)
-            print("Graph constructed")
+            print(" done")
             print(graph)
 
             # Compute the path using A* algorithm
             try:
+                print("Solving for path...", end="")
                 path_coords = nx.astar_path(
                     graph, 
                     # Needs to be tuples because the node representation
@@ -212,6 +259,7 @@ class Map:
                     tuple(b_voxel_coord), 
                     heuristic=euclidean_distance
                 )
+                print(f" done")
                 # Convert path nodes back to coordinates in metres
                 path_metres = [self.voxel_coords_to_metres(np.array([x, y, z])) for x, y, z in path_coords]
 
@@ -220,4 +268,8 @@ class Map:
             
             outputs = np.array(path_metres)
             cacher.save(outputs)
-            return outputs
+
+        # Always report
+        path_length = np.sum(np.linalg.norm(np.diff(outputs, axis=0), axis=1))
+        print(f"Path found with {len(outputs)} points and length {path_length:.2f} m")
+        return outputs
