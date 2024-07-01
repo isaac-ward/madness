@@ -4,8 +4,6 @@ from scipy.spatial.transform import Rotation as R
 import pickle
 import os
 
-from sobol_seq import i4_sobol_generate
-
 import utils.general as general
 import utils.geometric as geometric
 
