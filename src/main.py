@@ -17,6 +17,7 @@ from visual import Visual
 from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
 from policies.mppi import PolicyMPPI
 
+# TODO implement wandb to allow for more efficient grid searching of parameters
 
 if __name__ == "__main__":
 
@@ -31,26 +32,26 @@ if __name__ == "__main__":
     dynamics = dynamics.DynamicsQuadcopter3D(
         diameter=0.5,
         mass=4.0,
-        Ix=0.25,
-        Iy=0.25,
-        Iz=0.15,
+        Ix=5,
+        Iy=5,
+        Iz=5,
         g=9.81,
         lift_coef=1.0,
         thrust_coef=1.0,
-        drag_coef=0.1,
+        drag_coef=0.5,
         dt=0.05,
     )
 
     # Define the initial state of the system
-    # Positions, rotations (quaternions), velocities, angular velocities
-    state_initial = [0, 0, 10, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]
+    # Positions, rotations (quaternion), velocities, angular velocities
+    state_initial = [0, 0, 10, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0]
 
     # Create the environment
     map_ = Map(
         map_filepath="maps/empty.csv",
         voxel_per_x_metres=0.2,
         extents_metres_xyz=[
-            [-10, 30], 
+            [-10, 50], 
             [-10, 10], 
             [0, 20]
         ],
@@ -63,7 +64,7 @@ if __name__ == "__main__":
 
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
-    xyz_goal = [20, 0, 10]
+    xyz_goal = [40, 0, 10]
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, 0.1)
 
     # Create the agent, which has an initial state and a policy
@@ -81,9 +82,10 @@ if __name__ == "__main__":
         state_size=dynamics.state_size(),
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
-        K=1024,
-        H=int(0.5/dynamics.dt), # X second horizon
+        K=2000,
+        H=int(0.2/dynamics.dt), # X second horizon
         action_ranges=dynamics.action_ranges(),
+        lambda_=100,
     )
     policy.enable_logging(log_folder)
     policy.update_path_xyz(path_xyz)
@@ -95,7 +97,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 5
+    num_seconds = 3
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):

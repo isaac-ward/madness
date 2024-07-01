@@ -45,4 +45,28 @@ def shortest_distance_between_path_and_point(path, point):
     """
     Given a path and a point, return the shortest distance between the path and the point
     """
-    return np.min(np.linalg.norm(path - point, axis=1))
+    distance_to_all_points_in_path = np.linalg.norm(np.array(path) - point, axis=1)
+    return np.min(distance_to_all_points_in_path)
+
+def forwardness_of_path_a_wrt_path_b(path_a, path_b):
+    """
+    Returns > 0 if as you traverse path_a, you are going along path_b in the forward direction
+    or < 0 if as you traverse path_a, you are going along path_b in the backward direction
+    """
+    # Convert paths to numpy arrays for easier manipulation
+    path_a = np.array(path_a)
+    path_b = np.array(path_b)
+    
+    # Calculate distances matrix between each point in path_a and path_b
+    distances_matrix = np.linalg.norm(path_a[:, np.newaxis, :] - path_b[np.newaxis, :, :], axis=2)
+    
+    # Find the closest point in path_b for each point in path_a
+    closest_indices = np.argmin(distances_matrix, axis=1)
+    
+    # Calculate differences between consecutive closest indices
+    differences = np.diff(closest_indices)
+    
+    # Measure of forwardness: mean of the differences
+    forwardness_measure = np.mean(differences)
+    
+    return forwardness_measure

@@ -17,6 +17,7 @@ class PolicyMPPI:
         K,
         H,
         action_ranges,
+        lambda_,
     ):
         """
         Roll out a bunch of random actions and select the best one
@@ -38,6 +39,10 @@ class PolicyMPPI:
         # Are we going to have logging? Defaultly no
         self.log_folder = None
 
+        # Lambda is the temperature of the softmax
+        # infinity selects the best action plan, 0 selects uniformly
+        self.lambda_ = lambda_
+
     def reward(
         self,
         state_trajectory_plan,
@@ -58,7 +63,7 @@ class PolicyMPPI:
         path_deviation = 0
         # Do an average so its interpretable across different path
         # lengths
-        decay = 0.98
+        decay = 1
         path_deviation = np.mean([
             (decay ** i) * utils.geometric.shortest_distance_between_path_and_point(
                 self.path_xyz,
@@ -77,7 +82,7 @@ class PolicyMPPI:
         upright_deviation = np.mean(np.linalg.norm(xy_euler_angles - desired_xy_euler_angles, axis=1))
 
         # Minimize angular velocity, especially in the z
-        penalty = np.array([1, 1, 5])
+        penalty = np.array([0, 0, 1])
         angular_velocity_deviation = np.mean(np.linalg.norm(w * penalty, axis=1))
 
         # Stay at the origin
@@ -96,10 +101,22 @@ class PolicyMPPI:
         # Punish action discontinuities
         action_discontinuity = np.mean(np.linalg.norm(np.diff(action_trajectory_plan, axis=0), axis=1))
 
+        # Are we going int he right direction along the path? This being positive
+        # should be rewarded
+        forwardness = utils.geometric.forwardness_of_path_a_wrt_path_b(p, self.path_xyz)
+
+        # Try to keep the velocity magnitude under control
+        desired_velocity = 1
+        velocity_deviation = np.mean(np.abs(np.linalg.norm(v, axis=1) - desired_velocity))
+
+        # We prefer to take no actions (control inputs are expensive)
+        action_magnitude = np.mean(np.linalg.norm(action_trajectory_plan, axis=1))
+
         # Assemble the reward
         # If we only minimize path deviation, we get a straight line, but the angular velocity becomes massive
-        # THe angular velocity deviation can be small
-        reward = -1*path_deviation - 0.05*angular_velocity_deviation - 0.1*action_discontinuity
+        # The angular velocity deviation can be small
+        # The forwardness can be small - just enough to nudge us in the right direction
+        reward = -5*path_deviation - 0.025*angular_velocity_deviation #- 1*velocity_deviation #- 0.05*angular_velocity_deviation - 1*velocity_deviation #+ 0.2*forwardness   # +   #- action_magnitude
         return reward     
 
     def update_path_xyz(
@@ -149,8 +166,12 @@ class PolicyMPPI:
         # Create a gaussian centered around the previous best action plan
         # (H, action_size)
         mean = self._previous_optimal_action_plan 
-        # (action_size)
-        std_dev = (self.action_ranges[:,1] - self.action_ranges[:,0]) / 8
+        # (action_size)\
+        # Variance too low and we'll narrow in, variance too high and we'll 
+        # hit the ends of our action ranges constantly. Too high in particular
+        # will result in a MAX/MIN type action plan which will almost always
+        # lead to failure. Too low makes it hard to quickly change behavior
+        std_dev = (self.action_ranges[:,1] - self.action_ranges[:,0]) / 3
         # This will draw K * H * action_size samples
         samples = np.random.normal(mean, std_dev, (self.K, self.H, self.action_size))
         # Clip into the action ranges
@@ -180,9 +201,9 @@ class PolicyMPPI:
 
         # We'll simulate those actions using dynamics and figure
         # out the states
-        state_plans  = np.zeros((K, H + 1, self.state_size))
+        state_plans  = np.zeros((K, H, self.state_size))
         # Start every future in the current state
-        state_plans[:, 0] = np.array(state_history[-1])
+        #state_plans[:, 0] = np.array(state_history[-1])
 
         # We will compute rewards for each future
         rewards = np.zeros(K)
@@ -190,12 +211,12 @@ class PolicyMPPI:
         # Roll out futures in parallel
         for h in tqdm(range(H), desc="Rolling out futures", leave=False, disable=True):
             # Compute the next states
-            state_plans[:, h + 1] = self.dynamics.step(
-                state_plans[:, h],
+            state_plans[:, h] = self.dynamics.step(
+                np.tile(state_history[-1], (K, 1)) if h == 0 else state_plans[:, h - 1],
                 action_plans[:, h],
             )
 
-        # # Roll out futures not in parallel
+        # # Roll out futures NOT in parallel
         # for k in tqdm(range(K), desc="Rolling out futures", leave=False, disable=True):
         #     for h in range(H):
         #         state_plans[k, h + 1] = self.dynamics.step(
@@ -204,7 +225,7 @@ class PolicyMPPI:
         #         )
 
         # Actually don't want the first state (it's the current state)
-        state_plans = state_plans[:, 1:]
+        # state_plans = state_plans[:, 1:]
             
         # Compute all rewards
         # TODO parallelize
@@ -213,6 +234,22 @@ class PolicyMPPI:
                 state_plans[k],
                 action_plans[k],
             )
+
+        # # Normalize rewards between 0-1 so that they don't blow up when exponentiated
+        # min_reward = np.min(rewards)
+        # max_reward = np.max(rewards)
+        # normalized_rewards = (rewards - min_reward) / (max_reward - min_reward)
+        # # Use softmax style weighting to compute the best action plan
+        # # Rewards is shape (K,)
+        # # Weights should be shape (K,)
+        # print(normalized_rewards)
+        # weights = np.exp(+ self.lambda_ * normalized_rewards)
+        # # Must check for divide by zero TODO
+        # weights = weights / np.sum(weights)
+        # print(np.sum(weights))
+        # # Compute optimal action plan 
+        # optimal_action_plan = np.sum(weights[:, np.newaxis, np.newaxis] * action_plans, axis=0) 
+        # optimal_action = optimal_action_plan[0]    
 
         # Select the best plan and return the immediate action from that plan
         optimal_action_plan = action_plans[np.argmax(rewards)]
@@ -237,6 +274,14 @@ class PolicyMPPI:
                 os.path.join(folder, "rewards.pkl"),
                 rewards,
             )
+            # If we're logging we will want to see what the optimal plan was
+            optimal_state_plan = np.zeros((H, self.state_size))
+            for h in range(H):
+                optimal_state_plan[h] = self.dynamics.step(
+                    state_history[-1] if h == 0 else optimal_state_plan[h - 1],
+                    optimal_action_plan[h],
+                )
+
             # Save the optimal plans
             utils.logging.save_state_and_action_trajectories(
                 folder,
