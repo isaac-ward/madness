@@ -66,12 +66,13 @@ class DynamicsQuadcopter3D:
     def action_labels(self):
         return ["w1", "w2", "w3", "w4"]
     def action_ranges(self):
-        magnitude = 4
+        magnitude_lo = 0
+        magnitude_hi = 6
         return np.array([
-            [-magnitude, +magnitude],
-            [-magnitude, +magnitude],
-            [-magnitude, +magnitude],
-            [-magnitude, +magnitude],
+            [-magnitude_lo, +magnitude_hi],
+            [-magnitude_lo, +magnitude_hi],
+            [-magnitude_lo, +magnitude_hi],
+            [-magnitude_lo, +magnitude_hi],
         ])
 
     def _ensure_states_and_actions_valid_and_batched(self, states_batch, actions_batch):

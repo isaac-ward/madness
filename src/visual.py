@@ -292,9 +292,7 @@ class Visual:
         # Track progress with a pbar
         pbar = tqdm(total=num_frames_to_render, desc="Rendering video")
 
-        def update(render_frame_index):     
-
-            pbar.update(1)
+        def update(render_frame_index): 
 
             # The frame in the video is not the frame in the simulation. In reality
             # we have a very small dt, but in the video we want to show the video
@@ -304,6 +302,25 @@ class Visual:
 
             state = state_history[frame]
             x, y, z, qx, qy, qz, qw = state[:7]
+
+            # For visualization it helps to render the moving average of the action
+            # history to now and then the current action will be the smoothed version
+            # Recall that action_history is shaped (N, action_size)
+            def moving_average(actions, window_size):
+                """Calculate the moving average of the actions with zero padding to ensure the output size is the same as the input size."""
+                if len(actions) < window_size:
+                    raise ValueError(f"Not enough data points for moving average. Minimum required: {window_size}, available: {len(actions)}")
+                
+                # array, pad_width (before, after)
+                padded_actions = np.pad(actions, ((window_size, 0), (0, 0)), mode='edge')
+                cumulative_sum = np.cumsum(padded_actions, axis=0)
+                moving_avg = (cumulative_sum[window_size:] - cumulative_sum[:-window_size]) / window_size
+
+                assert len(moving_avg) == len(actions), f"Moving average length {len(moving_avg)} != actions length {len(actions)}"
+                
+                return moving_avg
+            action_history_smoothed = moving_average(action_history, window_size=1)
+            action_smoothed = action_history_smoothed[frame]
             action = action_history[frame]
 
             # Time to render, clear the old axes, but keep the extents
@@ -326,15 +343,22 @@ class Visual:
             action_ranges = dynamics.action_ranges()
             # Get our progress through this range with this action input
             action_normalized = np.array([
-                (action[i] - action_ranges[i][0]) / (action_ranges[i][1] - action_ranges[i][0])
+                (action_smoothed[i] - action_ranges[i][0]) / (action_ranges[i][1] - action_ranges[i][0])
                 for i in range(4)
             ])
             # Normalized is between 0 and 1, so we'll translate it to be around zero and then scale it
-            # to our pleasure
-            action_scaled = (action_normalized - 0.5) * quadcopter_diameter
+            # to our pleasure. If the range is:
+            # - [-8, 8] then we need to compute 0.5
+            # - [-1, 1] then we need to compute 0.5
+            # - [-2, 6] then we need to compute 0.25
+            # THERE is something wrong with this. It's backwards TODO
+            # magnitude_ratio = np.abs(action_ranges[:,1]/ (action_ranges[:,1] - action_ranges[:,0]))
+            # action_scaled = (action_normalized - magnitude_ratio) * (quadcopter_diameter * 0.8)
+            desired_max_length = quadcopter_diameter * 0.8
+            scale_factor = desired_max_length / (action_ranges[:,1] - action_ranges[:,0])
+            action_scaled = action_smoothed * scale_factor
             action_vector_startpoints = rotor_locations
-            # TODO swap CCW rotors for visualization purposes
-            action_vector_endpoints   = rotor_locations + np.array([
+            action_vector_endpoints = rotor_locations + np.array([
                 [0, 0, action_scaled[0]],
                 [0, 0, action_scaled[1]],
                 [0, 0, action_scaled[2]],
@@ -360,12 +384,22 @@ class Visual:
                     [rotor_locations[0, 1], rotor_locations[2, 1]],
                     [rotor_locations[0, 2], rotor_locations[2, 2]],
                     'k-',
+                    linewidth=2,
                 )
                 ax.plot(
                     [rotor_locations[1, 0], rotor_locations[3, 0]],
                     [rotor_locations[1, 1], rotor_locations[3, 1]],
                     [rotor_locations[1, 2], rotor_locations[3, 2]],
                     'k-',
+                    linewidth=2,
+                )
+                # Draw from the center to rotor 1 to represent forward
+                ax.plot(
+                    [translation[0], rotor_locations[0, 0]],
+                    [translation[1], rotor_locations[0, 1]],
+                    [translation[2], rotor_locations[0, 2]],
+                    color='purple',
+                    linewidth=2,
                 )
 
                 # Draw the action inputs from the rotor locations to the end points
@@ -397,7 +431,7 @@ class Visual:
                     )
                 
                 # If we have access to MPPI data, then render it to some plots too
-                if mppi_flag and axes_name in ["main", "x", "y", "z"]:
+                if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
 
                     # What was the actual trajectory used? We'll highlight it!
                     a_opt = mppi_opt_actions[frame]
@@ -417,7 +451,10 @@ class Visual:
                     )
 
                     # Plot every state trajectory from this frame
-                    for i, state_trajectory in enumerate(mppi_states[frame]):
+                    # Only plot N random samples - upping this is a major source of slow down!
+                    num_random_samples = 64
+                    mppi_states_sampled = mppi_states[frame][np.random.choice(mppi_states.shape[1], num_random_samples, replace=False)]
+                    for i, state_trajectory in enumerate(mppi_states_sampled):
                         # Get the reward for this trajectory, scaled to 0,1
                         # and then map it to a color
                         reward_01 = (mppi_rewards[frame][i] - mppi_reward_min) / (mppi_reward_max - mppi_reward_min)
@@ -429,7 +466,7 @@ class Visual:
                             st[:, 1],
                             st[:, 2],
                             color=self.sample_colormap(reward_01),
-                            alpha=0.05,
+                            alpha=0.25,
                             linewidth=0.5,
                             linestyle='-',
                         )    
@@ -447,6 +484,12 @@ class Visual:
                     axs[f"action{i}"].plot(
                         [action[i] for action in actions_so_far],
                         'r-',
+                    )
+                    # And the smoothed
+                    axs[f"action{i}"].plot(
+                        [action[i] for action in action_history_smoothed[:frame]],
+                        'r--',
+                        alpha=0.5,
                     )
                     # Set the x axis to the number of frames
                     axs[f"action{i}"].set_xlim(0, num_frames_simulation)
@@ -500,7 +543,9 @@ class Visual:
             axs["main"].text2D(0, 0.94, f"f={frame+1}/{num_frames_simulation}", transform=axs["main"].transAxes, verticalalignment='top', horizontalalignment='left')
             
             # Tight layout
-            plt.tight_layout()
+            plt.tight_layout()    
+
+            pbar.update(1)
 
             return axs,
         
@@ -509,6 +554,8 @@ class Visual:
         # Save the video
         filepath_output = os.path.join(self.visuals_folder, "render.mp4")
         ani.save(filepath_output, fps=desired_fps, extra_args=['-vcodec', 'libx264'])
+        # Set the pbar to 100%
+        pbar.update(num_frames_to_render)
         pbar.close()
 
         print(f"Video available at {filepath_output}")
