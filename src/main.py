@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     # Define the initial state of the system
     # Positions, rotations (quaternion), velocities, angular velocities
-    state_initial = [0, 0, 10, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0]
+    state_initial = [0, 0, 15, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0]
 
     # Create the environment
     map_ = Map(
@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
-    xyz_goal = [40, 0, 10]
+    xyz_goal = [40, 0, 5]
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dynamics.diameter*4) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 8
+    num_seconds = 12
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
