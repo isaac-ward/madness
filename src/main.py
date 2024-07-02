@@ -82,8 +82,8 @@ if __name__ == "__main__":
         state_size=dynamics.state_size(),
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
-        K=2000,
-        H=int(0.2/dynamics.dt), # X second horizon
+        K=1024,
+        H=int(0.5/dynamics.dt), # X second horizon
         action_ranges=dynamics.action_ranges(),
         lambda_=100,
     )
@@ -97,7 +97,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 5
+    num_seconds = 10
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
