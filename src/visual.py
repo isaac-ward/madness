@@ -247,7 +247,7 @@ class Visual:
 
             # These axes should be centered around the drone
             for ax_name in ["closeup"]:
-                sf = 1
+                sf = 1.5
                 axs[ax_name].set_xlim(x - sf * quadcopter_diameter, x + sf * quadcopter_diameter)
                 axs[ax_name].set_ylim(y - sf * quadcopter_diameter, y + sf * quadcopter_diameter)
                 axs[ax_name].set_zlim(z - sf * quadcopter_diameter, z + sf * quadcopter_diameter)
@@ -492,7 +492,7 @@ class Visual:
                         alpha=0.5,
                     )
                     # Set the x axis to the number of frames
-                    axs[f"action{i}"].set_xlim(0, num_frames_simulation)
+                    axs[f"action{i}"].set_xlim(0, num_frames_simulation - 1)
                     # Set the y axis to the action range
                     axs[f"action{i}"].set_ylim(*dynamics.action_ranges()[i])     
                     # Remove axis ticks
