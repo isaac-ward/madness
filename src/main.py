@@ -66,16 +66,8 @@ if __name__ == "__main__":
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = [40, 0, 10]
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dynamics.diameter*2)
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dynamics.diameter*4) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
-
-    # Plot the paths
-    figure = plt.figure()
-    ax = figure.add_subplot(111, projection='3d')
-    ax.plot(path_xyz[:,0], path_xyz[:,1], path_xyz[:,2], 'r-')
-    ax.plot(path_xyz_smooth[:,0], path_xyz_smooth[:,1], path_xyz_smooth[:,2], 'g-')
-    plt.show()
-
 
     # Create the agent, which has an initial state and a policy
     # policy = PolicyRandom(
@@ -93,6 +85,7 @@ if __name__ == "__main__":
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
         K=2000,
+        # Half a second generally works well
         H=int(0.5/dynamics.dt), # X second horizon
         action_ranges=dynamics.action_ranges(),
         lambda_=100,
@@ -107,7 +100,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 10
+    num_seconds = 8
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):

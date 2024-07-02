@@ -270,7 +270,7 @@ class Visual:
 
             # These axes should be centered around the drone
             for ax_name in ["closeup"]:
-                sf = 1
+                sf = 2
                 axs[ax_name].set_xlim(x - sf * quadcopter_diameter, x + sf * quadcopter_diameter)
                 axs[ax_name].set_ylim(y - sf * quadcopter_diameter, y + sf * quadcopter_diameter)
                 axs[ax_name].set_zlim(z - sf * quadcopter_diameter, z + sf * quadcopter_diameter)
@@ -446,14 +446,14 @@ class Visual:
                     )     
 
                 # In 3D, plot the path and smooth paths in 
-                if path_flag and axes_name in ["main", "x", "y", "z"]:
+                if path_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
                     ax.plot(
                         path_xyz[:, 0],
                         path_xyz[:, 1],
                         path_xyz[:, 2],
                         color='grey',
-                        linestyle='-',
-                        alpha=0.5,
+                        linestyle=':',
+                        alpha=0.8,
                     )
                     ax.plot(
                         path_xyz_smooth[:, 0],
@@ -461,7 +461,7 @@ class Visual:
                         path_xyz_smooth[:, 2],
                         color='orange',
                         linestyle='-',
-                        alpha=0.5,
+                        alpha=0.8,
                     )
 
                 # In 3D, plot the voxel map
@@ -556,7 +556,7 @@ class Visual:
                 # (shape of mppi_states is (FRAMES, K, H, state_size))
                 _, K, H, _ = mppi_states.shape
                 rewards_this_frame = mppi_rewards[frame]
-                num_bins = 50
+                num_bins = 100
                 # bins have to be constant!
                 bins = np.linspace(mppi_reward_min, mppi_reward_max, num=num_bins+1)
                 N, _, patches = axs["mppi"].hist(rewards_this_frame, bins=bins, edgecolor='white', linewidth=0)

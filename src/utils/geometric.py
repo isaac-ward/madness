@@ -89,17 +89,18 @@ def smooth_path_same_endpoints(original_path):
     
     # Closeness to original path: minimize squared distance
     closeness_penalty = cp.sum_squares(new_path - original_path)
+
+    # TODO we could add obstacle constraints
     
     # Objective function: trade-off between smoothness and closeness
     # Weight for smoothness (higher is smoother, but less close to original path)
-    # we find that this alpha works well
-    alpha = 10
+    # we find that tan alpha ~ 10 works well
+    alpha = 20
     objective = cp.Minimize(closeness_penalty + alpha * smoothness_penalty)
     
     # Solve the problem
     problem = cp.Problem(objective, constraints)
     problem.solve()
-    
     
     if problem.status == cp.OPTIMAL:
         optimal_path = new_path.value
@@ -107,6 +108,11 @@ def smooth_path_same_endpoints(original_path):
 
         if np.allclose(optimal_path, original_path, atol=1e-3):
             raise ValueError("Smooth path optimization made no meaningful change to the path.")
+
+        # Always report
+        path_length = np.sum(np.linalg.norm(np.diff(optimal_path, axis=0), axis=1))
+        print(f"Path found with {len(optimal_path)} points and length {path_length:.2f} m (after convex optimization)")
+
         return optimal_path
     else:
         raise ValueError("Smooth path optimization failed or did not converge.")
