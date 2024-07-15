@@ -18,6 +18,7 @@ class PolicyMPPI:
         H,
         action_ranges,
         lambda_,
+        map_,
     ):
         """
         Roll out a bunch of random actions and select the best one
@@ -29,6 +30,13 @@ class PolicyMPPI:
         self.H = H
         self.action_ranges = action_ranges
 
+        # Lambda is the temperature of the softmax
+        # infinity selects the best action plan, 0 selects uniformly
+        self.lambda_ = lambda_
+
+        # We need a map to plan paths against (e.g. collision checking)
+        self.map_ = map_
+
         # Typically we'll sample about the previous best action plan
         self._previous_optimal_action_plan = np.zeros((H, action_size))
 
@@ -38,10 +46,6 @@ class PolicyMPPI:
 
         # Are we going to have logging? Defaultly no
         self.log_folder = None
-
-        # Lambda is the temperature of the softmax
-        # infinity selects the best action plan, 0 selects uniformly
-        self.lambda_ = lambda_
 
     def reward(
         self,
@@ -56,83 +60,25 @@ class PolicyMPPI:
         q = state_trajectory_plan[:, 3:7]
         v = state_trajectory_plan[:, 7:10]
         w = state_trajectory_plan[:, 10:]
-
-        # We compute the shortest distance between every point in
-        # our plan and the path we want to follow, and add this distance
-        # as a cost (ideally they'd be aligned)
-        path_deviation = 0
-        # Do an average so its interpretable across different path
-        # lengths
-        decay = 1
-        path_deviation = np.mean([
-            (decay ** i) * utils.geometric.shortest_distance_between_path_and_point(
-                self.path_xyz,
-                p[i],
-            ) for i in range(self.H)
-        ])
-
-        # Stay upright
-        desired_xy_euler_angles = np.array([0, 0])
-        xy_euler_angles = utils.geometric.quaternion_to_euler_angles_rad(
-            q[:, 0],
-            q[:, 1],
-            q[:, 2],
-            q[:, 3],
-        )[:, :2]
-        upright_deviation = np.mean(np.linalg.norm(xy_euler_angles - desired_xy_euler_angles, axis=1))
-
-        # Minimize angular velocity, especially in the z
-        penalty = np.array([0, 0, 1])
-        angular_velocity_deviation = np.mean(np.linalg.norm(w * penalty, axis=1))
-
-        # Stay at the origin
-        origin_deviation = np.mean(np.linalg.norm(p - np.array([0, 0, 10]), axis=1))
-
-        # Goal state
-        goal_state = np.array([0, 0, 10, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
-        goal_deviation = np.sum([
-            (decay ** i) * np.linalg.norm(state_trajectory_plan[i] - goal_state) for i in range(self.H)
-        ])
-
-        # Maximize velocity 
-        # TODO doesn't work - can just fall very far
-        mean_velocity = np.mean(np.linalg.norm(v, axis=1))
-
-        # Punish action discontinuities
-        action_discontinuity = np.mean(np.linalg.norm(np.diff(action_trajectory_plan, axis=0), axis=1))
-
-        # Are we going int he right direction along the path? This being positive
-        # should be rewarded
-        forwardness = utils.geometric.forwardness_of_path_a_wrt_path_b(p, self.path_xyz)
-
-        # Try to keep the velocity magnitude under control
-        # TODO doesn't account for direction
-        desired_velocity = 2
-        velocity_deviation = np.mean(np.linalg.norm(v, axis=1)) - desired_velocity
+        # Goal point
+        g = self.path_xyz[-1]
         
-        # End up far frmo where you started
-        desired_distance = 2
-        distance_deviation = np.linalg.norm(p[-1] - p[0])
+        # The cost function (negative reward) is:
+        # a * distance_from_goal_at_T + SUM b * distance_from_goal_at_t + SUM c * collision_at_t
+        a = 100
+        b = 10
+        c = 10000
 
-        # We prefer to take no actions (control inputs are expensive)
-        action_magnitude = np.mean(np.linalg.norm(action_trajectory_plan, axis=1))
+        goal_term = a * np.linalg.norm(p[-1] - g)
+        path_term = b * np.sum(np.linalg.norm(p - g, axis=1))
+        collision_term = c * np.sum([self.map_.is_collision(p_i, collision_radius=0.5) for p_i in p])
 
-        # Assemble the reward
-        # If we only minimize path deviation, we get a straight line, but the angular velocity becomes massive
-        # The angular velocity deviation can be small
-        # The forwardness can be small - just enough to nudge us in the right direction
-        reward = - 5*path_deviation \
-                 - 0.05*angular_velocity_deviation \
-                 - 1*upright_deviation 
-                 #- 1*distance_deviation 
-                 
-        #- 1.5*velocity_deviation
-        
-        #- 4*distance_deviation
-        
-        #- 1.5*velocity_deviation #+ 0.05*forwardness 
-        
-        #- 1*velocity_deviation #- 0.05*angular_velocity_deviation - 1*velocity_deviation #+ 0.2*forwardness   # +   #- action_magnitude
+        #print(goal_term, path_term, collision_term)
+
+        cost = goal_term + path_term + collision_term
+
+        # We're using a reward paradigm
+        reward = -cost
         return reward     
 
     def update_path_xyz(

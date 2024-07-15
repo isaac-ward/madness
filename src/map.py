@@ -77,6 +77,9 @@ class Map:
             else:
                 self.voxel_grid[i, j, k] = 1
 
+        # Compute a kd tree for fast collision checking
+        self.kd_tree = scipy.spatial.cKDTree(self.points)
+
         print("Map loaded")
         print(f"\t-map_filepath: {self.map_filepath}")
         print(f"\t-voxel_per_x_metres: {self.voxel_per_x_metres}")
@@ -134,6 +137,8 @@ class Map:
         ]
         return metres_coords
     
+    # ----------------------------------------------------------------
+    
     def voxel_coord_in_bounds(
         self,
         voxel_coords,
@@ -145,10 +150,27 @@ class Map:
         voxel_coords,
         voxel_grid=None,
     ):
+        # Use this map's grid if none is given
+        # (we may sometimes use a processed version of the grid)
         if voxel_grid is None:
             voxel_grid = self.voxel_grid
         return voxel_grid[tuple(voxel_coords)] == 1
     
+    # ----------------------------------------------------------------
+
+    def is_collision(
+        self,
+        metres_xyz,
+        collision_radius,
+    ):
+        """
+        Given a point in metres, check if it is in collision with the map
+        """
+        
+        # Query kdtree for closest occupied point
+        distance, index = self.kd_tree.query(metres_xyz)
+        return distance < collision_radius
+
     # ----------------------------------------------------------------
 
     def plan_path(
