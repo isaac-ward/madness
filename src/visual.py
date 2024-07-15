@@ -105,7 +105,7 @@ class Visual:
                     axs[i, j].set_ylim(min_val, max_val)
         
         # Plot the states and actions
-        plot_helper(axs[:len(state_plot_groups)], state_history, state_labels, state_plot_groups, color="blue")
+        plot_helper(axs[:len(state_plot_groups)], state_history, state_labels, state_plot_groups, color="royalblue")
         plot_helper(axs[len(state_plot_groups):], action_history, action_labels, action_plot_groups, color="red")
 
         # Save the figure
@@ -146,17 +146,39 @@ class Visual:
         """
         We'll use matplotlib's funcanimation to render a video of the simulation
         """
+        
+        # The state is set up as [x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz]
+        # The action is set up as [w1, w2, w3, w4] corresponding to the forward, left, backward, right rotor inputs
 
         # Load the environment data (they were saved with savez)
         state_history, action_history = utils.logging.load_state_and_action_trajectories(os.path.join(self.run_folder, "environment"))
         dynamics = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "dynamics.pkl"))
-        # The state is set up as [x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz]
-        # The action is set up as [w1, w2, w3, w4] corresponding to the forward, left, backward, right rotor inputs
+        map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
+
+        # Precompute the voxel representation stuff 
+        voxels = map_.voxel_grid
+        # What extents does the map cover? This shape is (3,2), and
+        # is the upper and lower bounds for each axis
+        voxel_trans = np.array(map_.extents_metres_xyz)[:,0]
+        # How large should each voxel be?
+        voxel_scale = map_.voxel_per_x_metres
+        # Can now define the corners of the voxels in the world frame
+        # If the shape of voxel_grid is (Nx, Ny, Nz) then the shape of voxel_corners
+        # is (Nx+1, Ny+1, Nz+1)
+        voxel_corners = np.meshgrid(
+            np.arange(voxels.shape[0] + 1) * voxel_scale + voxel_trans[0],
+            np.arange(voxels.shape[1] + 1) * voxel_scale + voxel_trans[1],
+            np.arange(voxels.shape[2] + 1) * voxel_scale + voxel_trans[2],
+            indexing='ij'
+        )
+        voxel_occupied_centers = np.argwhere(voxels == 1)
+        voxel_occupied_centers = [ map_.voxel_coords_to_metres(v) for v in voxel_occupied_centers ]
 
         # We also want the policy path, if it exists
         path_flag = False
         try:
             path_xyz = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "policy", "path_xyz.pkl"))
+            path_xyz_smooth = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "policy", "path_xyz_smooth.pkl"))
             path_flag = True
         except:
             pass
@@ -220,10 +242,11 @@ class Visual:
             max_val = max([state[idx] for state in history])
             # If they are less than the diameter, we'll set them to the diameter
             if abs(max_val - min_val) < quadcopter_diameter:
-                min_val = -0.5 * quadcopter_diameter
-                max_val = +0.5 * quadcopter_diameter
+                min_val -= 0.5 * quadcopter_diameter
+                max_val += 0.5 * quadcopter_diameter
             return min_val, max_val
         extents = [ get_min_max_val_in_history(state_history, i) for i in range(3) ]
+        #print(extents)
         # Which extent is the widest?
         max_extent = max([abs(extent[1] - extent[0]) for extent in extents])
         # Make them all the same, centered around the middle position encountered for
@@ -247,7 +270,7 @@ class Visual:
 
             # These axes should be centered around the drone
             for ax_name in ["closeup"]:
-                sf = 1.5
+                sf = 2
                 axs[ax_name].set_xlim(x - sf * quadcopter_diameter, x + sf * quadcopter_diameter)
                 axs[ax_name].set_ylim(y - sf * quadcopter_diameter, y + sf * quadcopter_diameter)
                 axs[ax_name].set_zlim(z - sf * quadcopter_diameter, z + sf * quadcopter_diameter)
@@ -418,17 +441,44 @@ class Visual:
                         [state[0] for state in states_so_far],
                         [state[1] for state in states_so_far],
                         [state[2] for state in states_so_far],
-                        'b--',
+                        color='royalblue',
+                        linestyle='--',
                     )     
 
-                # In 3D, plot the path as a yellow dashed line
-                if path_flag and axes_name in ["main", "x", "y", "z"]:
+                # In 3D, plot the path and smooth paths in 
+                if path_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
                     ax.plot(
                         path_xyz[:, 0],
                         path_xyz[:, 1],
                         path_xyz[:, 2],
-                        'y--',
+                        color='grey',
+                        linestyle=':',
+                        alpha=0.8,
                     )
+                    ax.plot(
+                        path_xyz_smooth[:, 0],
+                        path_xyz_smooth[:, 1],
+                        path_xyz_smooth[:, 2],
+                        color='orange',
+                        linestyle='-',
+                        alpha=0.8,
+                    )
+
+                # In 3D, plot the voxel map
+                if axes_name in ["main", "x", "y", "z"]:
+                    # Use precalculated values
+                    if True:
+                        # Plot an X at each filled voxel center
+                        ax.scatter(
+                            [v[0] for v in voxel_occupied_centers],
+                            [v[1] for v in voxel_occupied_centers],
+                            [v[2] for v in voxel_occupied_centers],
+                            color='red',
+                            marker='x',
+                        )
+                    else:
+                        # NOTE this is exceptionally slow without blitting
+                        ax.voxels(*voxel_corners, voxels, edgecolor='red', facecolors='red')
                 
                 # If we have access to MPPI data, then render it to some plots too
                 if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
@@ -442,7 +492,7 @@ class Visual:
                         st_opt[:, 0],
                         st_opt[:, 1],
                         st_opt[:, 2],
-                        color='orange',
+                        color='royalblue',
                         alpha=1,
                         linewidth=2,
                         linestyle='-',
@@ -506,7 +556,7 @@ class Visual:
                 # (shape of mppi_states is (FRAMES, K, H, state_size))
                 _, K, H, _ = mppi_states.shape
                 rewards_this_frame = mppi_rewards[frame]
-                num_bins = 50
+                num_bins = 100
                 # bins have to be constant!
                 bins = np.linspace(mppi_reward_min, mppi_reward_max, num=num_bins+1)
                 N, _, patches = axs["mppi"].hist(rewards_this_frame, bins=bins, edgecolor='white', linewidth=0)
@@ -549,7 +599,8 @@ class Visual:
 
             return axs,
         
-        ani = FuncAnimation(fig, update, frames=num_frames_to_render) #, interval=1000/desired_fps, blit=True)
+        # TODO implement blitting and artists list
+        ani = FuncAnimation(fig, update, frames=num_frames_to_render)#, blit=True)
         
         # Save the video
         filepath_output = os.path.join(self.visuals_folder, "render.mp4")

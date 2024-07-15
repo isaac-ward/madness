@@ -6,6 +6,7 @@ import pickle
 import csv
 import time
 import copy
+import matplotlib.pyplot as plt
 
 import utils.general
 import utils.logging
@@ -32,9 +33,9 @@ if __name__ == "__main__":
     dynamics = dynamics.DynamicsQuadcopter3D(
         diameter=0.5,
         mass=4.0,
-        Ix=5,
-        Iy=5,
-        Iz=5,
+        Ix=10,
+        Iy=10,
+        Iz=10,
         g=9.81,
         lift_coef=1.0,
         thrust_coef=1.0,
@@ -44,12 +45,12 @@ if __name__ == "__main__":
 
     # Define the initial state of the system
     # Positions, rotations (quaternion), velocities, angular velocities
-    state_initial = [0, 0, 10, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0]
+    state_initial = [0, 0, 5, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0]
 
     # Create the environment
     map_ = Map(
         map_filepath="maps/empty.csv",
-        voxel_per_x_metres=0.2,
+        voxel_per_x_metres=0.5,
         extents_metres_xyz=[
             [-10, 50], 
             [-10, 10], 
@@ -64,8 +65,9 @@ if __name__ == "__main__":
 
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
-    xyz_goal = [40, 0, 10]
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, 0.1)
+    xyz_goal = [40, 0, 15]
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dynamics.diameter*8) # Ultra safe
+    path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the agent, which has an initial state and a policy
     # policy = PolicyRandom(
@@ -88,7 +90,7 @@ if __name__ == "__main__":
         lambda_=100,
     )
     policy.enable_logging(log_folder)
-    policy.update_path_xyz(path_xyz)
+    policy.update_path_xyz(path_xyz_smooth)
     agent = Agent(
         state_initial=state_initial,
         policy=policy,
@@ -97,7 +99,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 10
+    num_seconds = 12
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
@@ -106,9 +108,11 @@ if __name__ == "__main__":
         agent.observe(state)
 
         # Update the pbar with the current state and action
-        s_string = ", ".join([f"{x:.1f}" for x in state])
-        a_string = ", ".join([f"{x:.1f}" for x in action])
-        pbar.set_description(f"s: {s_string} | a: {a_string}")
+        p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
+        v_string = f"{np.linalg.norm(state[7:10]):<4.1f}"
+        w_string = ", ".join([f"{x:<4.1f}" for x in state[10:13]])
+        a_string = ", ".join([f"{x:<4.1f}" for x in action])
+        pbar.set_description(f"t={(i+1)*dynamics.dt:.2f} / {num_seconds:.2f} | p=[ {p_string}] | v={v_string} | w=[ {w_string}] | a=[ {a_string}]")
         pbar.update(1)
     # Close the bar
     pbar.close()
@@ -121,6 +125,10 @@ if __name__ == "__main__":
     utils.logging.pickle_to_filepath(
         f"{log_folder}/policy/path_xyz.pkl",
         path_xyz,
+    )
+    utils.logging.pickle_to_filepath(
+        f"{log_folder}/policy/path_xyz_smooth.pkl",
+        path_xyz_smooth,
     )
 
     # Render visuals
