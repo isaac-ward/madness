@@ -3,6 +3,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import pickle
 import os
+from numba import njit, prange
 
 import utils.general as general
 import utils.geometric as geometric
@@ -23,11 +24,10 @@ class DynamicsQuadcopter3D:
     - +x is forward, +y is left, +z is up
     - '+' quadcopter configuration
     - w1, w2, w3, w4 are the angular velocities of the rotors, looking down from above:
-    -- w2 is along the +x axis (forward)
-    -- w1 is along the +y axis (left)
-    -- w4 is along the -x axis (backward)
-    -- w3 is along the -y axis (right)
-    - during hover, to prevent unwanted yawing, 2 and 4 are CCW and 1 and 3 are CW
+    -- w1 is along the +y axis (left), CW
+    -- w2 is along the +x axis (forward), CCW
+    -- w3 is along the -y axis (right), CW
+    -- w4 is along the -x axis (backward), CCW
     """
     def __init__(
         self,
@@ -48,7 +48,7 @@ class DynamicsQuadcopter3D:
         self.Iz = Iz
         self.g = g
         self.thrust_coef = thrust_coef
-        self.drag_coef = drag_coef
+        self.drag_coef   = drag_coef
         self.dt = dt
 
     def state_size(self):
@@ -62,7 +62,7 @@ class DynamicsQuadcopter3D:
     def state_labels(self):
         return ["x", "y", "z", "rx", "ry", "rz", "vx", "vy", "vz", "p", "q", "r"]
     def action_labels(self):
-        return ["w1", "w2", "w3", "w4"]
+        return ["w1 (left, CW)", "w2 (forward, CCW)", "w3 (right, CW)", "w4 (rear, CCW)"]
     def action_ranges(self):
         magnitude_lo = 0
         magnitude_hi = 6
@@ -74,47 +74,17 @@ class DynamicsQuadcopter3D:
         ])
         
     def step(self, state, action):
+        """
+        This function works for when we get a single state shaped (12,) and a single action shaped (4,)
+        """
         # Unwrap the state and action
         x, y, z, rx, ry, rz, vx, vy, vz, p, q, r = state
         w1, w2, w3, w4 = action
 
-        # Compute sin, cos, and tans
+        # Compute sin, cos, and tans (xyz order is φ θ ψ)
         s_rx, c_rx, t_rx = math.sin(rx), math.cos(rx), math.tan(rx)
         s_ry, c_ry, t_ry = math.sin(ry), math.cos(ry), math.tan(ry)
         s_rz, c_rz, t_rz = math.sin(rz), math.cos(rz), math.tan(rz)
-
-        # Compute the first derivatives as in equation 2.25
-        f = np.array([
-            vx,
-            vy,
-            vz,
-            q * (s_rz / c_ry) + r * (c_rz / c_ry),
-            q * c_rz - r * s_rz,
-            p + q * s_rz * t_ry + r * c_rz * t_ry,
-            0,
-            0,
-            self.g,
-            (self.Iy - self.Iz) / self.Ix * q * r,
-            (self.Iz - self.Ix) / self.Iy * p * r,
-            (self.Ix - self.Iy) / self.Iz * p * q,
-        ])
-
-        # Compute the action contributions as needed for 2.24
-        g1 = np.zeros(f.shape)
-        g2 = np.zeros(f.shape)
-        g3 = np.zeros(f.shape)
-        g4 = np.zeros(f.shape)
-
-        # Left
-        g1[6] = - 1 / self.mass * (s_rz * s_rx + c_rz * c_rx * s_ry)
-        g1[7] = - 1 / self.mass * (s_rz * c_rx - c_rz * s_rx * s_ry)
-        g1[8] = - 1 / self.mass * (c_rz * c_ry)
-        # Forward
-        g2[9]  = 1 / self.Ix
-        # Right
-        g3[10] = 1 / self.Iy
-        # Backward
-        g4[11] = 1 / self.Iz
 
         # And now compute the control vector (control force, control torques)
         ft = self.thrust_coef * (w1**2 + w2**2 + w3**2 + w4**2)
@@ -122,6 +92,23 @@ class DynamicsQuadcopter3D:
         ty = self.thrust_coef * (self.diameter / 2) * (w4**2 - w2**2)
         tz = self.drag_coef * ((w2**2 + w4**2) - (w1**2 + w3**2))
 
-        # Can now assemble the first derivative
+        # Can now compute the second derivatives (2.22)
+        sdd = np.array([
+            - ft / self.mass * (s_rx * s_rz  +  c_rx * c_rz * s_ry),
+            - ft / self.mass * (c_rx * s_rz * s_ry  -  c_rz * s_rx),
+            self.g - ft / self.mass * (c_rx * c_ry),
+            (self.Iy - self.Iz) / self.Ix * q * r + tx / self.Ix,
+            (self.Iz - self.Ix) / self.Iy * p * r + ty / self.Iy,
+            (self.Ix - self.Iy) / self.Iz * p * q + tz / self.Iz,
+        ])
+
+        # Can now use the euler method to compute the first derivatives
+        sd = np.array([vx, vy, vz, p, q, r]) + sdd * self.dt
+        s  = np.array([x, y, z, rx, ry, rz]) + sd  * self.dt
+
+        # Assemble the new state
+        state_new = np.concatenate([s, sd])
+        return state_new
+
 
 
