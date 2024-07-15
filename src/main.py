@@ -34,17 +34,16 @@ if __name__ == "__main__":
         diameter=0.2,
         mass=1.0,
         Ix=0.5,
-        Iy=0.5,
+        Iy=0.1,
         Iz=0.3,
         g=-9.81,
-        thrust_coef=1.0,
-        drag_coef=0.5,
-        dt=0.05,
+        thrust_coef=5,
+        dt=0.025,
     )
 
     # Define the initial state of the system
-    # Positions, rotations (quaternion), velocities, angular velocities
-    state_initial = [0, 0, 5, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0]
+    # Positions, rotations (euler angles), velocities, body rates
+    state_initial = [0, 0, 5,    0, 0, 0,    0, 0, 0,    0, 0, 0]
 
     # Create the environment
     map_ = Map(
@@ -84,7 +83,7 @@ if __name__ == "__main__":
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
         K=1024,
-        H=40, #int(0.5/dynamics.dt), # X second horizon
+        H=4, #int(0.5/dynamics.dt), # X second horizon
         action_ranges=dynamics.action_ranges(),
         lambda_=100,
         map_=map_,
@@ -99,7 +98,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 12
+    num_seconds = 4
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
@@ -109,8 +108,8 @@ if __name__ == "__main__":
 
         # Update the pbar with the current state and action
         p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
-        v_string = f"{np.linalg.norm(state[7:10]):<4.1f}"
-        w_string = ", ".join([f"{x:<4.1f}" for x in state[10:13]])
+        v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
+        w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
         a_string = ", ".join([f"{x:<4.1f}" for x in action])
         pbar.set_description(f"t={(i+1)*dynamics.dt:.2f} / {num_seconds:.2f} | p=[ {p_string}] | v={v_string} | w=[ {w_string}] | a=[ {a_string}]")
         pbar.update(1)
