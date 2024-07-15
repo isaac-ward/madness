@@ -542,7 +542,7 @@ class Visual:
                         alpha=0.5,
                     )
                     # Set the x axis to the number of frames
-                    axs[f"action{i}"].set_xlim(0, num_frames_simulation)
+                    axs[f"action{i}"].set_xlim(0, num_frames_simulation - 1)
                     # Set the y axis to the action range
                     axs[f"action{i}"].set_ylim(*dynamics.action_ranges()[i])     
                     # Remove axis ticks

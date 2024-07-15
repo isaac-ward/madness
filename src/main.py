@@ -31,11 +31,11 @@ if __name__ == "__main__":
     # The environment follows some true dynamics, and the agent
     # has an internal model of the environment
     dynamics = dynamics.DynamicsQuadcopter3D(
-        diameter=0.5,
-        mass=4.0,
-        Ix=5,
-        Iy=5,
-        Iz=5,
+        diameter=0.2,
+        mass=1.0,
+        Ix=0.5,
+        Iy=0.5,
+        Iz=0.3,
         g=9.81,
         lift_coef=1.0,
         thrust_coef=1.0,
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     # Define the initial state of the system
     # Positions, rotations (quaternion), velocities, angular velocities
-    state_initial = [0, 0, 15, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0]
+    state_initial = [0, 0, 5, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0]
 
     # Create the environment
     map_ = Map(
@@ -65,8 +65,8 @@ if __name__ == "__main__":
 
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
-    xyz_goal = [40, 0, 5]
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dynamics.diameter*4) # Ultra safe
+    xyz_goal = [40, 0, 15]
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dynamics.diameter*8) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the agent, which has an initial state and a policy
@@ -84,11 +84,11 @@ if __name__ == "__main__":
         state_size=dynamics.state_size(),
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
-        K=2000,
-        # Half a second generally works well
-        H=int(0.5/dynamics.dt), # X second horizon
+        K=1024,
+        H=40, #int(0.5/dynamics.dt), # X second horizon
         action_ranges=dynamics.action_ranges(),
         lambda_=100,
+        map_=map_,
     )
     policy.enable_logging(log_folder)
     policy.update_path_xyz(path_xyz_smooth)
@@ -110,10 +110,10 @@ if __name__ == "__main__":
 
         # Update the pbar with the current state and action
         p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
-        v_string = f"{np.linalg.norm(state[7:10]):<5.1f}"
-        w_string = ", ".join([f"{x:<5.1f}" for x in state[10:13]])
-        a_string = ", ".join([f"{x:<5.1f}" for x in action])
-        pbar.set_description(f"t={(i+1)*dynamics.dt:<5.2f} / {num_seconds:.2f} | p=[ {p_string}] | v={v_string} | w=[ {w_string}] | a=[ {a_string}]")
+        v_string = f"{np.linalg.norm(state[7:10]):<4.1f}"
+        w_string = ", ".join([f"{x:<4.1f}" for x in state[10:13]])
+        a_string = ", ".join([f"{x:<4.1f}" for x in action])
+        pbar.set_description(f"t={(i+1)*dynamics.dt:.2f} / {num_seconds:.2f} | p=[ {p_string}] | v={v_string} | w=[ {w_string}] | a=[ {a_string}]")
         pbar.update(1)
     # Close the bar
     pbar.close()
