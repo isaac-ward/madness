@@ -121,10 +121,10 @@ class PolicyMPPI:
         # If we only minimize path deviation, we get a straight line, but the angular velocity becomes massive
         # The angular velocity deviation can be small
         # The forwardness can be small - just enough to nudge us in the right direction
-        reward = - 5*path_deviation 
-                 - 0.05*angular_velocity_deviation 
+        reward = - 5*path_deviation \
+                 - 0.05*angular_velocity_deviation \
                  - 1*upright_deviation 
-                 - 1*distance_deviation 
+                 #- 1*distance_deviation 
                  
         #- 1.5*velocity_deviation
         
