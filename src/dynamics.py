@@ -38,7 +38,6 @@ class DynamicsQuadcopter3D:
         Iz,              # moment of inertia about z axis
         g,               # acceleration due to gravity (negative if down)
         thrust_coef,     # thrust coefficient (relates rotor angular velocity to yaw torque)
-        drag_coef,       # drag coefficient (relates velocity to drag force)
         dt,              # time step
     ):
         self.diameter = diameter
@@ -48,7 +47,6 @@ class DynamicsQuadcopter3D:
         self.Iz = Iz
         self.g = g
         self.thrust_coef = thrust_coef
-        self.drag_coef   = drag_coef
         self.dt = dt
 
     def state_size(self):
@@ -65,50 +63,112 @@ class DynamicsQuadcopter3D:
         return ["w1 (left, CW)", "w2 (forward, CCW)", "w3 (right, CW)", "w4 (rear, CCW)"]
     def action_ranges(self):
         magnitude_lo = 0
-        magnitude_hi = 6
+        magnitude_hi = 8
         return np.array([
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
         ])
-        
+    
     def step(self, state, action):
         """
-        This function works for when we get a single state shaped (12,) and a single action shaped (4,)
+        This function works for both single state shaped (12,) and action shaped (4,)
+        and batched states shaped (B, 12) and batched actions shaped (B, 4)
         """
-        # Unwrap the state and action
-        x, y, z, rx, ry, rz, vx, vy, vz, p, q, r = state
-        w1, w2, w3, w4 = action
 
-        # Compute sin, cos, and tans (xyz order is φ θ ψ)
-        s_rx, c_rx, t_rx = math.sin(rx), math.cos(rx), math.tan(rx)
-        s_ry, c_ry, t_ry = math.sin(ry), math.cos(ry), math.tan(ry)
-        s_rz, c_rz, t_rz = math.sin(rz), math.cos(rz), math.tan(rz)
+        state = np.asarray(state)
+        action = np.asarray(action)
+        
+        # Check if we have a batch
+        batched = len(state.shape) == 2
+        if batched:
+            return step_batched(state, action, self.diameter, self.mass, self.Ix, self.Iy, self.Iz, self.g, self.thrust_coef, self.dt)
+        else:
+            return step_single(state, action, self.diameter, self.mass, self.Ix, self.Iy, self.Iz, self.g, self.thrust_coef, self.dt)
+        
+# ---------------------------------------------------------
+        
+@njit
+def step_single(state, action, diameter, mass, Ix, Iy, Iz, g, thrust_coef, dt):
+    """
+    This function works for when we get a single state shaped (12,) and a single action shaped (4,).
+    """
+    # Unwrap the state and action 
+    # position, euler angles, velocity, body rates
+    x, y, z, rx, ry, rz, vx, vy, vz, p, q, r = state
+    w1, w2, w3, w4 = action
 
-        # And now compute the control vector (control force, control torques)
-        ft = self.thrust_coef * (w1**2 + w2**2 + w3**2 + w4**2)
-        tx = self.thrust_coef * (self.diameter / 2) * (w3**2 - w1**2)
-        ty = self.thrust_coef * (self.diameter / 2) * (w4**2 - w2**2)
-        tz = self.drag_coef * ((w2**2 + w4**2) - (w1**2 + w3**2))
+    # Compute sin, cos, and tan (xyz order is φ θ ψ)
+    s_rx, c_rx, t_rx = math.sin(rx), math.cos(rx), math.tan(rx)
+    s_ry, c_ry, t_ry = math.sin(ry), math.cos(ry), math.tan(ry)
+    s_rz, c_rz, t_rz = math.sin(rz), math.cos(rz), math.tan(rz)
 
-        # Can now compute the second derivatives (2.22)
-        sdd = np.array([
-            - ft / self.mass * (s_rx * s_rz  +  c_rx * c_rz * s_ry),
-            - ft / self.mass * (c_rx * s_rz * s_ry  -  c_rz * s_rx),
-            self.g - ft / self.mass * (c_rx * c_ry),
-            (self.Iy - self.Iz) / self.Ix * q * r + tx / self.Ix,
-            (self.Iz - self.Ix) / self.Iy * p * r + ty / self.Iy,
-            (self.Ix - self.Iy) / self.Iz * p * q + tz / self.Iz,
-        ])
+    # Compute the control vector (control force, control torques)
+    w1_sq = w1 ** 2
+    w2_sq = w2 ** 2
+    w3_sq = w3 ** 2
+    w4_sq = w4 ** 2
+    ft = thrust_coef * (w1_sq + w2_sq + w3_sq + w4_sq)
+    tx = thrust_coef * (diameter / 2) * (w3_sq - w1_sq)
+    ty = thrust_coef * (diameter / 2) * (w4_sq - w2_sq)
+    tz = thrust_coef * ((w2_sq + w4_sq) - (w1_sq + w3_sq))
 
-        # Can now use the euler method to compute the first derivatives
-        sd = np.array([vx, vy, vz, p, q, r]) + sdd * self.dt
-        s  = np.array([x, y, z, rx, ry, rz]) + sd  * self.dt
+    # Compute the change in state
+    state_delta = np.zeros(12)
 
-        # Assemble the new state
-        state_new = np.concatenate([s, sd])
-        return state_new
+    # Positions change according to velocity
+    state_delta[0] = vx
+    state_delta[1] = vy
+    state_delta[2] = vz
 
+    # Euler angles change according to body rates
+    state_delta[3] = p + q * s_rx * t_ry + r * c_rx * t_ry
+    state_delta[4] = q * c_rx - r * s_rx
+    state_delta[5] = q * s_rx / c_ry + r * c_rx / c_ry
 
+    # Velocities change according to forces and moments
+    state_delta[6] =   - (ft / mass) * (s_rx * s_rz + c_rx * s_ry * c_rz)
+    state_delta[7] =   - (ft / mass) * (s_rx * c_rz - c_rx * s_ry * s_rz)
+    state_delta[8] = g - (ft / mass) * (c_rx * c_ry)
 
+    # Body rates change according to moments of inertia and torques
+    state_delta[9]  = ((Iy - Iz) * q * r + tx) / Ix
+    state_delta[10] = ((Iz - Ix) * p * r + ty) / Iy
+    state_delta[11] = ((Ix - Iy) * p * q + tz) / Iz
+
+    #print(state_delta)
+
+    # Use the Euler method to compute the new state
+    state_new = state + dt * state_delta
+    return state_new    
+
+    # # Compute the second derivatives (2.22)
+    # sdd = np.zeros(6)
+    # ft_mass_ratio = ft / mass
+    # sdd[0] = - ft_mass_ratio * (+ c_rx * s_ry * c_rz + s_rx * s_rz)
+    # sdd[1] = - ft_mass_ratio * (+ c_rx * s_ry * s_rz - s_rx * c_rz)
+    # sdd[2] = g - ft_mass_ratio * (c_rx * c_ry)
+    # sdd[3] = ((Iy - Iz) * q * r + tx) / Ix
+    # sdd[4] = ((Iz - Ix) * p * r + ty) / Iy
+    # sdd[5] = ((Ix - Iy) * p * q + tz) / Iz
+
+    # # Use the Euler method to compute the first derivatives
+    # sd = np.array([vx, vy, vz, p, q, r]) + dt * sdd
+    # s  = np.array([x, y, z, rx, ry, rz]) + dt * sd
+
+    # # Assemble the new state
+    # state_new = np.zeros(12)
+    # state_new[:6] = s
+    # state_new[6:] = sd
+    # return state_new
+
+@njit(parallel=True)
+def step_batched(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, dt):
+    B = states.shape[0]
+    new_states = np.zeros((B, 12))
+    for i in prange(B):
+        new_states[i] = step_single(
+            states[i], actions[i], diameter, mass, Ix, Iy, Iz, g, thrust_coef, dt
+        )
+    return new_states

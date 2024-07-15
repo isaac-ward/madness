@@ -57,9 +57,9 @@ class PolicyMPPI:
         """
 
         p = state_trajectory_plan[:, 0:3]
-        q = state_trajectory_plan[:, 3:7]
-        v = state_trajectory_plan[:, 7:10]
-        w = state_trajectory_plan[:, 10:]
+        r = state_trajectory_plan[:, 3:6]
+        v = state_trajectory_plan[:, 6:9]
+        w = state_trajectory_plan[:, 9:12]
         # Goal point
         g = self.path_xyz[-1]
         
@@ -73,8 +73,7 @@ class PolicyMPPI:
         path_term = b * np.sum(np.linalg.norm(p - g, axis=1))
         collision_term = c * np.sum([self.map_.is_collision(p_i, collision_radius=0.5) for p_i in p])
 
-        #print(goal_term, path_term, collision_term)
-
+        #print(goal_term, path_term, collision_term
         cost = goal_term + path_term + collision_term
 
         # We're using a reward paradigm

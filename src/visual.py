@@ -187,10 +187,9 @@ class Visual:
         mppi_flag = False
         try:
             mppi_states, mppi_actions, mppi_opt_states, mppi_opt_actions, mppi_rewards = self.load_mppi_steps_states_actions_rewards()
-            # Over all steps and samples, so that we have a color range
-            # that stays static throughout the render
-            mppi_reward_min = np.min(mppi_rewards)
-            mppi_reward_max = np.max(mppi_rewards)
+            # For each step, over all samples, get the mins and maxes
+            mppi_reward_mins = [np.min(rewards) for rewards in mppi_rewards]
+            mppi_reward_maxs = [np.max(rewards) for rewards in mppi_rewards]
             mppi_flag = True
         except:
             pass
@@ -324,7 +323,7 @@ class Visual:
             frame = sim_frame_index
 
             state = state_history[frame]
-            x, y, z, qx, qy, qz, qw = state[:7]
+            x, y, z, rx, ry, rz, vx, vy, vz, wx, wy, wz = state
 
             # For visualization it helps to render the moving average of the action
             # history to now and then the current action will be the smoothed version
@@ -382,15 +381,17 @@ class Visual:
             action_scaled = action_smoothed * scale_factor
             action_vector_startpoints = rotor_locations
             action_vector_endpoints = rotor_locations + np.array([
-                [0, 0, action_scaled[0]],
+                # The order is left, forward, right, backward (must line up with rotor locations
+                # defined above)
                 [0, 0, action_scaled[1]],
-                [0, 0, action_scaled[2]],
+                [0, 0, action_scaled[0]],
                 [0, 0, action_scaled[3]],
+                [0, 0, action_scaled[2]],
             ])
             
             # Everything will now be rotated and translated into place
             translation = np.array([x, y, z])
-            rotation = R.from_quat([qx, qy, qz, qw])
+            rotation = R.from_euler('xyz', [rx, ry, rz], degrees=False)
 
             # Transform from local frame into world frame
             rotor_locations = rotation.apply(rotor_locations) + translation
@@ -483,6 +484,10 @@ class Visual:
                 # If we have access to MPPI data, then render it to some plots too
                 if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
 
+                    # What was the min and max reward this frame
+                    mppi_reward_min = mppi_reward_mins[frame]
+                    mppi_reward_max = mppi_reward_maxs[frame]
+
                     # What was the actual trajectory used? We'll highlight it!
                     a_opt = mppi_opt_actions[frame]
                     s_opt = mppi_opt_states[frame]
@@ -558,6 +563,8 @@ class Visual:
                 rewards_this_frame = mppi_rewards[frame]
                 num_bins = 100
                 # bins have to be constant!
+                mppi_reward_min = mppi_reward_mins[frame]
+                mppi_reward_max = mppi_reward_maxs[frame]
                 bins = np.linspace(mppi_reward_min, mppi_reward_max, num=num_bins+1)
                 N, _, patches = axs["mppi"].hist(rewards_this_frame, bins=bins, edgecolor='white', linewidth=0)
                 colors_per_bin = [self.sample_colormap(x) for x in np.linspace(0, 1, num_bins)]
@@ -567,7 +574,7 @@ class Visual:
                 avg_reward = np.mean(rewards_this_frame)
                 axs["mppi"].axvline(
                     avg_reward, 
-                    color='k',#self.sample_colormap((avg_reward - mppi_reward_min) / (mppi_reward_max - mppi_reward_min)), 
+                    color='k',
                     linewidth=2
                 )
                 # Set up the axis limits                
