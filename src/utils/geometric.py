@@ -1,7 +1,8 @@
 import numpy as np
+import cvxpy as cp
 from scipy.spatial.transform import Rotation as R
 
-from numba import njit
+#from numba import njit
 
 def euler_angles_rad_to_quaternion(phi, theta, psi):
     """
@@ -70,3 +71,48 @@ def forwardness_of_path_a_wrt_path_b(path_a, path_b):
     forwardness_measure = np.mean(differences)
     
     return forwardness_measure
+
+def smooth_path_same_endpoints(original_path):
+    N = original_path.shape[0]
+    
+    # Variables to optimize: the new path
+    new_path = cp.Variable((N, 3))
+    
+    # Constraints
+    constraints = [
+        new_path[0] == original_path[0],  # Start at the same point
+        new_path[-1] == original_path[-1]  # End at the same point
+    ]
+    
+    # Smoothness measure: minimize squared differences in derivatives
+    smoothness_penalty = cp.sum_squares(new_path[1:] - new_path[:-1])
+    
+    # Closeness to original path: minimize squared distance
+    closeness_penalty = cp.sum_squares(new_path - original_path)
+
+    # TODO we could add obstacle constraints
+    
+    # Objective function: trade-off between smoothness and closeness
+    # Weight for smoothness (higher is smoother, but less close to original path)
+    # we find that tan alpha ~ 10 works well
+    alpha = 20
+    objective = cp.Minimize(closeness_penalty + alpha * smoothness_penalty)
+    
+    # Solve the problem
+    problem = cp.Problem(objective, constraints)
+    problem.solve()
+    
+    if problem.status == cp.OPTIMAL:
+        optimal_path = new_path.value
+        optimal_path = np.array(optimal_path)
+
+        if np.allclose(optimal_path, original_path, atol=1e-3):
+            raise ValueError("Smooth path optimization made no meaningful change to the path.")
+
+        # Always report
+        path_length = np.sum(np.linalg.norm(np.diff(optimal_path, axis=0), axis=1))
+        print(f"Path found with {len(optimal_path)} points and length {path_length:.2f} m (after convex optimization)")
+
+        return optimal_path
+    else:
+        raise ValueError("Smooth path optimization failed or did not converge.")

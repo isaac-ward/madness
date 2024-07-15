@@ -1,7 +1,7 @@
 import numpy as np
 from tqdm import tqdm
 import os
-from numba import njit, prange
+#from numba import njit, prange
 
 from scipy.stats.qmc import Sobol
 
@@ -106,8 +106,13 @@ class PolicyMPPI:
         forwardness = utils.geometric.forwardness_of_path_a_wrt_path_b(p, self.path_xyz)
 
         # Try to keep the velocity magnitude under control
+        # TODO doesn't account for direction
         desired_velocity = 2
-        velocity_deviation = np.mean(np.abs(np.linalg.norm(v, axis=1) - desired_velocity))
+        velocity_deviation = np.mean(np.linalg.norm(v, axis=1)) - desired_velocity
+        
+        # End up far frmo where you started
+        desired_distance = 0.1
+        distance_deviation = np.linalg.norm(p[-1] - p[0])
 
         # We prefer to take no actions (control inputs are expensive)
         action_magnitude = np.mean(np.linalg.norm(action_trajectory_plan, axis=1))
@@ -116,7 +121,18 @@ class PolicyMPPI:
         # If we only minimize path deviation, we get a straight line, but the angular velocity becomes massive
         # The angular velocity deviation can be small
         # The forwardness can be small - just enough to nudge us in the right direction
-        reward = -5*path_deviation - 0.025*angular_velocity_deviation - 1*upright_deviation 
+        reward = - 5*path_deviation \
+                 - 0.05*angular_velocity_deviation \
+                 - 1*upright_deviation
+        
+
+        #- 1*distance_deviation 
+                 
+        #- 1.5*velocity_deviation
+        
+        #- 4*distance_deviation
+        
+        #- 1.5*velocity_deviation #+ 0.05*forwardness 
         
         #- 1*velocity_deviation #- 0.05*angular_velocity_deviation - 1*velocity_deviation #+ 0.2*forwardness   # +   #- action_magnitude
         return reward     
@@ -173,7 +189,7 @@ class PolicyMPPI:
         # hit the ends of our action ranges constantly. Too high in particular
         # will result in a MAX/MIN type action plan which will almost always
         # lead to failure. Too low makes it hard to quickly change behavior
-        std_dev = (self.action_ranges[:,1] - self.action_ranges[:,0]) / 3
+        std_dev = (self.action_ranges[:,1] - self.action_ranges[:,0]) / 4
         # This will draw K * H * action_size samples
         samples = np.random.normal(mean, std_dev, (self.K, self.H, self.action_size))
         # Clip into the action ranges
