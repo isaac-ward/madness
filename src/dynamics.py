@@ -112,27 +112,8 @@ class DynamicsQuadcopter3D:
         if cp.cuda.is_available():
             new_states = new_states.get()
         return new_states
-    
-    # def step(self, state, action):
-    #     """
-    #     This function works for both single state shaped (12,) and action shaped (4,)
-    #     and batched states shaped (B, 12) and batched actions shaped (B, 4)
-    #     """
-
-    #     state = np.asarray(state)
-    #     action = np.asarray(action)
-
-    #     args = (state, action, self.diameter, self.mass, self.Ix, self.Iy, self.Iz, self.g, self.thrust_coef, self.drag_yaw_coef, self.drag_force_coef, self.dt)
-        
-    #     # Check if we have a batch
-    #     batched = len(state.shape) == 2
-    #     if batched:
-    #         return step_batched(*args)
-    #     else:
-    #         return step_single(*args)
         
 # --------------------------------------------------------- 
-
 
 def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, drag_yaw_coef, drag_force_coef, dt):
     """
@@ -200,75 +181,3 @@ def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, 
     # Use the Euler method to compute the new state
     states_new = states + dt * state_delta
     return states_new
-
-
-@njit
-def step_single(state, action, diameter, mass, Ix, Iy, Iz, g, thrust_coef, drag_yaw_coef, drag_force_coef, dt):
-    """
-    This function works for when we get a single state shaped (12,) and a single action shaped (4,).
-    """
-    # For convenience
-    k = thrust_coef
-    b = drag_yaw_coef
-    kd = drag_force_coef
-
-    # Unwrap the state and action 
-    # position, euler angles (xyz=>φθψ), velocity, body rates (eq2.23)
-    x, y, z, rz, ry, rx, xd, yd, zd, p, q, r = state
-    w1, w2, w3, w4 = action
-    # For convienience and to match with the KTH paper
-    ψ, θ, φ = rz, ry, rx
-
-    # Compute sin, cos, and tan (xyz order is φ θ ψ)
-    s_ψ, c_ψ      = math.sin(ψ), math.cos(ψ)
-    s_θ, c_θ, t_θ = math.sin(θ), math.cos(θ), math.tan(θ)
-    s_φ, c_φ      = math.sin(φ), math.cos(φ)
-
-    # Compute the control vector (control force, control torques), eq2.16
-    w1_sq = w1 ** 2
-    w2_sq = w2 ** 2
-    w3_sq = w3 ** 2
-    w4_sq = w4 ** 2
-    r = diameter / 2
-    # This is labeled as u1, u2, u3, u4 in the paper
-    ft = k * (w1_sq + w2_sq + w3_sq + w4_sq)
-    tx = k * r * (w3_sq - w1_sq)
-    ty = k * r * (w4_sq - w2_sq)
-    tz = b * ((w2_sq + w4_sq) - (w1_sq + w3_sq))
-
-    # Compute the change in state (eq 2.23, 2.24, 2.25)
-    state_delta = np.zeros(12)
-
-    # Positions change according to velocity
-    state_delta[0] = xd
-    state_delta[1] = yd
-    state_delta[2] = zd
-
-    # # Euler angles change according to body rates
-    state_delta[3] = q * s_φ / c_θ + r * c_φ / c_θ
-    state_delta[4] = q * c_φ - r * s_φ
-    state_delta[5] = p + q * s_φ * t_θ + r * c_φ * t_θ
-
-    # Velocities change according to forces and moments
-    state_delta[6] =   - (ft / mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ)
-    state_delta[7] =   - (ft / mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ)
-    state_delta[8] = g - (ft / mass) * (c_θ * c_φ)
-
-    # Body rates change according to moments of inertia and torques
-    state_delta[9]  = ((Iy - Iz) * q * r + tx) / Ix
-    state_delta[10] = ((Iz - Ix) * p * r + ty) / Iy
-    state_delta[11] = ((Ix - Iy) * p * q + tz) / Iz
-    
-    # Use the Euler method to compute the new state
-    state_new = state + dt * state_delta
-    return state_new    
-
-@njit(parallel=True)
-def step_batched(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, drag_yaw_coef, drag_force_coef, dt):
-    B = states.shape[0]
-    new_states = np.zeros((B, 12))
-    for i in prange(B):
-        new_states[i] = step_single(
-            states[i], actions[i], diameter, mass, Ix, Iy, Iz, g, thrust_coef, drag_yaw_coef, drag_force_coef, dt
-        )
-    return new_states
