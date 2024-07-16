@@ -70,7 +70,7 @@ class PolicyMPPI:
         collision_term = 10000 * np.sum([self.map_.is_collision(p_i, collision_radius=0.5) for p_i in p])
 
         # Minimize the first derivatives (low speed, angular velocity is favored)
-        derivative_term = 1 * np.sum(np.linalg.norm(v, axis=1)) + 1 * np.sum(np.linalg.norm(w, axis=1))
+        #derivative_term = 1 * np.sum(np.linalg.norm(v, axis=1)) + 1 * np.sum(np.linalg.norm(w, axis=1))
 
         # Assemble, and note we're using a reward paradigm
         cost = goal_term + path_term + collision_term #+ derivative_term
@@ -129,7 +129,7 @@ class PolicyMPPI:
         # hit the ends of our action ranges constantly. Too high in particular
         # will result in a MAX/MIN type action plan which will almost always
         # lead to failure. Too low makes it hard to quickly change behavior
-        std_dev = np.abs(self.action_ranges[:,1] - self.action_ranges[:,0]) / 4 # 4
+        std_dev = np.abs(self.action_ranges[:,1] - self.action_ranges[:,0]) / 4 
         # This will draw K * H * action_size samples
         samples = np.random.normal(mean, std_dev, (self.K, self.H, self.action_size))
         #print(samples)
