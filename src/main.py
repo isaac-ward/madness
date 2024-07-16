@@ -7,6 +7,7 @@ import csv
 import time
 import copy
 import matplotlib.pyplot as plt
+import cupy as cp
 
 import utils.general
 import utils.logging
@@ -73,36 +74,36 @@ if __name__ == "__main__":
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dynamics.diameter*8) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
-    # Create the agent, which has an initial state and a policy
-    # front right rear left
-    input_none  = [0, 0, 0, 0]
-    input_hover = [1, 1, 1, 1]
-    # These have been tested to be correct for the given dynamics
-    # (positive meaning the rotating direction given by right hand
-    # rule with thumb pointing in the positive direction of each axis
-    # in the NED frame)
-    input_positive_roll  = [1.25, 0, 0.75, 0]
-    input_positive_pitch = [0, 0.75, 0, 1.25]
-    input_positive_yaw   = [0.25, 1.25, 0.25, 1.25]
-    policy = PolicyConstant(
-        state_size=dynamics.state_size(),
-        action_size=dynamics.action_size(),
-        constant_action=np.array(input_positive_pitch),
-        perturb=False,
-    )
-
-    # policy = PolicyMPPI(
+    # # Create the agent, which has an initial state and a policy
+    # # front right rear left
+    # input_none  = [0, 0, 0, 0]
+    # input_hover = [1, 1, 1, 1]
+    # # These have been tested to be correct for the given dynamics
+    # # (positive meaning the rotating direction given by right hand
+    # # rule with thumb pointing in the positive direction of each axis
+    # # in the NED frame)
+    # input_positive_roll  = [1.25, 0, 0.75, 0]
+    # input_positive_pitch = [0, 0.75, 0, 1.25]
+    # input_positive_yaw   = [0.25, 1.25, 0.25, 1.25]
+    # policy = PolicyConstant(
     #     state_size=dynamics.state_size(),
     #     action_size=dynamics.action_size(),
-    #     dynamics=copy.deepcopy(dynamics),
-    #     K=2000,
-    #     H=40, #int(0.5/dynamics.dt), # X second horizon
-    #     action_ranges=dynamics.action_ranges(),
-    #     lambda_=100,
-    #     map_=map_,
+    #     constant_action=np.array(input_positive_pitch),
+    #     perturb=False,
     # )
-    # policy.enable_logging(log_folder)
-    # policy.update_path_xyz(path_xyz_smooth)
+
+    policy = PolicyMPPI(
+        state_size=dynamics.state_size(),
+        action_size=dynamics.action_size(),
+        dynamics=copy.deepcopy(dynamics),
+        K=2000,
+        H=40, #int(0.5/dynamics.dt), # X second horizon
+        action_ranges=dynamics.action_ranges(),
+        lambda_=100,
+        map_=map_,
+    )
+    policy.enable_logging(log_folder)
+    policy.update_path_xyz(path_xyz_smooth)
 
     agent = Agent(
         state_initial=state_initial,
@@ -125,7 +126,8 @@ if __name__ == "__main__":
         v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
         w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
         a_string = ", ".join([f"{x:<4.1f}" for x in action])
-        pbar.set_description(f"t={(i+1)*dynamics.dt:.3f} / {num_seconds:.3f} | p=[ {p_string}] | v={v_string} | w=[ {w_string}] | a=[ {a_string}]")
+        pbar.set_description(
+            f"t={(i+1)*dynamics.dt:.2f}/{num_seconds:.2f} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={str(cp.cuda.is_available())[0]}")
         pbar.update(1)
     # Close the bar
     pbar.close()
