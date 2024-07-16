@@ -104,10 +104,10 @@ if __name__ == "__main__":
     # policy.enable_logging(log_folder)
     # policy.update_path_xyz(path_xyz_smooth)
 
-    agent = Agent(
-        state_initial=state_initial,
-        policy=policy,
-    ) 
+    # agent = Agent(
+    #     state_initial=state_initial,
+    #     policy=policy,
+    # ) 
 
     # ----------------------------------------------------------------
 
