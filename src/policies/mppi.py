@@ -1,6 +1,7 @@
 import numpy as np
 from tqdm import tqdm
 import os
+import cupy as cp
 #from numba import njit, prange
 
 from scipy.stats.qmc import Sobol
@@ -19,6 +20,7 @@ class PolicyMPPI:
         action_ranges,
         lambda_,
         map_,
+        use_gpu_if_available=True,
     ):
         """
         Roll out a bunch of random actions and select the best one
@@ -47,33 +49,61 @@ class PolicyMPPI:
         # Are we going to have logging? Defaultly no
         self.log_folder = None
 
-    def reward(
+        # If we're using a GPU, we'll need to move some things over
+        self.use_gpu_if_available = use_gpu_if_available
+
+    def batch_reward(
         self,
-        state_trajectory_plan,
-        action_trajectory_plan,
+        state_trajectory_plans,
+        action_trajectory_plans,
     ):
         """
-        Given a potential plan, return a scalar reward (higher is better)
+        Given a batch of plans, return a scalar reward (higher is better) for each
+
+        state_trajectory_plans: (batch_size, H, state_size)
+        action_trajectory_plans: (batch_size, H, action_size)
         """
 
-        p = state_trajectory_plan[:, 0:3]
-        r = state_trajectory_plan[:, 3:6]
-        v = state_trajectory_plan[:, 6:9]
-        w = state_trajectory_plan[:, 9:12]
+        # What module to use? cupy or numpy?
+        xp = cp.get_array_module(state_trajectory_plans)
+        batch_size, _, _ = xp.shape(state_trajectory_plans)
+
+        p = state_trajectory_plans[:, :, 0:3]   # batch_size, H, 3
+        r = state_trajectory_plans[:, :, 3:6]
+        v = state_trajectory_plans[:, :, 6:9]
+        w = state_trajectory_plans[:, :, 9:12]
         # Goal point
-        g = self.path_xyz[-1]
-        
+        goal_p = self.path_xyz[-1]
+        goal_v = np.zeros(3)
+        goal_r = np.zeros(3)
+        goal_w = np.zeros(3)
+
         # The cost function (negative reward) from the published work is:
         # a * distance_from_goal_at_T + SUM b * distance_from_goal_at_t + SUM c * collision_at_t
-        goal_term = 100 * np.linalg.norm(p[-1] - g)
-        path_term = 10 * np.sum(np.linalg.norm(p - g, axis=1))
-        collision_term = 10000 * np.sum([self.map_.is_collision(p_i, collision_radius=0.5) for p_i in p])
 
-        # Minimize the first derivatives (low speed, angular velocity is favored)
-        #derivative_term = 1 * np.sum(np.linalg.norm(v, axis=1)) + 1 * np.sum(np.linalg.norm(w, axis=1))
+        # Distance of final point from goal
+        goal_p_terms = xp.linalg.norm(p[:,-1,:] - goal_p, axis=1)
+        goal_r_terms = xp.linalg.norm(r[:,-1,:] - goal_r, axis=1)
+        goal_v_terms = xp.linalg.norm(v[:,-1,:] - goal_v, axis=1)
+        goal_w_terms = xp.linalg.norm(w[:,-1,:] - goal_w, axis=1)
+
+        # Distance along path to goal
+        path_terms = xp.sum(xp.linalg.norm(p - goal_p, axis=2), axis=1)
+
+        # Collision check
+        # It is extremely important that this collision check be done in parallel, this collision check
+        # uses ckdtrees and is very slow otherwise
+        flat_p = p.reshape((batch_size * self.H, 3))
+        collision_terms = xp.sum(self.map_.batch_is_collision(flat_p, collision_radius=1).reshape((batch_size, self.H)), axis=1)
+
+        # Minimize velocity
+        #velocity_terms = xp.sum(xp.linalg.norm(v, axis=2), axis=1)
+
+        # Minimize angular velocity
+        #angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
 
         # Assemble, and note we're using a reward paradigm
-        cost = goal_term + path_term + collision_term #+ derivative_term
+        cost = 100 * goal_p_terms + 10 * path_terms + 10000 * collision_terms + 0 * goal_r_terms + 50 * goal_v_terms + 50 * goal_w_terms
         reward = -cost
         return reward     
 
@@ -124,15 +154,18 @@ class PolicyMPPI:
         # Create a gaussian centered around the previous best action plan
         # (H, action_size)
         mean = self._previous_optimal_action_plan 
-        # (action_size)\
+
+        # (action_size)
         # Variance too low and we'll narrow in, variance too high and we'll 
         # hit the ends of our action ranges constantly. Too high in particular
         # will result in a MAX/MIN type action plan which will almost always
         # lead to failure. Too low makes it hard to quickly change behavior
+        # and adequately explore the state space
         std_dev = np.abs(self.action_ranges[:,1] - self.action_ranges[:,0]) / 4 
+
         # This will draw K * H * action_size samples
         samples = np.random.normal(mean, std_dev, (self.K, self.H, self.action_size))
-        #print(samples)
+        
         # Clip into the action ranges
         samples = np.clip(samples, self.action_ranges[:,0], self.action_ranges[:,1])
         return samples
@@ -157,7 +190,6 @@ class PolicyMPPI:
         #action_plans = self._random_uniform_sample_actions()
         #action_plans = self._sobol_sample_actions()
         action_plans = self._rollover_mean_gaussian()
-        #print(action_plans)
 
         # We'll simulate those actions using dynamics and figure
         # out the states
@@ -166,29 +198,33 @@ class PolicyMPPI:
         # We will compute rewards for each future
         rewards = np.zeros(K)
 
-        # Roll out futures in parallel
+        # If GPU is available and we desire it, then we'll use it
+        using_gpu = self.use_gpu_if_available and cp.cuda.is_available()
+        # Move everything to the GPU if we're using it
+        if using_gpu:
+            state_history   = cp.array(state_history)
+            action_history  = cp.array(action_history)
+            state_plans     = cp.array(state_plans)
+            action_plans    = cp.array(action_plans)
+            rewards         = cp.array(rewards)
+            self.path_xyz   = cp.array(self.path_xyz)
+
+        # What module to use? cupy or numpy?
+        xp = cp.get_array_module(state_history)
+
+        # Roll out futures in parallel (needs to be serial because we need to compute
+        # the state at t=0 before we can compute the state at t=1)
         for h in tqdm(range(H), desc="Rolling out futures", leave=False, disable=True):
             # Compute the next states
             state_plans[:, h] = self.dynamics.step(
-                np.tile(state_history[-1], (K, 1)) if h == 0 else state_plans[:, h - 1],
+                # If it's our first computation, start at our last known state, otherwise
+                # start at the last computed state
+                xp.tile(state_history[-1], (K, 1)) if h == 0 else state_plans[:, h - 1],
                 action_plans[:, h],
             )
-
-        # # Roll out futures NOT in parallel
-        # for k in tqdm(range(K), desc="Rolling out futures", leave=False, disable=True):
-        #     for h in range(H):
-        #         state_plans[k, h + 1] = self.dynamics.step(
-        #             state_plans[k, h],
-        #             action_plans[k, h],
-        #         )
             
         # Compute all rewards
-        # TODO parallelize
-        for k in tqdm(range(K), desc="Computing rewards", leave=False, disable=True):
-            rewards[k] = self.reward(
-                state_plans[k],
-                action_plans[k],
-            )
+        rewards = self.batch_reward(state_plans, action_plans)
 
         # # Normalize rewards between 0-1 so that they don't blow up when exponentiated
         # min_reward = np.min(rewards)
@@ -207,10 +243,28 @@ class PolicyMPPI:
         # optimal_action = optimal_action_plan[0]    
 
         # Select the best plan and return the immediate action from that plan
-        optimal_action_plan = action_plans[np.argmax(rewards)]
-        optimal_state_plan  = state_plans[np.argmax(rewards)]
-        self._previous_optimal_action_plan = optimal_action_plan
+        optimal_action_plan = action_plans[xp.argmax(rewards)]
+        optimal_state_plan  = state_plans[xp.argmax(rewards)]
         optimal_action = optimal_action_plan[0]
+
+        # Convert everything back to CPU if necessary
+        if using_gpu:
+            state_history       = cp.asnumpy(state_history)
+            action_history      = cp.asnumpy(action_history)
+            state_plans         = cp.asnumpy(state_plans)
+            action_plans        = cp.asnumpy(action_plans)
+            rewards             = cp.asnumpy(rewards)
+            self.path_xyz       = cp.asnumpy(self.path_xyz)
+            optimal_state_plan  = cp.asnumpy(optimal_state_plan)
+            optimal_action_plan = cp.asnumpy(optimal_action_plan)
+            optimal_action      = cp.asnumpy(optimal_action)
+
+        # Update the model that we're sampling from
+        self._previous_optimal_action_plan = optimal_action_plan
+
+        # ----------------------------------------------------------------
+        # Logging from here
+        # ----------------------------------------------------------------
 
         # Log the state and action plans alongside the reward, 
         # if we're logging
