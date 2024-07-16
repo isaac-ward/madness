@@ -26,6 +26,10 @@ if __name__ == "__main__":
     # Seed everything
     utils.general.seed(0)
 
+    # Are we using GPU? 
+    # NOTE: suggest false for now because it's slow
+    use_gpu_if_available = False
+
     # Will log everything to here
     log_folder = utils.logging.make_log_folder(name="run")
 
@@ -33,7 +37,7 @@ if __name__ == "__main__":
     # has an internal model of the environment
     dynamics = dynamics.DynamicsQuadcopter3D(
         diameter=0.2,
-        mass=1,
+        mass=2.5,
         Ix=0.5,
         Iy=0.5,
         Iz=0.3,
@@ -45,12 +49,12 @@ if __name__ == "__main__":
         drag_yaw_coef=5,   
         # higher values lower the max velocity
         drag_force_coef=5,   
-        dt=0.01,
+        dt=0.025,
     )
 
     # Define the initial state of the system
     # Positions, rotations (euler angles), velocities, body rates
-    state_initial = [0, 0, 5,    0, 0, 0,    0, 0, 0,    0, 0, 0]
+    state_initial = [0, 0, 15,    0, 0, 0,    0, 0, 0,    0, 0, 0]
 
     # Create the environment
     map_ = Map(
@@ -70,7 +74,7 @@ if __name__ == "__main__":
 
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
-    xyz_goal = [40, 0, 15]
+    xyz_goal = [40, 0, 5]
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dynamics.diameter*8) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
@@ -96,11 +100,13 @@ if __name__ == "__main__":
         state_size=dynamics.state_size(),
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
-        K=2000,
-        H=40, #int(0.5/dynamics.dt), # X second horizon
+        K=1000,
+        H=50, #int(0.5/dynamics.dt), # X second horizon
         action_ranges=dynamics.action_ranges(),
         lambda_=100,
         map_=map_,
+        # Keep this off, it's slow
+        use_gpu_if_available=use_gpu_if_available,
     )
     policy.enable_logging(log_folder)
     policy.update_path_xyz(path_xyz_smooth)
@@ -113,7 +119,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 4
+    num_seconds = 6
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
@@ -127,7 +133,7 @@ if __name__ == "__main__":
         w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
         a_string = ", ".join([f"{x:<4.1f}" for x in action])
         pbar.set_description(
-            f"t={(i+1)*dynamics.dt:.2f}/{num_seconds:.2f} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={str(cp.cuda.is_available())[0]}")
+            f"t={(i+1)*dynamics.dt:.2f}/{num_seconds:.2f} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={"✓" if use_gpu_if_available else "✗"}")
         pbar.update(1)
     # Close the bar
     pbar.close()

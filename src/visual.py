@@ -269,7 +269,7 @@ class Visual:
 
             # These axes should be centered around the drone
             for ax_name in ["closeup"]:
-                sf = 2
+                sf = 5
                 axs[ax_name].set_xlim(x - sf * quadcopter_diameter, x + sf * quadcopter_diameter)
                 axs[ax_name].set_ylim(y - sf * quadcopter_diameter, y + sf * quadcopter_diameter)
                 axs[ax_name].set_zlim(z - sf * quadcopter_diameter, z + sf * quadcopter_diameter)
@@ -521,9 +521,11 @@ class Visual:
                         st_opt[:, 1],
                         st_opt[:, 2],
                         color='royalblue',
-                        alpha=1,
-                        linewidth=2,
-                        linestyle='-',
+                        alpha=0.66,
+                        linewidth=1,
+                        # Keep this small so that we can see
+                        # the mppi samples
+                        linestyle='--', 
                         # Set z order so this is always visible
                         zorder=100,
                     )
@@ -544,8 +546,8 @@ class Visual:
                             st[:, 1],
                             st[:, 2],
                             color=self.sample_colormap(reward_01),
-                            alpha=0.5,
-                            linewidth=0.5,
+                            alpha=0.33,
+                            linewidth=1,
                             linestyle='-',
                         )    
 

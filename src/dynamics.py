@@ -68,8 +68,10 @@ class DynamicsQuadcopter3D:
     def action_labels(self):
         return ["w1 (left, CW)", "w4 (forward, CCW)", "w3 (right, CW)", "w2 (rear, CCW)"]
     def action_ranges(self):
-        magnitude_lo = 0
-        magnitude_hi = 0.5
+        # If you're finding that state space isn't adequately explored,
+        # consider increasing the size of the action space
+        magnitude_lo = 4
+        magnitude_hi = 4
         return np.array([
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
@@ -83,19 +85,15 @@ class DynamicsQuadcopter3D:
         and batched states shaped (B, 12) and batched actions shaped (B, 4)
         """
 
-        state = np.asarray(state)
-        action = np.asarray(action)
+        # Do we have GPU access?
+        xp = cp.get_array_module(state)
         
         # If not batched then wrap in a batch
-        is_batch = len(state.shape) == 2
+        is_batch = len(xp.shape(state)) == 2
         if not is_batch:
-            state = state[None, :]
-            action = action[None, :]
-
-        # If GPUs are available use them
-        if cp.cuda.is_available():
-            state = cp.asarray(state)
-            action = cp.asarray(action)
+            # Add a batch dimension
+            state = xp.expand_dims(state, axis=0)
+            action = xp.expand_dims(action, axis=0)
 
         # Call step
         new_states = step_batch_gpu(
@@ -107,10 +105,8 @@ class DynamicsQuadcopter3D:
         # Unbatch if needed
         if not is_batch:
             new_states = new_states[0]
-
-        # If we used GPU compute, then move back to CPU
-        if cp.cuda.is_available():
-            new_states = new_states.get()
+        
+        # Note that if we're on GPU then these are still cupy arrays
         return new_states
         
 # --------------------------------------------------------- 

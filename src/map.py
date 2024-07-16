@@ -163,13 +163,23 @@ class Map:
         metres_xyz,
         collision_radius,
     ):
+        return self.batch_is_collision(
+            np.array([metres_xyz]),
+            collision_radius,
+        )[0]
+    
+    def batch_is_collision(
+        self,
+        batch_metres_xyzs,
+        collision_radius,
+    ):
         """
-        Given a point in metres, check if it is in collision with the map
+        Given a batch of points in metres, check if they are in collision with the map
         """
-        
+            
         # Query kdtree for closest occupied point
-        distance, index = self.kd_tree.query(metres_xyz)
-        return distance < collision_radius
+        distances, indices = self.kd_tree.query(batch_metres_xyzs)
+        return distances < collision_radius
 
     # ----------------------------------------------------------------
 
