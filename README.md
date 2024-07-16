@@ -52,3 +52,7 @@ To remove all logs (minus the gitkeep file)
 ```
 rm -rf logs/*
 ```
+
+---
+
+conda install -c conda-forge cupy

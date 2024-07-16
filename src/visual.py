@@ -289,18 +289,27 @@ class Visual:
                 ax.text2D(0.5, 0.95, text, transform=ax.transAxes, verticalalignment='top', horizontalalignment='center')
 
             # Manually set the rotation of the orthographic views
+            # Useful link: https://matplotlib.org/stable/api/_as_gen/mpl_toolkits.mplot3d.axes3d.Axes3D.view_init.html
             # x is the behind view (along -x axis)
-            write_label_to_top_left_of_axis(axs["x"], "behind")
-            axs["x"].view_init(azim=180, elev=0, roll=0)
+            write_label_to_top_left_of_axis(axs["x"], "behind (↓z →y)")
+            axs["x"].view_init(azim=0, elev=180, roll=0)
             # y is the right view (along -y axis)
-            write_label_to_top_left_of_axis(axs["y"], "right")
-            axs["y"].view_init(azim=-90, elev=0, roll=0)
+            write_label_to_top_left_of_axis(axs["y"], "right (↓z →x)")
+            axs["y"].view_init(azim=90, elev=0, roll=180)
             # z is the top view (along -z axis)
-            write_label_to_top_left_of_axis(axs["z"], "top")
-            axs["z"].view_init(azim=-90, elev=90, roll=0)
+            write_label_to_top_left_of_axis(axs["z"], "top (↓y →x)")
+            axs["z"].view_init(azim=90, elev=-90, roll=180)
 
             # label the closeup
             write_label_to_top_left_of_axis(axs["closeup"], "closeup")
+
+            # Set the rotation of the project views to be the same and
+            # to suit a NED frame orientation as in the KTH paper figure 2
+            # Default for Axes3D is 
+            # azim, elev, roll = -60, 30, 0
+            azim, elev, roll = 60, -30, 180
+            axs["main"].view_init(azim=azim, elev=elev, roll=roll)
+            axs["closeup"].view_init(azim=azim, elev=elev, roll=roll)
 
         # We need to know how many frames we have in the simulation
         num_frames_simulation = len(action_history)
@@ -323,7 +332,7 @@ class Visual:
             frame = sim_frame_index
 
             state = state_history[frame]
-            x, y, z, rx, ry, rz, vx, vy, vz, wx, wy, wz = state
+            x, y, z, rz, ry, rx, vx, vy, vz, wx, wy, wz = state
 
             # For visualization it helps to render the moving average of the action
             # history to now and then the current action will be the smoothed version
@@ -373,18 +382,19 @@ class Visual:
             scale_factor = desired_max_length / (action_ranges[:,1] - action_ranges[:,0])
             action_scaled = action_smoothed * scale_factor
             action_vector_startpoints = rotor_locations
-            action_vector_endpoints   = rotor_locations + np.array([
-                # The order of the actions is left, forward, right, backward (must line up with rotor locations
-                # defined above => +x, +y, -x, -y)
-                [0, 0, action_scaled[1]],
-                [0, 0, action_scaled[0]],
-                [0, 0, action_scaled[3]],
-                [0, 0, action_scaled[2]],
+            action_vector_endpoints   = rotor_locations - np.array([
+                # The order of the actions must line up with rotor locations
+                # defined above => +x forward, +y right, -x rear, -y left
+                [0, 0, action_scaled[4-1]],
+                [0, 0, action_scaled[3-1]],
+                [0, 0, action_scaled[2-1]],
+                [0, 0, action_scaled[1-1]],
             ])
             
             # Everything will now be rotated and translated into place
             translation = np.array([x, y, z])
-            rotation = R.from_euler('xyz', [rx, ry, rz], degrees=False)
+            # Why -ve x? God only knows
+            rotation = R.from_euler('zyx', [rz, ry, -rx], degrees=False)
 
             # Transform from local frame into world frame
             rotor_locations = rotation.apply(rotor_locations) + translation
@@ -421,9 +431,9 @@ class Visual:
                 # Draw from the center down a bit to represent the drone's up vector
                 drone_up_in_world_frame = rotation.apply([0, 0, quadcopter_diameter / 4])
                 ax.plot(
-                    [translation[0], translation[0] + drone_up_in_world_frame[0]],
-                    [translation[1], translation[1] + drone_up_in_world_frame[1]],
-                    [translation[2], translation[2] + drone_up_in_world_frame[2]],
+                    [translation[0], translation[0] - drone_up_in_world_frame[0]],
+                    [translation[1], translation[1] - drone_up_in_world_frame[1]],
+                    [translation[2], translation[2] - drone_up_in_world_frame[2]],
                     color='purple',
                     linewidth=2,
                 )
@@ -436,6 +446,17 @@ class Visual:
                         [action_vector_startpoints[i, 2], action_vector_endpoints[i, 2]],
                         'r-',
                     )        
+
+                # # Draw the velocity vector
+                # velocity_vector = 0.1*np.array([vx, vy, vz])
+                # ax.plot(
+                #     [translation[0], translation[0] + velocity_vector[0]],
+                #     [translation[1], translation[1] + velocity_vector[1]],
+                #     [translation[2], translation[2] + velocity_vector[2]],
+                #     color='green',
+                #     linewidth=4,
+                #     zorder=100,
+                # )
 
                 # In 3D, plot the state history as a dotted line
                 if axes_name in ["main", "x", "y", "z"]:
@@ -523,7 +544,7 @@ class Visual:
                             st[:, 1],
                             st[:, 2],
                             color=self.sample_colormap(reward_01),
-                            alpha=0.25,
+                            alpha=0.5,
                             linewidth=0.5,
                             linestyle='-',
                         )    
@@ -581,7 +602,7 @@ class Visual:
                 )
                 # Set up the axis limits                
                 axs["mppi"].set_xlim(mppi_reward_min, mppi_reward_max)
-                axs["mppi"].set_ylim(0, int(0.25 * K)) # Unlikely to be more X% of the samples in one bin
+                axs["mppi"].set_ylim(0, int(0.125 * K)) # Unlikely to be more X% of the samples in one bin
                 # Remove axis ticks
                 axs["mppi"].set_xticks([])
                 axs["mppi"].set_yticks([])
