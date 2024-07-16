@@ -21,7 +21,7 @@ class DynamicsQuadcopter3D:
     We'll use the following state representation:
     state = [x, y, z, rx, ry, rz, vx, vy, vz, p, q, r]
     Some important stuff:
-    - +x is forward, +y is left, +z is up
+    - +x is forward, +y is right, +z is down (NED)
     - '+' quadcopter configuration
     - w1, w2, w3, w4 are the angular velocities of the rotors, looking down from above:
     -- w1 is along the +y axis (left), CW
@@ -37,7 +37,8 @@ class DynamicsQuadcopter3D:
         Iy,              # moment of inertia about y axis
         Iz,              # moment of inertia about z axis
         g,               # acceleration due to gravity (negative if down)
-        thrust_coef,     # thrust coefficient (relates rotor angular velocity to yaw torque)
+        thrust_coef,     # thrust coefficient 
+        drag_coef,       # drag coefficient 
         dt,              # time step
     ):
         self.diameter = diameter
@@ -47,6 +48,7 @@ class DynamicsQuadcopter3D:
         self.Iz = Iz
         self.g = g
         self.thrust_coef = thrust_coef
+        self.drag_coef = drag_coef
         self.dt = dt
 
     def state_size(self):
@@ -63,7 +65,7 @@ class DynamicsQuadcopter3D:
         return ["w1 (left, CW)", "w2 (forward, CCW)", "w3 (right, CW)", "w4 (rear, CCW)"]
     def action_ranges(self):
         magnitude_lo = 0
-        magnitude_hi = 8
+        magnitude_hi = 1
         return np.array([
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
@@ -83,61 +85,66 @@ class DynamicsQuadcopter3D:
         # Check if we have a batch
         batched = len(state.shape) == 2
         if batched:
-            return step_batched(state, action, self.diameter, self.mass, self.Ix, self.Iy, self.Iz, self.g, self.thrust_coef, self.dt)
+            return step_batched(state, action, self.diameter, self.mass, self.Ix, self.Iy, self.Iz, self.g, self.thrust_coef, self.drag_coef, self.dt)
         else:
-            return step_single(state, action, self.diameter, self.mass, self.Ix, self.Iy, self.Iz, self.g, self.thrust_coef, self.dt)
+            return step_single(state, action, self.diameter, self.mass, self.Ix, self.Iy, self.Iz, self.g, self.thrust_coef, self.drag_coef, self.dt)
         
 # ---------------------------------------------------------
         
 @njit
-def step_single(state, action, diameter, mass, Ix, Iy, Iz, g, thrust_coef, dt):
+def step_single(state, action, diameter, mass, Ix, Iy, Iz, g, thrust_coef, drag_coef, dt):
     """
     This function works for when we get a single state shaped (12,) and a single action shaped (4,).
     """
     # Unwrap the state and action 
-    # position, euler angles, velocity, body rates
-    x, y, z, rx, ry, rz, vx, vy, vz, p, q, r = state
+    # position, euler angles, velocity, body rates (eq2.23)
+    x, y, z, ψ, θ, φ, xd, yd, zd, p, q, r = state
     w1, w2, w3, w4 = action
 
     # Compute sin, cos, and tan (xyz order is φ θ ψ)
-    s_rx, c_rx, t_rx = math.sin(rx), math.cos(rx), math.tan(rx)
-    s_ry, c_ry, t_ry = math.sin(ry), math.cos(ry), math.tan(ry)
-    s_rz, c_rz, t_rz = math.sin(rz), math.cos(rz), math.tan(rz)
+    s_ψ, c_ψ, t_ψ = math.sin(ψ), math.cos(ψ), math.tan(ψ)
+    s_θ, c_θ, t_θ = math.sin(θ), math.cos(θ), math.tan(θ)
+    s_φ, c_φ, t_φ = math.sin(φ), math.cos(φ), math.tan(φ)
 
-    # Compute the control vector (control force, control torques)
+    # Compute the control vector (control force, control torques), eq2.16
     w1_sq = w1 ** 2
     w2_sq = w2 ** 2
     w3_sq = w3 ** 2
     w4_sq = w4 ** 2
+    r = diameter / 2
+    # This is labeled as u1, u2, u3, u4 in the paper
     ft = thrust_coef * (w1_sq + w2_sq + w3_sq + w4_sq)
-    tx = thrust_coef * (diameter / 2) * (w3_sq - w1_sq)
-    ty = thrust_coef * (diameter / 2) * (w4_sq - w2_sq)
-    tz = thrust_coef * ((w2_sq + w4_sq) - (w1_sq + w3_sq))
+    tx = thrust_coef * r * (w3_sq - w1_sq)
+    ty = thrust_coef * r * (w4_sq - w2_sq)
+    tz = drag_coef * ((w2_sq + w4_sq) - (w1_sq + w3_sq))
 
-    # Compute the change in state
+    # Compute the change in state (eq 2.23, 2.24, 2.25)
     state_delta = np.zeros(12)
 
     # Positions change according to velocity
-    state_delta[0] = vx
-    state_delta[1] = vy
-    state_delta[2] = vz
+    state_delta[0] = xd
+    state_delta[1] = yd
+    state_delta[2] = zd
 
-    # Euler angles change according to body rates
-    state_delta[3] = p + q * s_rx * t_ry + r * c_rx * t_ry
-    state_delta[4] = q * c_rx - r * s_rx
-    state_delta[5] = q * s_rx / c_ry + r * c_rx / c_ry
+    # # Euler angles change according to body rates
+    state_delta[3] = q * s_φ / c_θ + r * c_φ / c_θ
+    state_delta[4] = q * c_φ - r * s_φ
+    state_delta[5] = p + q * s_φ * t_θ + r * c_φ * t_θ
 
     # Velocities change according to forces and moments
-    state_delta[6] =   - (ft / mass) * (s_rx * s_rz + c_rx * s_ry * c_rz)
-    state_delta[7] =   - (ft / mass) * (s_rx * c_rz - c_rx * s_ry * s_rz)
-    state_delta[8] = g - (ft / mass) * (c_rx * c_ry)
+    state_delta[6] =   - (ft / mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ)
+    state_delta[7] =   - (ft / mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ)
+    state_delta[8] = g - (ft / mass) * (c_θ * c_φ)
 
     # Body rates change according to moments of inertia and torques
     state_delta[9]  = ((Iy - Iz) * q * r + tx) / Ix
     state_delta[10] = ((Iz - Ix) * p * r + ty) / Iy
     state_delta[11] = ((Ix - Iy) * p * q + tz) / Iz
 
-    #print(state_delta)
+    # Check for nans
+    if np.any(np.isnan(state_delta)):
+        print(f"NaNs in state_delta: {state_delta}, state: {state}, action: {action}")
+        raise ValueError(f"NaNs in state_delta: {state_delta}, state: {state}, action: {action}")
 
     # Use the Euler method to compute the new state
     state_new = state + dt * state_delta
@@ -145,10 +152,9 @@ def step_single(state, action, diameter, mass, Ix, Iy, Iz, g, thrust_coef, dt):
 
     # # Compute the second derivatives (2.22)
     # sdd = np.zeros(6)
-    # ft_mass_ratio = ft / mass
-    # sdd[0] = - ft_mass_ratio * (+ c_rx * s_ry * c_rz + s_rx * s_rz)
-    # sdd[1] = - ft_mass_ratio * (+ c_rx * s_ry * s_rz - s_rx * c_rz)
-    # sdd[2] = g - ft_mass_ratio * (c_rx * c_ry)
+    # sdd[0] =   - ft / mass * (+ c_rx * s_ry * c_rz + s_rx * s_rz)
+    # sdd[1] =   - ft / mass * (+ c_rx * s_ry * s_rz - s_rx * c_rz)
+    # sdd[2] = g - ft / mass * (c_rx * c_ry)
     # sdd[3] = ((Iy - Iz) * q * r + tx) / Ix
     # sdd[4] = ((Iz - Ix) * p * r + ty) / Iy
     # sdd[5] = ((Ix - Iy) * p * q + tz) / Iz
@@ -164,11 +170,11 @@ def step_single(state, action, diameter, mass, Ix, Iy, Iz, g, thrust_coef, dt):
     # return state_new
 
 @njit(parallel=True)
-def step_batched(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, dt):
+def step_batched(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, drag_coef, dt):
     B = states.shape[0]
     new_states = np.zeros((B, 12))
     for i in prange(B):
         new_states[i] = step_single(
-            states[i], actions[i], diameter, mass, Ix, Iy, Iz, g, thrust_coef, dt
+            states[i], actions[i], diameter, mass, Ix, Iy, Iz, g, thrust_coef, drag_coef, dt
         )
     return new_states

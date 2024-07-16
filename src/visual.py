@@ -353,7 +353,7 @@ class Visual:
             # We can compute this once per frame
 
             # Compute, in the body frame, the 
-            # locations of the rotors 1 (forward), 2 (left), 3 (backward), 4 (right)
+            # locations of the rotors (+x, +y, -x, -y)
             rotor_locations = np.array([
                 [quadcopter_diameter / 2, 0, 0],
                 [0, quadcopter_diameter / 2, 0],
@@ -368,21 +368,14 @@ class Visual:
                 (action_smoothed[i] - action_ranges[i][0]) / (action_ranges[i][1] - action_ranges[i][0])
                 for i in range(4)
             ])
-            # Normalized is between 0 and 1, so we'll translate it to be around zero and then scale it
-            # to our pleasure. If the range is:
-            # - [-8, 8] then we need to compute 0.5
-            # - [-1, 1] then we need to compute 0.5
-            # - [-2, 6] then we need to compute 0.25
-            # THERE is something wrong with this. It's backwards TODO
-            # magnitude_ratio = np.abs(action_ranges[:,1]/ (action_ranges[:,1] - action_ranges[:,0]))
-            # action_scaled = (action_normalized - magnitude_ratio) * (quadcopter_diameter * 0.8)
+            # Make them a nice size
             desired_max_length = quadcopter_diameter * 0.8
             scale_factor = desired_max_length / (action_ranges[:,1] - action_ranges[:,0])
             action_scaled = action_smoothed * scale_factor
             action_vector_startpoints = rotor_locations
-            action_vector_endpoints = rotor_locations + np.array([
-                # The order is left, forward, right, backward (must line up with rotor locations
-                # defined above)
+            action_vector_endpoints   = rotor_locations + np.array([
+                # The order of the actions is left, forward, right, backward (must line up with rotor locations
+                # defined above => +x, +y, -x, -y)
                 [0, 0, action_scaled[1]],
                 [0, 0, action_scaled[0]],
                 [0, 0, action_scaled[3]],
@@ -422,6 +415,15 @@ class Visual:
                     [translation[0], rotor_locations[0, 0]],
                     [translation[1], rotor_locations[0, 1]],
                     [translation[2], rotor_locations[0, 2]],
+                    color='purple',
+                    linewidth=2,
+                )
+                # Draw from the center down a bit to represent the drone's up vector
+                drone_up_in_world_frame = rotation.apply([0, 0, quadcopter_diameter / 4])
+                ax.plot(
+                    [translation[0], translation[0] - drone_up_in_world_frame[0]],
+                    [translation[1], translation[1] - drone_up_in_world_frame[1]],
+                    [translation[2], translation[2] - drone_up_in_world_frame[2]],
                     color='purple',
                     linewidth=2,
                 )
@@ -589,7 +591,8 @@ class Visual:
             if mppi_flag:
                 plot_mppi_distribution()
             else:
-                axs["mppi"].axis('off')
+                #axs["mppi"].axis('off')
+                pass
 
             # To the main view, render the simulation frame number,
             # simulation dt, simulation time (current and total).
