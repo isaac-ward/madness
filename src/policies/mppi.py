@@ -63,20 +63,17 @@ class PolicyMPPI:
         # Goal point
         g = self.path_xyz[-1]
         
-        # The cost function (negative reward) is:
+        # The cost function (negative reward) from the published work is:
         # a * distance_from_goal_at_T + SUM b * distance_from_goal_at_t + SUM c * collision_at_t
-        a = 100
-        b = 10
-        c = 10000
+        goal_term = 100 * np.linalg.norm(p[-1] - g)
+        path_term = 10 * np.sum(np.linalg.norm(p - g, axis=1))
+        collision_term = 10000 * np.sum([self.map_.is_collision(p_i, collision_radius=0.5) for p_i in p])
 
-        goal_term = a * np.linalg.norm(p[-1] - g)
-        path_term = b * np.sum(np.linalg.norm(p - g, axis=1))
-        collision_term = c * np.sum([self.map_.is_collision(p_i, collision_radius=0.5) for p_i in p])
+        # Minimize the first derivatives (low speed, angular velocity is favored)
+        derivative_term = 1 * np.sum(np.linalg.norm(v, axis=1)) + 1 * np.sum(np.linalg.norm(w, axis=1))
 
-        #print(goal_term, path_term, collision_term
-        cost = goal_term + path_term + collision_term
-
-        # We're using a reward paradigm
+        # Assemble, and note we're using a reward paradigm
+        cost = goal_term + path_term + collision_term #+ derivative_term
         reward = -cost
         return reward     
 
@@ -132,9 +129,10 @@ class PolicyMPPI:
         # hit the ends of our action ranges constantly. Too high in particular
         # will result in a MAX/MIN type action plan which will almost always
         # lead to failure. Too low makes it hard to quickly change behavior
-        std_dev = (self.action_ranges[:,1] - self.action_ranges[:,0]) / 4
+        std_dev = np.abs(self.action_ranges[:,1] - self.action_ranges[:,0]) / 4 # 4
         # This will draw K * H * action_size samples
         samples = np.random.normal(mean, std_dev, (self.K, self.H, self.action_size))
+        #print(samples)
         # Clip into the action ranges
         samples = np.clip(samples, self.action_ranges[:,0], self.action_ranges[:,1])
         return samples
@@ -159,12 +157,11 @@ class PolicyMPPI:
         #action_plans = self._random_uniform_sample_actions()
         #action_plans = self._sobol_sample_actions()
         action_plans = self._rollover_mean_gaussian()
+        #print(action_plans)
 
         # We'll simulate those actions using dynamics and figure
         # out the states
-        state_plans  = np.zeros((K, H, self.state_size))
-        # Start every future in the current state
-        #state_plans[:, 0] = np.array(state_history[-1])
+        state_plans = np.zeros((K, H, self.state_size))
 
         # We will compute rewards for each future
         rewards = np.zeros(K)
@@ -184,9 +181,6 @@ class PolicyMPPI:
         #             state_plans[k, h],
         #             action_plans[k, h],
         #         )
-
-        # Actually don't want the first state (it's the current state)
-        # state_plans = state_plans[:, 1:]
             
         # Compute all rewards
         # TODO parallelize

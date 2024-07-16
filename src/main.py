@@ -36,8 +36,9 @@ if __name__ == "__main__":
         Ix=0.5,
         Iy=0.1,
         Iz=0.3,
-        g=-9.81,
+        g=0, 
         thrust_coef=5,
+        drag_coef=5,
         dt=0.025,
     )
 
@@ -72,24 +73,24 @@ if __name__ == "__main__":
     #     state_size=dynamics.state_size(),
     #     action_size=dynamics.action_size(),
     # )
-    # policy = PolicyConstant(
-    #     state_size=dynamics.state_size(),
-    #     action_size=dynamics.action_size(),
-    #     constant_action=np.ones((4,))*2.75,
-    #     perturb=True,
-    # )
-    policy = PolicyMPPI(
+    policy = PolicyConstant(
         state_size=dynamics.state_size(),
         action_size=dynamics.action_size(),
-        dynamics=copy.deepcopy(dynamics),
-        K=1024,
-        H=4, #int(0.5/dynamics.dt), # X second horizon
-        action_ranges=dynamics.action_ranges(),
-        lambda_=100,
-        map_=map_,
+        constant_action=[0,1,0,0],
+        perturb=False,
     )
-    policy.enable_logging(log_folder)
-    policy.update_path_xyz(path_xyz_smooth)
+    # policy = PolicyMPPI(
+    #     state_size=dynamics.state_size(),
+    #     action_size=dynamics.action_size(),
+    #     dynamics=copy.deepcopy(dynamics),
+    #     K=2000,
+    #     H=40, #int(0.5/dynamics.dt), # X second horizon
+    #     action_ranges=dynamics.action_ranges(),
+    #     lambda_=100,
+    #     map_=map_,
+    # )
+    # policy.enable_logging(log_folder)
+    # policy.update_path_xyz(path_xyz_smooth)
     agent = Agent(
         state_initial=state_initial,
         policy=policy,
@@ -98,21 +99,24 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 4
+    num_seconds = 2
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
-    for i in range(num_steps):
-        action = agent.act()
-        state = environment.step(action)
-        agent.observe(state)
+    try:
+        for i in range(num_steps):
+            action = agent.act()
+            state = environment.step(action)
+            agent.observe(state)
 
-        # Update the pbar with the current state and action
-        p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
-        v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
-        w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
-        a_string = ", ".join([f"{x:<4.1f}" for x in action])
-        pbar.set_description(f"t={(i+1)*dynamics.dt:.2f} / {num_seconds:.2f} | p=[ {p_string}] | v={v_string} | w=[ {w_string}] | a=[ {a_string}]")
-        pbar.update(1)
+            # Update the pbar with the current state and action
+            p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
+            v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
+            w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
+            a_string = ", ".join([f"{x:<4.1f}" for x in action])
+            pbar.set_description(f"t={(i+1)*dynamics.dt:.3f} / {num_seconds:.3f} | p=[ {p_string}] | v={v_string} | w=[ {w_string}] | a=[ {a_string}]")
+            pbar.update(1)
+    except Exception as e:
+        print(f"Exception: {e}")
     # Close the bar
     pbar.close()
 
