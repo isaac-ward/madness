@@ -36,9 +36,10 @@ if __name__ == "__main__":
         Ix=0.5,
         Iy=0.1,
         Iz=0.3,
-        g=0, 
-        thrust_coef=5,
-        drag_coef=5,
+        g=9.81, 
+        thrust_coef=20,      # higher makes it easier to roll and pitch
+        drag_yaw_coef=0.1,   # higher makes it easier to yaw
+        drag_force_coef=0.1, # higher values lower the max velocity
         dt=0.025,
     )
 
@@ -73,24 +74,24 @@ if __name__ == "__main__":
     #     state_size=dynamics.state_size(),
     #     action_size=dynamics.action_size(),
     # )
-    policy = PolicyConstant(
-        state_size=dynamics.state_size(),
-        action_size=dynamics.action_size(),
-        constant_action=[0,1,0,0],
-        perturb=False,
-    )
-    # policy = PolicyMPPI(
+    # policy = PolicyConstant(
     #     state_size=dynamics.state_size(),
     #     action_size=dynamics.action_size(),
-    #     dynamics=copy.deepcopy(dynamics),
-    #     K=2000,
-    #     H=40, #int(0.5/dynamics.dt), # X second horizon
-    #     action_ranges=dynamics.action_ranges(),
-    #     lambda_=100,
-    #     map_=map_,
+    #     constant_action=[1,0,0.5,0],
+    #     perturb=False,
     # )
-    # policy.enable_logging(log_folder)
-    # policy.update_path_xyz(path_xyz_smooth)
+    policy = PolicyMPPI(
+        state_size=dynamics.state_size(),
+        action_size=dynamics.action_size(),
+        dynamics=copy.deepcopy(dynamics),
+        K=2000,
+        H=40, #int(0.5/dynamics.dt), # X second horizon
+        action_ranges=dynamics.action_ranges(),
+        lambda_=100,
+        map_=map_,
+    )
+    policy.enable_logging(log_folder)
+    policy.update_path_xyz(path_xyz_smooth)
     agent = Agent(
         state_initial=state_initial,
         policy=policy,

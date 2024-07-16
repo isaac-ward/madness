@@ -421,9 +421,9 @@ class Visual:
                 # Draw from the center down a bit to represent the drone's up vector
                 drone_up_in_world_frame = rotation.apply([0, 0, quadcopter_diameter / 4])
                 ax.plot(
-                    [translation[0], translation[0] - drone_up_in_world_frame[0]],
-                    [translation[1], translation[1] - drone_up_in_world_frame[1]],
-                    [translation[2], translation[2] - drone_up_in_world_frame[2]],
+                    [translation[0], translation[0] + drone_up_in_world_frame[0]],
+                    [translation[1], translation[1] + drone_up_in_world_frame[1]],
+                    [translation[2], translation[2] + drone_up_in_world_frame[2]],
                     color='purple',
                     linewidth=2,
                 )
