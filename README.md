@@ -1,40 +1,23 @@
 # madness
 
-## Running this
+## Reproducibility
 
-We use [conda](https://docs.anaconda.com/free/miniconda/miniconda-install/) to manage the environment. 
+We use Docker to run this project, which can be installed [here](https://docs.docker.com/engine/install/). See the ```./assets/reproducibility/``` folder for screenshots showing what the installation process should look like. Ensure that the Docker daemon is running, and then run the following commands **from the root folder of the project**:
 
-For creating an environment from the environment file:
-```
-conda env create --name madness --file env.yaml
-```
-
-For updating the environment file after making changes:
-```
-conda env export --no-builds | grep -v "^prefix: " > env.yaml
-```
-
-Can then run any of the main files like so:
-```
-source C:/Users/moose/miniconda3/etc/profile.d/conda.sh
-conda activate madness
-python src/main.py
+```bash
+# Built the Docker image (you can remove the --no-cache flag if you want to cache the build and speed up future builds)
+docker-compose build --no-cache
+# Run the Docker container
+docker-compose up -d --no-deps
+# Open a shell in that container
+docker exec -it madness bash
+# Execute the main script in that shell
+python /mnt/src/main.py
+# Close the container when outside the container
+docker-compose down
 ```
 
-Remove the environment:
-```
-conda remove -n madness --all
-```
-
-Update the environment:
-```
-conda env update --name madness --file env.yaml
-```
-
-Alternatively, you can use pip:
-```
-pip install scipy numpy matplotlib tqdm networkx moviepy fastdtw cvxpy
-```
+This should produce a result in the ```logs``` directory.
 
 ## Links
 
@@ -53,6 +36,3 @@ To remove all logs (minus the gitkeep file)
 rm -rf logs/*
 ```
 
----
-
-conda install -c conda-forge cupy

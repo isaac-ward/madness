@@ -119,7 +119,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 6
+    num_seconds = 4
     num_steps = int(num_seconds / dynamics.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
         a_string = ", ".join([f"{x:<4.1f}" for x in action])
         pbar.set_description(
-            f"t={(i+1)*dynamics.dt:.2f}/{num_seconds:.2f} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={"✓" if use_gpu_if_available else "✗"}")
+            f"t={(i+1)*dynamics.dt:.2f}/{num_seconds:.2f} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
         pbar.update(1)
     # Close the bar
     pbar.close()

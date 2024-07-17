@@ -1,0 +1,24 @@
+version: '3'
+services:
+  madness:
+    container_name: madness
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - "22:22"
+      - "8888:8888"
+    volumes:
+      - ./assets:/mnt/assets
+      - ./cache:/mnt/cache
+      - ./logs:/mnt/logs
+      - ./src:/mnt/src
+    command: tail -f /dev/null
+    # GPU pass through
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

@@ -70,7 +70,7 @@ class DynamicsQuadcopter3D:
     def action_ranges(self):
         # If you're finding that state space isn't adequately explored,
         # consider increasing the size of the action space
-        magnitude_lo = 4
+        magnitude_lo = 0
         magnitude_hi = 4
         return np.array([
             [-magnitude_lo, +magnitude_hi],
