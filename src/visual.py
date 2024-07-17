@@ -637,7 +637,7 @@ class Visual:
         
         # Save the video
         filepath_output = os.path.join(self.visuals_folder, "render.mp4")
-        ani.save(filepath_output, fps=desired_fps, extra_args=['-vcodec', 'libx264'])
+        ani.save(filepath_output, fps=desired_fps)#, extra_args=['-vcodec', 'libx264'])
         # Set the pbar to 100%
         pbar.update(num_frames_to_render)
         pbar.close()
