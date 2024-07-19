@@ -10,10 +10,16 @@ RUN apt-get update --fix-missing && \
     apt-get install -y wget bzip2 ca-certificates curl git ffmpeg && \
     apt-get clean
 
-# Install Miniconda
-RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
-    /bin/bash Miniconda3-latest-Linux-x86_64.sh -b -p /opt/conda && \
-    rm Miniconda3-latest-Linux-x86_64.sh
+# Install Miniconda based on the platform
+RUN if [ "$(uname -m)" = "x86_64" ]; then \
+        wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh; \
+    elif [ "$(uname -m)" = "aarch64" ]; then \
+        wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh -O miniconda.sh; \
+    else \
+        echo "Unsupported architecture: $(uname -m)"; exit 1; \
+    fi && \
+    /bin/bash miniconda.sh -b -p /opt/conda && \
+    rm miniconda.sh
 
 # Initialize conda
 RUN /opt/conda/bin/conda init bash
