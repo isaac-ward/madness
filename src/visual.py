@@ -7,6 +7,7 @@ import matplotlib.animation as animation
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
 
+from itertools import product, combinations
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import math
@@ -280,6 +281,10 @@ class Visual:
                 axs[ax_name].set_xticks([])
                 axs[ax_name].set_yticks([])
                 axs[ax_name].set_zticks([])
+
+            # Remove the axis themselves
+            for ax_name in ["x", "y", "z"]:
+                axs[ax_name].axis('off')
                 
             # These axes should be orthographic
             for ax_name in ["x", "y", "z"]:
@@ -457,6 +462,37 @@ class Visual:
                 #     linewidth=4,
                 #     zorder=100,
                 # )
+                    
+                # In 3D, plot the bounding box
+                if axes_name in ["main", "x", "y", "z"]:
+                    def draw_bounding_box(ax, bounding_box):
+                        x1, x2 = bounding_box[0]
+                        y1, y2 = bounding_box[1]
+                        z1, z2 = bounding_box[2]
+                        # Draw the cuboid
+                        col = 'r'
+                        ls = ':'
+                        alpha = 0.5
+                        ax.plot([x1, x2], [y1, y1], [z1, z1], color=col, linestyle=ls, alpha=alpha) # | (up)
+                        ax.plot([x2, x2], [y1, y2], [z1, z1], color=col, linestyle=ls, alpha=alpha) # -->
+                        ax.plot([x2, x1], [y2, y2], [z1, z1], color=col, linestyle=ls, alpha=alpha) # | (down)
+                        ax.plot([x1, x1], [y2, y1], [z1, z1], color=col, linestyle=ls, alpha=alpha) # <--
+
+                        ax.plot([x1, x2], [y1, y1], [z2, z2], color=col, linestyle=ls, alpha=alpha) # | (up)
+                        ax.plot([x2, x2], [y1, y2], [z2, z2], color=col, linestyle=ls, alpha=alpha) # -->
+                        ax.plot([x2, x1], [y2, y2], [z2, z2], color=col, linestyle=ls, alpha=alpha) # | (down)
+                        ax.plot([x1, x1], [y2, y1], [z2, z2], color=col, linestyle=ls, alpha=alpha) # <--
+                        
+                        ax.plot([x1, x1], [y1, y1], [z1, z2], color=col, linestyle=ls, alpha=alpha) # | (up)
+                        ax.plot([x2, x2], [y2, y2], [z1, z2], color=col, linestyle=ls, alpha=alpha) # -->
+                        ax.plot([x1, x1], [y2, y2], [z1, z2], color=col, linestyle=ls, alpha=alpha) # | (down)
+                        ax.plot([x2, x2], [y1, y1], [z1, z2], color=col, linestyle=ls, alpha=alpha) # <--
+
+                    # Shape is (3,2) and is the lower and upper bounds for each axis
+                    draw_bounding_box(ax, map_.extents_metres_xyz)
+
+                    
+
 
                 # In 3D, plot the state history as a dotted line
                 if axes_name in ["main", "x", "y", "z"]:
@@ -499,6 +535,7 @@ class Visual:
                             [v[2] for v in voxel_occupied_centers],
                             color='red',
                             marker='x',
+                            alpha=0.1,
                         )
                     else:
                         # NOTE this is exceptionally slow without blitting
@@ -521,7 +558,7 @@ class Visual:
                         st_opt[:, 1],
                         st_opt[:, 2],
                         color='royalblue',
-                        alpha=0.66,
+                        alpha=0.8,
                         linewidth=1,
                         # Keep this small so that we can see
                         # the mppi samples

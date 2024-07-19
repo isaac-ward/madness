@@ -24,7 +24,7 @@ RUN conda update -n base -c defaults conda && conda clean -ya
 # Create an environment called madness and install packages
 RUN /opt/conda/bin/conda create -n madness python=3.10 -y && \
     /bin/bash -c "source activate madness && \
-    pip install scipy numpy matplotlib tqdm networkx fastdtw cvxpy numba && \
+    pip install scipy numpy matplotlib tqdm networkx fastdtw cvxpy numba nflows lightning && \
     conda install -c conda-forge cupy -y"
     
 # Ensure the madness environment is activated by default in bash

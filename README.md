@@ -13,7 +13,9 @@ docker-compose up -d --no-deps
 docker exec -it madness bash
 # Execute the main script in that shell
 python /mnt/src/main.py
-# Close the container when outside the container
+# Exit from the shell/container when done
+exit
+# Close the container from the host machine
 docker-compose down
 ```
 

@@ -157,16 +157,6 @@ class Map:
         return voxel_grid[tuple(voxel_coords)] == 1
     
     # ----------------------------------------------------------------
-
-    def is_collision(
-        self,
-        metres_xyz,
-        collision_radius,
-    ):
-        return self.batch_is_collision(
-            np.array([metres_xyz]),
-            collision_radius,
-        )[0]
     
     def batch_is_collision(
         self,
@@ -180,6 +170,49 @@ class Map:
         # Query kdtree for closest occupied point
         distances, indices = self.kd_tree.query(batch_metres_xyzs)
         return distances < collision_radius
+    
+    def batch_is_out_of_bounds(
+        self,
+        batch_metres_xyzs,
+    ):
+        """
+        Given a batch of points in metres (N,3), check if they are out of bounds
+        and return a boolean array of shape (N,)
+        """
+        
+        # All the information we need is in here: extents_metres_xyz
+        # whose is shaped like [[-10, 50], [-10, 10], [0, 20]]
+        batch_x_in_bounds = np.logical_and(
+            self.extents_metres_xyz[0][0] <= batch_metres_xyzs[:,0],
+            batch_metres_xyzs[:,0] <= self.extents_metres_xyz[0][1],
+        )
+        batch_y_in_bounds = np.logical_and(
+            self.extents_metres_xyz[1][0] <= batch_metres_xyzs[:,1],
+            batch_metres_xyzs[:,1] <= self.extents_metres_xyz[1][1],
+        )
+        batch_z_in_bounds = np.logical_and(
+            self.extents_metres_xyz[2][0] <= batch_metres_xyzs[:,2],
+            batch_metres_xyzs[:,2] <= self.extents_metres_xyz[2][1],
+        )
+        is_in_bounds = np.logical_and(
+            np.logical_and(batch_x_in_bounds, batch_y_in_bounds),
+            batch_z_in_bounds,
+        )     
+        is_out_of_bounds = np.logical_not(is_in_bounds)
+        return is_out_of_bounds
+
+    def batch_is_not_valid(
+        self,
+        batch_metres_xyzs,
+        collision_radius,
+    ):
+        """
+        Given a batch of points in metres, check if they are valid (not colliding and not out of bounds)
+        """
+        return np.logical_or(
+            self.batch_is_collision(batch_metres_xyzs, collision_radius),
+            self.batch_is_out_of_bounds(batch_metres_xyzs),
+        )
 
     # ----------------------------------------------------------------
 
