@@ -14,11 +14,14 @@ services:
       - ./logs:/mnt/logs
       - ./src:/mnt/src
     command: tail -f /dev/null
-    # GPU pass through
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all # Set to 'none' to disable GPU or specify device IDs
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    # GPU pass through (if available)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

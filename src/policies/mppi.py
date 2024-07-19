@@ -90,11 +90,11 @@ class PolicyMPPI:
         # Distance along path to goal
         path_terms = xp.sum(xp.linalg.norm(p - goal_p, axis=2), axis=1)
 
-        # Collision check
-        # It is extremely important that this collision check be done in parallel, this collision check
+        # Collision/oob check
+        # It is extremely important that this check be done in parallel, it
         # uses ckdtrees and is very slow otherwise
         flat_p = p.reshape((batch_size * self.H, 3))
-        collision_terms = xp.sum(self.map_.batch_is_collision(flat_p, collision_radius=1).reshape((batch_size, self.H)), axis=1)
+        invalid_terms = xp.sum(self.map_.batch_is_not_valid(flat_p, collision_radius=1).reshape((batch_size, self.H)), axis=1)
 
         # Minimize velocity
         #velocity_terms = xp.sum(xp.linalg.norm(v, axis=2), axis=1)
@@ -103,7 +103,7 @@ class PolicyMPPI:
         #angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
 
         # Assemble, and note we're using a reward paradigm
-        cost = 100 * goal_p_terms + 10 * path_terms + 10000 * collision_terms + 0 * goal_r_terms + 50 * goal_v_terms + 50 * goal_w_terms
+        cost = 100 * goal_p_terms + 0 * path_terms + 100000 * invalid_terms + 0 * goal_r_terms + 50 * goal_v_terms + 50 * goal_w_terms
         reward = -cost
         return reward     
 

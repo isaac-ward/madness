@@ -100,7 +100,7 @@ if __name__ == "__main__":
         state_size=dynamics.state_size(),
         action_size=dynamics.action_size(),
         dynamics=copy.deepcopy(dynamics),
-        K=1000,
+        K=10000,
         H=50, #int(0.5/dynamics.dt), # X second horizon
         action_ranges=dynamics.action_ranges(),
         lambda_=100,
