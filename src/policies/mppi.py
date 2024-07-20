@@ -103,7 +103,7 @@ class PolicyMPPI:
         #angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
 
         # Assemble, and note we're using a reward paradigm
-        cost = 100 * goal_p_terms + 0 * path_terms + 100000 * invalid_terms + 0 * goal_r_terms + 50 * goal_v_terms + 50 * goal_w_terms
+        cost = 100 * goal_p_terms + 0 * path_terms + 10000 * invalid_terms + 0 * goal_r_terms + 50 * goal_v_terms + 50 * goal_w_terms
         reward = -cost
         return reward     
 
@@ -154,17 +154,21 @@ class PolicyMPPI:
         # Create a gaussian centered around the previous best action plan
         # (H, action_size)
         mean = self._previous_optimal_action_plan 
+        # Perform the shift operation - we center around the best actions
+        # shifted forward by one, with zero padding at the end
+        shifted_mean = np.zeros_like(mean)
+        shifted_mean[:-1] = mean[1:]
 
-        # (action_size)
         # Variance too low and we'll narrow in, variance too high and we'll 
         # hit the ends of our action ranges constantly. Too high in particular
         # will result in a MAX/MIN type action plan which will almost always
         # lead to failure. Too low makes it hard to quickly change behavior
         # and adequately explore the state space
+        # (action_size)
         std_dev = np.abs(self.action_ranges[:,1] - self.action_ranges[:,0]) / 4 
 
-        # This will draw K * H * action_size samples
-        samples = np.random.normal(mean, std_dev, (self.K, self.H, self.action_size))
+        # This will draw K * H * action_size samples around the shifted mean
+        samples = np.random.normal(shifted_mean, std_dev, (self.K, self.H, self.action_size))
         
         # Clip into the action ranges
         samples = np.clip(samples, self.action_ranges[:,0], self.action_ranges[:,1])

@@ -5,9 +5,11 @@
 We use Docker to run this project, which can be installed [here](https://docs.docker.com/engine/install/). See the ```./assets/reproducibility/``` folder for screenshots showing what the installation process should look like. Ensure that the Docker daemon is running, and then run the following commands **from the root folder of the project**:
 
 ```bash
-# Built the Docker image (you can remove the --no-cache flag if you want to cache the build and speed up future builds)
+# Build the Docker image
 docker-compose build --no-cache
-# Run the Docker container
+# Or you can remove the --no-cache flag if you want to cache the build and speed up future builds
+docker-compose build
+# Run a container of the built image
 docker-compose up -d --no-deps
 # Open a shell in that container
 docker exec -it madness bash

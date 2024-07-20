@@ -29,6 +29,7 @@ if __name__ == "__main__":
     # Are we using GPU? 
     # NOTE: suggest false for now because it's slow
     use_gpu_if_available = False
+    keep_policy_logs = False
 
     # Will log everything to here
     log_folder = utils.logging.make_log_folder(name="run")
@@ -156,3 +157,6 @@ if __name__ == "__main__":
     visual = Visual(log_folder)
     visual.plot_histories()
     visual.render_video()
+
+    # Clean up stored data 
+    # TODO
