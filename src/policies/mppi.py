@@ -3,6 +3,7 @@ from tqdm import tqdm
 import os
 import cupy as cp
 #from numba import njit, prange
+import shutil
 
 from scipy.stats.qmc import Sobol
 
@@ -124,6 +125,13 @@ class PolicyMPPI:
         Enable logging to a folder
         """
         self.log_folder = os.path.join(run_folder, "policy", "mppi")
+
+    def delete_logs(self):
+        """
+        Delete all logs
+        """
+        if self.log_folder is not None:
+            shutil.rmtree(self.log_folder)
 
     # ----------------------------------------------------------------
 
