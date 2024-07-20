@@ -491,9 +491,6 @@ class Visual:
                     # Shape is (3,2) and is the lower and upper bounds for each axis
                     draw_bounding_box(ax, map_.extents_metres_xyz)
 
-                    
-
-
                 # In 3D, plot the state history as a dotted line
                 if axes_name in ["main", "x", "y", "z"]:
                     states_so_far = state_history[:frame]
@@ -545,8 +542,13 @@ class Visual:
                 if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
 
                     # What was the min and max reward this frame
-                    mppi_reward_min = mppi_reward_mins[frame]
-                    mppi_reward_max = mppi_reward_maxs[frame]
+                    make_colors_local = False
+                    if make_colors_local:
+                        mppi_reward_min = mppi_reward_mins[frame]
+                        mppi_reward_max = mppi_reward_maxs[frame]
+                    else:
+                        mppi_reward_min = min(mppi_reward_mins)
+                        mppi_reward_max = max(mppi_reward_maxs)
 
                     # What was the actual trajectory used? We'll highlight it!
                     a_opt = mppi_opt_actions[frame]
