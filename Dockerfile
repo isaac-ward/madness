@@ -7,25 +7,23 @@ ENV PATH /opt/conda/bin:$PATH
 
 # Install necessary dependencies
 RUN apt-get update --fix-missing && \
-    apt-get install -y wget bzip2 ca-certificates curl git ffmpeg build-essential && \
+    apt-get install -y wget curl bzip2 ca-certificates curl git ffmpeg build-essential && \
     apt-get clean
 
-# Ensure git is in the PATH
+# Ensure git is in the PATH and that it is available
 ENV PATH /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/git/bin:$PATH
-
-# Check if git is available
-RUN git --version
+RUN echo "Checking git version:" && git --version
 
 # Install Miniconda based on the platform
+RUN echo "Architecture: $(uname -m)"
 RUN if [ "$(uname -m)" = "x86_64" ]; then \
-        wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh; \
+        curl -s -o miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh; \
     elif [ "$(uname -m)" = "aarch64" ]; then \
-        wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh -O miniconda.sh; \
+        curl -s -o miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh; \
     else \
         echo "Unsupported architecture: $(uname -m)"; exit 1; \
-    fi && \
-    /bin/bash miniconda.sh -b -p /opt/conda && \
-    rm miniconda.sh
+    fi
+RUN /bin/bash miniconda.sh -b -p /opt/conda && rm miniconda.sh
 
 # Initialize conda
 RUN /opt/conda/bin/conda init bash
