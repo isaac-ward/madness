@@ -7,8 +7,14 @@ ENV PATH /opt/conda/bin:$PATH
 
 # Install necessary dependencies
 RUN apt-get update --fix-missing && \
-    apt-get install -y wget bzip2 ca-certificates curl git ffmpeg && \
+    apt-get install -y wget bzip2 ca-certificates curl git ffmpeg build-essential && \
     apt-get clean
+
+# Ensure git is in the PATH
+ENV PATH /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/git/bin:$PATH
+
+# Check if git is available
+RUN git --version
 
 # Install Miniconda based on the platform
 RUN if [ "$(uname -m)" = "x86_64" ]; then \
