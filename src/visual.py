@@ -147,6 +147,8 @@ class Visual:
         """
         We'll use matplotlib's funcanimation to render a video of the simulation
         """
+
+        print("Loading requiured data...", end="")
         
         # The state is set up as [x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz]
         # The action is set up as [w1, w2, w3, w4] corresponding to the forward, left, backward, right rotor inputs
@@ -155,6 +157,9 @@ class Visual:
         state_history, action_history = utils.logging.load_state_and_action_trajectories(os.path.join(self.run_folder, "environment"))
         dynamics = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "dynamics.pkl"))
         map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
+
+        print("done")
+        print("Precomputing voxel information...", end="")
 
         # Precompute the voxel representation stuff 
         voxels = map_.voxel_grid
@@ -175,6 +180,9 @@ class Visual:
         voxel_occupied_centers = np.argwhere(voxels == 1)
         voxel_occupied_centers = [ map_.voxel_coords_to_metres(v) for v in voxel_occupied_centers ]
 
+        print("done")
+        print("Loading optional data...", end="")
+
         # We also want the policy path, if it exists
         path_flag = False
         try:
@@ -194,6 +202,8 @@ class Visual:
             mppi_flag = True
         except:
             pass
+
+        print("done")
 
         # The dynamics model has information about the quadcopter that we need
         quadcopter_diameter = dynamics.diameter
