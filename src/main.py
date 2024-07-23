@@ -55,16 +55,16 @@ if __name__ == "__main__":
 
     # Define the initial state of the system
     # Positions, rotations (euler angles), velocities, body rates
-    state_initial = [0, 0, 15,    0, 0, 0,    0, 0, 0,    0, 0, 0]
+    state_initial = [2.5, 2.5, 2.5,    0, 0, 0,    0, 0, 0,    0, 0, 0]
 
     # Create the environment
     map_ = Map(
         map_filepath="maps/empty.csv",
-        voxel_per_x_metres=0.5,
+        voxel_per_x_metres=0.25,
         extents_metres_xyz=[
-            [-10, 50], 
-            [-10, 10], 
-            [0, 20]
+            [0, 30], 
+            [0, 30], 
+            [0, 30]
         ],
     )
     environment = Environment(
@@ -75,28 +75,11 @@ if __name__ == "__main__":
 
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
-    xyz_goal = [40, 0, 5]
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*8) # Ultra safe
+    xyz_goal = [27.5, 27.5, 27.5]
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
-    # # Create the agent, which has an initial state and a policy
-    # # front right rear left
-    # input_none  = [0, 0, 0, 0]
-    # input_hover = [1, 1, 1, 1]
-    # # These have been tested to be correct for the given dynamics
-    # # (positive meaning the rotating direction given by right hand
-    # # rule with thumb pointing in the positive direction of each axis
-    # # in the NED frame)
-    # input_positive_roll  = [1.25, 0, 0.75, 0]
-    # input_positive_pitch = [0, 0.75, 0, 1.25]
-    # input_positive_yaw   = [0.25, 1.25, 0.25, 1.25]
-    # policy = PolicyConstant(
-    #     state_size=dyn.state_size(),
-    #     action_size=dyn.action_size(),
-    #     constant_action=np.array(input_positive_pitch),
-    #     perturb=False,
-    # )
-
+    # Create the agent, which has an initial state and a policy
     policy = PolicyMPPI(
         state_size=dyn.state_size(),
         action_size=dyn.action_size(),
@@ -120,7 +103,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 10
+    num_seconds = 8
     num_steps = int(num_seconds / dyn.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
