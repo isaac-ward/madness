@@ -34,14 +34,52 @@ def test_column():
             points[count] = [xs[i], ys[i], z]
             count += 1
     return points
+
+def test_columns():
+    def generate_positions(size_x, size_y, spacing):
+        # Compute the number of columns and rows needed
+        num_x_columns = int(np.ceil(size_x / spacing))
+        num_y_columns = int(np.ceil(size_y / spacing))
+
+        # Create arrays to hold the x and y positions
+        x_positions = np.arange(num_x_columns) * spacing
+        y_positions = np.arange(num_y_columns) * spacing
+
+        # Initialize an empty list to hold the positions
+        positions = []
+
+        # Generate the positions
+        for i, x in enumerate(x_positions):
+            for y in y_positions:
+                if i % 2 == 0:
+                    positions.append((x, y))
+                else:
+                    positions.append((x, y + spacing / 2))
+
+        return positions, num_x_columns, num_y_columns
         
+    # Columns from z=0 to z=30 at the following x,y positions
+    xy_positions,_,_ = generate_positions(30, 30, 5)
+
+    # Create a column at each of these positions
+    points = []
+    radius = 0.05
+    points_around_circle = 10
+    for x, y in xy_positions:
+        for z in np.linspace(0, 30, 120):
+            for i in range(points_around_circle):
+                theta = 2 * np.pi * i / 10
+                points.append([x + radius * np.cos(theta), y + radius * np.sin(theta), z])
+            
+    return np.array(points)
 
 class Map:
     def __init__(
         self,
         map_filepath,
         voxel_per_x_metres,
-        extents_metres_xyz
+        extents_metres_xyz,
+        verbose=False,
     ):
         """
         Input filepath is where we can find the map file. Maps are represented with
@@ -57,7 +95,7 @@ class Map:
         self.extents_metres_xyz = extents_metres_xyz
         
         # Load the map file as an occupancy grid
-        self.points = test_column()
+        self.points = test_columns()
 
         # Create a voxel grid representation of the map
         num_voxels_per_axis = [
@@ -72,7 +110,8 @@ class Map:
             i, j, k = self.metres_to_voxel_coords([x, y, z])
             # If it's outside the grid, skip
             if not self.voxel_coord_in_bounds([i, j, k]):
-                print(f"Point {point} or voxel {i, j, k} is out of bounds")
+                if verbose:
+                    print(f"Point {point} or voxel {i, j, k} is out of bounds")
                 continue
             else:
                 self.voxel_grid[i, j, k] = 1
@@ -86,8 +125,9 @@ class Map:
         print(f"\t-num_points: {len(self.points)}")
         print(f"\t-extents: x={self.extents_metres_xyz[0]}, y={self.extents_metres_xyz[1]}, z={self.extents_metres_xyz[2]}")
         print(f"\t-voxel_grid (shape): {self.voxel_grid.shape}")
-        print(f"\t-voxel_grid (total): {np.prod(self.voxel_grid.shape)}")
-        print(f"\t-voxel_grid (occupied): {np.sum(self.voxel_grid)}")
+        print(f"\t-voxel_grid (total): {np.prod(self.voxel_grid.shape):.0f}")
+        print(f"\t-voxel_grid (occupied): {np.sum(self.voxel_grid):.0f}")
+        print(f"\t-voxel_grid (occupied %): {np.sum(self.voxel_grid) / np.prod(self.voxel_grid.shape) * 100:.6f}%")
     
     # ----------------------------------------------------------------
         
@@ -278,7 +318,7 @@ class Map:
                                 structuring_element[i, j, k] = 1
                 # Dilate the voxel grid
                 voxel_grid_expanded = scipy.ndimage.binary_dilation(voxel_grid_expanded, structure=structuring_element)
-                print(" done")
+                print("done")
 
             # Use A* algorithm for pathfinding
             print(f"Making graph with shape {self.voxel_grid.shape}")
@@ -310,7 +350,7 @@ class Map:
                         edges_to_add.append((node, neighbour))
             print("Graph constructing...", end="")
             graph.add_edges_from(edges_to_add, weight=1)
-            print(" done")
+            print("done")
             print(graph)
 
             # Compute the path using A* algorithm
@@ -324,7 +364,7 @@ class Map:
                     tuple(b_voxel_coord), 
                     heuristic=euclidean_distance
                 )
-                print(f" done")
+                print(f"done")
                 # Convert path nodes back to coordinates in metres
                 path_metres = [self.voxel_coords_to_metres(np.array([x, y, z])) for x, y, z in path_coords]
 
