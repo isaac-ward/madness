@@ -1,0 +1,27 @@
+version: '3'
+services:
+  madness:
+    container_name: madness
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - "22:22"
+      - "8888:8888"
+    volumes:
+      - ./assets:/mnt/assets
+      - ./cache:/mnt/cache
+      - ./logs:/mnt/logs
+      - ./src:/mnt/src
+    command: tail -f /dev/null
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all # Set to 'none' to disable GPU or specify device IDs
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    # GPU pass through (if available)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
