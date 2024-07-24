@@ -38,8 +38,8 @@ def test_column():
 def test_columns():
     def generate_positions(size_x, size_y, spacing):
         # Compute the number of columns and rows needed
-        num_x_columns = int(np.ceil(size_x / spacing))
-        num_y_columns = int(np.ceil(size_y / spacing))
+        num_x_columns = int(np.ceil(size_x / spacing)) + 1
+        num_y_columns = int(np.ceil(size_y / spacing)) + 1
 
         # Create arrays to hold the x and y positions
         x_positions = np.arange(num_x_columns) * spacing
@@ -59,11 +59,11 @@ def test_columns():
         return positions, num_x_columns, num_y_columns
         
     # Columns from z=0 to z=30 at the following x,y positions
-    xy_positions,_,_ = generate_positions(30, 30, 5)
+    xy_positions,_,_ = generate_positions(30, 30, 3)
 
     # Create a column at each of these positions
     points = []
-    radius = 0.05
+    radius = 0.025
     points_around_circle = 10
     for x, y in xy_positions:
         for z in np.linspace(0, 30, 120):
