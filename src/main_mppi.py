@@ -53,11 +53,7 @@ if __name__ == "__main__":
         dt=0.025,
     )
 
-    # Define the initial state of the system
-    # Positions, rotations (euler angles), velocities, body rates
-    state_initial = [2.5, 2.5, 2.5,    0, 0, 0,    0, 0, 0,    0, 0, 0]
-
-    # Create the environment
+    # Create a map representation
     map_ = Map(
         map_filepath="maps/empty.csv",
         voxel_per_x_metres=0.25,
@@ -67,17 +63,27 @@ if __name__ == "__main__":
             [0, 30]
         ],
     )
-    environment = Environment(
-        state_initial=state_initial,
-        dynamics_model=dyn,
-        map_=map_,
-    )
+
+    # Define the initial state of the system
+    # Positions, rotations (euler angles), velocities, body rates
+    state_initial = [2.5, 2.5, 2.5,    0, 0, 0,    0, 0, 0,    0, 0, 0]
 
     # We need a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = [27.5, 27.5, 27.5]
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+
+    # Create the environment
+    num_seconds = 8
+    num_steps = int(num_seconds / dyn.dt)
+    environment = Environment(
+        state_initial=state_initial,
+        state_goal=[*xyz_goal, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        dynamics_model=dyn,
+        map_=map_,
+        steps_until_done=num_steps,
+    )
 
     # Create the agent, which has an initial state and a policy
     policy = PolicyMPPI(
@@ -95,6 +101,7 @@ if __name__ == "__main__":
     policy.enable_logging(log_folder)
     policy.update_path_xyz(path_xyz_smooth)
 
+    # Can now create an agent
     agent = Agent(
         state_initial=state_initial,
         policy=policy,
@@ -103,12 +110,19 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
 
     # Run the simulation for some number of steps
-    num_seconds = 8
-    num_steps = int(num_seconds / dyn.dt)
     pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
+        # Take an action (this is based on previous observations)
         action = agent.act()
-        state = environment.step(action)
+        state, done_flag, done_message = environment.step(action)
+        pbar.update(1)
+
+        # If we're done exit the loop
+        if done_flag:
+            pbar.set_description(done_message)
+            break
+
+        # Make new observations
         agent.observe(state)
 
         # Update the pbar with the current state and action
@@ -118,7 +132,6 @@ if __name__ == "__main__":
         a_string = ", ".join([f"{x:<4.1f}" for x in action])
         pbar.set_description(
             f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
-        pbar.update(1)
     # Close the bar
     pbar.close()
 
@@ -139,7 +152,7 @@ if __name__ == "__main__":
     # Render visuals
     visual = Visual(log_folder)
     visual.plot_histories()
-    visual.render_video()
+    visual.render_video(desired_fps=4)
 
     # Clean up stored data 
     try:

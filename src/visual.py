@@ -143,6 +143,7 @@ class Visual:
 
     def render_video(
         self,
+        desired_fps=25,
     ):
         """
         We'll use matplotlib's funcanimation to render a video of the simulation
@@ -172,8 +173,14 @@ class Visual:
         path_flag = False
         try:
             path_xyz = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "policy", "path_xyz.pkl"))
-            path_xyz_smooth = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "policy", "path_xyz_smooth.pkl"))
             path_flag = True
+        except:
+            pass
+
+        path_smooth_flag = False
+        try:
+            path_xyz_smooth = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "policy", "path_xyz_smooth.pkl"))
+            path_smooth_flag = True
         except:
             pass
 
@@ -322,8 +329,7 @@ class Visual:
         # We want to render at X fps, so how many frames will we have in the video?
         simulation_dt = dynamics.dt
         T = num_frames_simulation * simulation_dt
-        playback_speed = 1
-        desired_fps = 25
+        playback_speed = 1.0
         num_frames_to_render = math.floor((T / playback_speed) * desired_fps)
 
         # Track progress with a pbar
@@ -502,6 +508,7 @@ class Visual:
                         linestyle=':',
                         alpha=0.8,
                     )
+                if path_smooth_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
                     ax.plot(
                         path_xyz_smooth[:, 0],
                         path_xyz_smooth[:, 1],
@@ -587,13 +594,17 @@ class Visual:
                 for i in range(4):
                     axs[f"action{i}"].plot(
                         [action[i] for action in actions_so_far],
-                        'r-',
+                        linestyle='-',
+                        color='red',
+                        lw=0.5,
                     )
                     # And the smoothed
                     axs[f"action{i}"].plot(
                         [action[i] for action in action_history_smoothed[:frame]],
-                        'r--',
-                        alpha=0.5,
+                        linestyle='--',
+                        color='grey',
+                        lw=0.5,
+                        zorder=100,
                     )
                     # Set the x axis to the number of frames
                     axs[f"action{i}"].set_xlim(0, num_frames_simulation - 1)
