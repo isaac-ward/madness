@@ -16,8 +16,10 @@ docker-compose --progress plain build
 docker-compose up -d --no-deps
 # Open a shell in that container
 docker exec -it madness bash
-# Execute the main script in that shell
-python /mnt/src/main.py
+# Execute any main script in that shell
+python /mnt/src/main_mppi.py
+python /mnt/src/main_make_data.py
+bash mnt/src/bash/make_data.sh 
 # Exit from the shell/container when done
 exit
 # Close the container from the host machine

@@ -238,6 +238,7 @@ class PolicyMPPI:
         # Compute all rewards
         rewards = self.batch_reward(state_plans, action_plans)
 
+        # TODO
         # # Normalize rewards between 0-1 so that they don't blow up when exponentiated
         # min_reward = np.min(rewards)
         # max_reward = np.max(rewards)
