@@ -43,7 +43,18 @@ class FlowMPPIModule(pl.LightningModule):
         pass
     
     def forward(self, state_current, state_goal):
-        # Get the context vector, then draw K samples from the normalizing flow
+
+        # Generate a context vector from the desired contextual information
+        # and parameterize the normalizing flow with it
+
+        # Draw K samples from the normalizing flow
+        
+        # Reward the samples based on the reward function
+
+        # Assemble the optimal action sequence from the 
+        # reward information
+
+        # Return everything
         pass
     
     def training_step(self, batch, batch_idx):
@@ -53,14 +64,12 @@ class FlowMPPIModule(pl.LightningModule):
         the optimal action distribution
         """
 
-        # Start by getting the current state from the data module
+        # Start by getting the contextual variables
+        # TODO this could be provided via the batch 
+        state_goal    = self.trainer.datamodule.environment.state_goal
+        state_current = self.trainer.datamodule.environment.get_last_n_states(1)[0]
 
-        # And get the goal state from the data module
-
-        # Generate a context vector from the desired contextual information
-        # and parameterize the normalizing flow with it
-
-        # Draw K samples from the normalizing flow
+        # Run a forward pass, getting the 
 
         # Compute the probabilities of optimality from the reward function
 
@@ -74,6 +83,7 @@ class FlowMPPIModule(pl.LightningModule):
         # Reset the environment if we're done
 
         # And return the loss
+        pass
         
     def configure_optimizers(self):
-        return optim.Adam(self.network.parameters(), lr=self.lr)
+        return optim.Adam(self.flow_network.parameters() + self.context_network.parameters(), lr=self.lr)

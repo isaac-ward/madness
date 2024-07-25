@@ -75,6 +75,23 @@ class Environment:
         self.action_history = []
         self.state_goal = state_goal
 
+    def _get_last_n_items(self, array, n):
+        """
+        Get the last n states, padding with zero if not enough states,
+        and return as a numpy array
+        """
+        items = array[-n:]
+        while len(items) < n:
+            zeros = np.zeros_like(items[0])
+            items = [zeros] + items
+        return np.array(items)
+    
+    def get_last_n_states(self, n):
+        return self._get_last_n_items(self.state_history, n)
+    
+    def get_last_n_actions(self, n):
+        return self._get_last_n_items(self.action_history, n)
+
     def log(
         self,
         folder,
