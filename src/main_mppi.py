@@ -82,7 +82,7 @@ if __name__ == "__main__":
         state_goal=[*xyz_goal, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         dynamics_model=dyn,
         map_=map_,
-        steps_until_done=num_steps,
+        episode_length=num_steps,
     )
 
     # Create the agent, which has an initial state and a policy

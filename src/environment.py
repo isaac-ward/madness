@@ -10,7 +10,7 @@ class Environment:
         state_goal,
         dynamics_model,
         map_,
-        steps_until_done,
+        episode_length,
     ):
         """
         The dynamics model, or equivalently, the transition function, of the environment
@@ -23,7 +23,7 @@ class Environment:
         # TODO reward model
 
         # Keep track of the number of steps until the episode is done
-        self.steps_until_done = steps_until_done
+        self.episode_length = episode_length
 
         # Although the map interaction is technically part of the 
         # dynamics model, we'll keep it separate for clarity
@@ -51,7 +51,7 @@ class Environment:
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
         done_message = ""
-        if len(self.state_history) > self.steps_until_done:
+        if len(self.state_history) > self.episode_length:
             done_flag = True
             done_message = "Ran out of steps"
         elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_radius):
