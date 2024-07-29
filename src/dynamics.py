@@ -70,6 +70,9 @@ class DynamicsQuadcopter3D:
     def action_ranges(self):
         # If you're finding that state space isn't adequately explored,
         # consider increasing the size of the action space
+        # Allowing negative actions is not recommended - it tends to
+        # produce erratic results that take advantage of unrealistic
+        # and extremely rapid changes in control inputs
         magnitude_lo = 0
         magnitude_hi = 4
         return np.array([

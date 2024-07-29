@@ -9,9 +9,12 @@ from nflows.transforms import CompositeTransform, ReversePermutation
 
 from policies.rewards import batch_reward
 
-class FlowMPPIModule(pl.LightningModule):
+class FlowActionDistribution(pl.LightningModule):
     """
     Learns the optimal action distribution for MPPI using normalizing flows
+
+    When used, an object of this class will be used in tandem with a MPPI policy 
+    object and this will be used to generate optimal actions
     """
 
     def __init__(
@@ -26,7 +29,7 @@ class FlowMPPIModule(pl.LightningModule):
         learning_rate,
     ):
         # Initialize the parent class (pl.LightningModule)
-        super(FlowMPPIModule, self).__init__()
+        super(FlowActionDistribution, self).__init__()
 
         # Save the learning rate
         self.learning_rate = learning_rate
@@ -96,7 +99,7 @@ class FlowMPPIModule(pl.LightningModule):
         # Assemble the context vector, which includes the
         # current state
         # goal state
-        context_input = 
+        context_input = torch.cat((state_current, state_goal), dim=0)
 
         # Generate a context vector from the desired contextual information
         # and parameterize the normalizing flow with it
@@ -116,17 +119,19 @@ class FlowMPPIModule(pl.LightningModule):
         """
 
         # Start by getting the contextual variables
-        # TODO this could be provided via the batch 
-        # TODO when we use a batch_size != 1 the goal may update as we may
-        # have multiple episodes, so this information should be provided in
-        # the batch data
-        state_goal    = self.trainer.datamodule.environment.state_goal
-        state_current = self.trainer.datamodule.environment.get_last_n_states(1)[0]
+        state_current = batch["state_current"]
+        state_goal = batch["state_goal"]
 
         # Run a forward pass, getting the action samples
-
+        actions = self.forward(state_current, state_goal)
         
         # Reward the samples based on the reward function
+        rewards = batch_reward(
+            state_trajectory_plans,
+            action_trajectory_plans,
+            state_goal,
+            map_,
+        )
 
         # Assemble the optimal action sequence from the 
         # reward information

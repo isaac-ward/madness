@@ -74,7 +74,7 @@ class Environment:
         Extents is a list of 3 tuples of (min, max) for each dimension
         """
 
-        extents = map_.extents
+        extents = map_.extents_metres_xyz
         
         # Get a random state
         state_initial = np.array([

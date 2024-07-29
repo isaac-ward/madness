@@ -64,7 +64,7 @@ class EnvironmentDataset(Dataset):
 
         # We return the information required for learning
         data = {
-            "state": torch.tensor(state, dtype=torch.float32),
+            "state_current": torch.tensor(state, dtype=torch.float32),
             "state_goal": torch.tensor(state_goal_used, dtype=torch.float32),
             "action": torch.tensor(action, dtype=torch.float32),
             "done_flag": done_flag,

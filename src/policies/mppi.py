@@ -11,6 +11,14 @@ import utils.geometric
 import utils.general
 import policies.rewards
 
+class MPPIComputer:
+    """
+    An MPPI computer handles the sampling of actions, rollouts of actions
+    wrt to some dynamics model, optimal action production (wrt some reward),
+    and logging
+    """
+    pass
+
 class PolicyMPPI:
     def __init__(
         self,
@@ -227,7 +235,7 @@ class PolicyMPPI:
         self._previous_optimal_action_plan = optimal_action_plan
 
         # ----------------------------------------------------------------
-        # Logging from here
+        # Logging from here on
         # ----------------------------------------------------------------
 
         # Log the state and action plans alongside the reward, 
