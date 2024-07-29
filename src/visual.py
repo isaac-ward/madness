@@ -149,7 +149,7 @@ class Visual:
         We'll use matplotlib's funcanimation to render a video of the simulation
         """
 
-        print("Loading requiured data...", end="")
+        print("Loading required visual data...", end="")
         
         # The state is set up as [x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz]
         # The action is set up as [w1, w2, w3, w4] corresponding to the forward, left, backward, right rotor inputs
@@ -167,7 +167,7 @@ class Visual:
         voxel_occupied_centers = [ map_.voxel_coords_to_metres(v) for v in voxel_occupied_centers ]
 
         print("done")
-        print("Loading optional data...", end="")
+        print("Loading optional visual data...", end="")
 
         # We also want the policy path, if it exists
         path_flag = False
@@ -278,7 +278,8 @@ class Visual:
 
             # These axes should be centered around the drone
             for ax_name in ["closeup"]:
-                sf = 5
+                # Smaller scale factor here means more zoomed in
+                sf = 3
                 axs[ax_name].set_xlim(x - sf * quadcopter_diameter, x + sf * quadcopter_diameter)
                 axs[ax_name].set_ylim(y - sf * quadcopter_diameter, y + sf * quadcopter_diameter)
                 axs[ax_name].set_zlim(z - sf * quadcopter_diameter, z + sf * quadcopter_diameter)
@@ -362,7 +363,7 @@ class Visual:
                 assert len(moving_avg) == len(actions), f"Moving average length {len(moving_avg)} != actions length {len(actions)}"
                 
                 return moving_avg
-            action_history_smoothed = moving_average(action_history, window_size=4)
+            action_history_smoothed = moving_average(action_history, window_size=5)
             action_smoothed = action_history_smoothed[frame]
             action = action_history[frame]
 
@@ -595,15 +596,17 @@ class Visual:
                     axs[f"action{i}"].plot(
                         [action[i] for action in actions_so_far],
                         linestyle='-',
-                        color='red',
-                        lw=0.5,
+                        color='black',
+                        lw=1,
+                        zorder=1,
+                        alpha=0.5,
                     )
                     # And the smoothed
                     axs[f"action{i}"].plot(
                         [action[i] for action in action_history_smoothed[:frame]],
-                        linestyle='--',
-                        color='grey',
-                        lw=0.5,
+                        linestyle='-',
+                        color='red',
+                        lw=1,
                         zorder=100,
                     )
                     # Set the x axis to the number of frames

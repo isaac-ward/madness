@@ -24,7 +24,7 @@ from policies.mppi import PolicyMPPI
 if __name__ == "__main__":
 
     # Seed everything
-    utils.general.seed(0)
+    utils.general.seed(42)
 
     # Are we using GPU? 
     # NOTE: suggest false for now because it's slow
@@ -65,13 +65,14 @@ if __name__ == "__main__":
     )
 
     # Start and goal states
-    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=10)
+    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=25)
 
-    # Generate a path from the initial state to the goal state
+    # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
-    path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+    path_xyz = np.array([xyz_initial, xyz_goal])
+    #path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
+    #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the environment
     num_seconds = 8
@@ -98,7 +99,7 @@ if __name__ == "__main__":
         use_gpu_if_available=use_gpu_if_available,
     )
     policy.enable_logging(log_folder)
-    policy.update_path_xyz(path_xyz_smooth)
+    policy.update_state_goal(state_goal)
 
     # Can now create an agent
     agent = Agent(
@@ -143,15 +144,15 @@ if __name__ == "__main__":
         f"{log_folder}/policy/path_xyz.pkl",
         path_xyz,
     )
-    utils.logging.pickle_to_filepath(
-        f"{log_folder}/policy/path_xyz_smooth.pkl",
-        path_xyz_smooth,
-    )
+    # utils.logging.pickle_to_filepath(
+    #     f"{log_folder}/policy/path_xyz_smooth.pkl",
+    #     path_xyz_smooth,
+    # )
 
     # Render visuals
     visual = Visual(log_folder)
     visual.plot_histories()
-    visual.render_video(desired_fps=4)
+    visual.render_video(desired_fps=25)
 
     # Clean up stored data 
     try:

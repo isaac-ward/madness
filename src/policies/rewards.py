@@ -48,7 +48,8 @@ def batch_reward(
     goal_w_terms = xp.linalg.norm(w[:,-1,:] - goal_w, axis=1)
 
     # Distance along path to goal
-    path_terms = xp.sum(xp.linalg.norm(p - goal_p, axis=2), axis=1)
+    path_towards_goal_p_terms = xp.sum(xp.linalg.norm(p - goal_p, axis=2), axis=1)
+    path_towards_goal_v_terms = xp.sum(xp.linalg.norm(v - goal_v, axis=2), axis=1)
 
     # Collision/oob check
     # It is extremely important that this check be done in parallel, it
@@ -63,6 +64,13 @@ def batch_reward(
     #angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
 
     # Assemble, and note we're using a reward paradigm
-    cost = 100 * goal_p_terms + 0 * path_terms + 10000 * invalid_terms + 0 * goal_r_terms + 50 * goal_v_terms + 50 * goal_w_terms
+    cost = \
+        1000 * goal_p_terms + \
+        100 * path_towards_goal_p_terms + \
+        50 * path_towards_goal_v_terms + \
+        10000 * invalid_terms + \
+        0 * goal_r_terms + \
+        0 * goal_v_terms + \
+        0 * goal_w_terms
     reward = -cost
     return reward     

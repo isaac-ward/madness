@@ -131,7 +131,7 @@ class Map:
         print(f"\t-voxel_grid (shape): {self.voxel_grid.shape}")
         print(f"\t-voxel_grid (total): {np.prod(self.voxel_grid.shape):.0f}")
         print(f"\t-voxel_grid (occupied): {np.sum(self.voxel_grid):.0f}")
-        print(f"\t-voxel_grid (occupied %): {np.sum(self.voxel_grid) / np.prod(self.voxel_grid.shape) * 100:.6f}%")
+        print(f"\t-voxel_grid (occupied %): {np.sum(self.voxel_grid) / np.prod(self.voxel_grid.shape) * 100:.6f} %")
     
     # ----------------------------------------------------------------
         
