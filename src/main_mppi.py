@@ -64,13 +64,12 @@ if __name__ == "__main__":
         ],
     )
 
-    # Define the initial state of the system
-    # Positions, rotations (euler angles), velocities, body rates
-    state_initial = [2.5, 2.5, 2.5,    0, 0, 0,    0, 0, 0,    0, 0, 0]
+    # Start and goal states
+    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=10)
 
-    # We need a path from the initial state to the goal state
+    # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
-    xyz_goal = [27.5, 27.5, 27.5]
+    xyz_goal = state_goal[0:3]
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
@@ -79,7 +78,7 @@ if __name__ == "__main__":
     num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=state_initial,
-        state_goal=[*xyz_goal, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        state_goal=state_goal,
         dynamics_model=dyn,
         map_=map_,
         episode_length=num_steps,
