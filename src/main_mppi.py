@@ -130,8 +130,9 @@ if __name__ == "__main__":
         v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
         w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
         a_string = ", ".join([f"{x:<4.1f}" for x in action])
+        dist_to_goal_string = f"{np.linalg.norm(state[0:3] - state_goal[0:3]):<4.1f}"
         pbar.set_description(
-            f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
+            f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
     # Close the bar
     pbar.close()
 
