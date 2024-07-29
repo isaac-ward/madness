@@ -2,19 +2,43 @@ import torch.optim as optim
 import numpy as np
 import pytorch_lightning as pl
 
-from nflows import transforms, distributions, flows
+from nflows.distributions.normal import StandardNormal
+from nflows.flows import Flow
+from nflows.transforms.autoregressive import MaskedAffineAutoregressiveTransform
+from nflows.transforms import CompositeTransform, ReversePermutation
+
+from policies.rewards import batch_reward
 
 class FlowMPPIModule(pl.LightningModule):
     """
     Learns the optimal action distribution for MPPI using normalizing flows
     """
 
-    def __init__(self, policy_network, lr=1e-3):
+    def __init__(
+        self, 
+        state_size,
+        action_size,
+        K,
+        H,
+        context_input_size,
+        context_output_size,
+        num_flow_layers,
+        learning_rate,
+    ):
         # Initialize the parent class (pl.LightningModule)
         super(FlowMPPIModule, self).__init__()
 
         # Save the learning rate
-        self.lr = lr
+        self.learning_rate = learning_rate
+
+        # Define the internal shapes
+        self.state_size = state_size
+        self.action_size = action_size
+        self.K = K
+        self.H = H
+        self.context_input_size = context_input_size
+        self.context_output_size = context_output_size
+        self.num_flow_layers = num_flow_layers
 
         # Create the learning networks, which include
         # a normalizing flow
@@ -29,33 +53,60 @@ class FlowMPPIModule(pl.LightningModule):
         from the learned optimal action distribution
 
         When we sample from the learned optimal action distribution,
-        we get a tensor of shape (H, |A|), where H is the horizon
-        and |A| is the dimension of the action space
+        we get a tensor with enough material in it to reshape into
+        (H, |A|), where H is the horizon and |A| is the dimension of 
+        the action space
+
+        The flow should be parameterized by a fixed length context vector
         """
-        pass
+        transforms = []
+        for _ in range(self.num_flow_layers):
+            # Reverses the elements of a 1d input
+            # https://github.com/bayesiains/nflows/blob/3b122e5bbc14ed196301969c12d1c2d94fdfba47/nflows/transforms/permutations.py#L56
+            transforms.append(ReversePermutation(features=self.H * self.action_size))
+            # https://github.com/bayesiains/nflows/blob/3b122e5bbc14ed196301969c12d1c2d94fdfba47/nflows/transforms/autoregressive.py#L64
+            transforms.append(MaskedAffineAutoregressiveTransform(
+                features=self.H * self.action_size, 
+                hidden_features=2 * self.H * self.action_size,
+                context_features=self.context_output_size
+            ))
+        transform = CompositeTransform(transforms)
+        distribution = StandardNormal(shape=[self.H * self.action_size])
+        flow = Flow(transform, distribution)
+        return flow
 
     def _context_network(self):
         """
         Takes some information of interest and embeds it into a fixed
         length context vector that can be used to parameterize the 
         normalizing flow
+
+        A MLP is normally a good choice here if nothing is known about
+        the input contextual data
         """
-        pass
+        return nn.Sequential(
+            nn.Linear(self.context_input_size, 64),
+            nn.ReLU(),
+            nn.Linear(64, 64),
+            nn.ReLU(),
+            nn.Linear(64, self.context_output_size)
+        )
     
     def forward(self, state_current, state_goal):
+        # Assemble the context vector, which includes the
+        # current state
+        # goal state
+        context_input = 
 
         # Generate a context vector from the desired contextual information
         # and parameterize the normalizing flow with it
+        context = self.context_network(context_input)
 
         # Draw K samples from the normalizing flow
+        actions = self.flow_network.sample(num_samples=self.K, context=context)
+        actions = actions.view(self.K, self.H, self.action_size)
         
-        # Reward the samples based on the reward function
-
-        # Assemble the optimal action sequence from the 
-        # reward information
-
-        # Return everything
-        pass
+        return actions
     
     def training_step(self, batch, batch_idx):
         """
@@ -66,10 +117,19 @@ class FlowMPPIModule(pl.LightningModule):
 
         # Start by getting the contextual variables
         # TODO this could be provided via the batch 
+        # TODO when we use a batch_size != 1 the goal may update as we may
+        # have multiple episodes, so this information should be provided in
+        # the batch data
         state_goal    = self.trainer.datamodule.environment.state_goal
         state_current = self.trainer.datamodule.environment.get_last_n_states(1)[0]
 
-        # Run a forward pass, getting the 
+        # Run a forward pass, getting the action samples
+
+        
+        # Reward the samples based on the reward function
+
+        # Assemble the optimal action sequence from the 
+        # reward information
 
         # Compute the probabilities of optimality from the reward function
 
@@ -86,4 +146,5 @@ class FlowMPPIModule(pl.LightningModule):
         pass
         
     def configure_optimizers(self):
-        return optim.Adam(self.flow_network.parameters() + self.context_network.parameters(), lr=self.lr)
+        learnable_parameters = self.flow_network.parameters() + self.context_network.parameters()
+        return optim.Adam(learnable_parameters, lr=self.lr)

@@ -9,6 +9,7 @@ from scipy.stats.qmc import Sobol
 
 import utils.geometric
 import utils.general
+import policies.rewards
 
 class PolicyMPPI:
     def __init__(
@@ -45,7 +46,7 @@ class PolicyMPPI:
 
         # Will need a path to follow, but we want it to be
         # updated separately (changeable)
-        self.path_xyz = None
+        self.state_goal = None
 
         # Are we going to have logging? Defaultly no
         self.log_folder = None
@@ -53,69 +54,14 @@ class PolicyMPPI:
         # If we're using a GPU, we'll need to move some things over
         self.use_gpu_if_available = use_gpu_if_available
 
-    def batch_reward(
+    def update_state_goal(
         self,
-        state_trajectory_plans,
-        action_trajectory_plans,
-    ):
-        """
-        Given a batch of plans, return a scalar reward (higher is better) for each
-
-        state_trajectory_plans: (batch_size, H, state_size)
-        action_trajectory_plans: (batch_size, H, action_size)
-        """
-
-        # What module to use? cupy or numpy?
-        xp = cp.get_array_module(state_trajectory_plans)
-        batch_size, _, _ = xp.shape(state_trajectory_plans)
-
-        p = state_trajectory_plans[:, :, 0:3]   # batch_size, H, 3
-        r = state_trajectory_plans[:, :, 3:6]
-        v = state_trajectory_plans[:, :, 6:9]
-        w = state_trajectory_plans[:, :, 9:12]
-        # Goal point
-        goal_p = self.path_xyz[-1]
-        goal_v = np.zeros(3)
-        goal_r = np.zeros(3)
-        goal_w = np.zeros(3)
-
-        # The cost function (negative reward) from the published work is:
-        # a * distance_from_goal_at_T + SUM b * distance_from_goal_at_t + SUM c * collision_at_t
-
-        # Distance of final point from goal
-        goal_p_terms = xp.linalg.norm(p[:,-1,:] - goal_p, axis=1)
-        goal_r_terms = xp.linalg.norm(r[:,-1,:] - goal_r, axis=1)
-        goal_v_terms = xp.linalg.norm(v[:,-1,:] - goal_v, axis=1)
-        goal_w_terms = xp.linalg.norm(w[:,-1,:] - goal_w, axis=1)
-
-        # Distance along path to goal
-        path_terms = xp.sum(xp.linalg.norm(p - goal_p, axis=2), axis=1)
-
-        # Collision/oob check
-        # It is extremely important that this check be done in parallel, it
-        # uses ckdtrees and is very slow otherwise
-        flat_p = p.reshape((batch_size * self.H, 3))
-        invalid_terms = xp.sum(self.map_.batch_is_not_valid(flat_p, collision_radius=1).reshape((batch_size, self.H)), axis=1)
-
-        # Minimize velocity
-        #velocity_terms = xp.sum(xp.linalg.norm(v, axis=2), axis=1)
-
-        # Minimize angular velocity
-        #angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
-
-        # Assemble, and note we're using a reward paradigm
-        cost = 100 * goal_p_terms + 0 * path_terms + 10000 * invalid_terms + 0 * goal_r_terms + 50 * goal_v_terms + 50 * goal_w_terms
-        reward = -cost
-        return reward     
-
-    def update_path_xyz(
-        self,
-        path_xyz,
+        state_goal,
     ):
         """
         Update the path to follow
         """
-        self.path_xyz = path_xyz
+        self.state_goal = state_goal
 
     def enable_logging(
         self,
@@ -191,8 +137,8 @@ class PolicyMPPI:
     ):
 
         # Check if we have a path to follow
-        if self.path_xyz is None:
-            raise ValueError(f"{self.__class__.__name__} requires a path to follow")
+        if self.state_goal is None:
+            raise ValueError(f"{self.__class__.__name__} requires a goal state to follow")
 
         # For convenience
         K = self.K
@@ -219,7 +165,7 @@ class PolicyMPPI:
             state_plans     = cp.array(state_plans)
             action_plans    = cp.array(action_plans)
             rewards         = cp.array(rewards)
-            self.path_xyz   = cp.array(self.path_xyz)
+            self.state_goal = cp.array(self.state_goal)
 
         # What module to use? cupy or numpy?
         xp = cp.get_array_module(state_history)
@@ -236,7 +182,12 @@ class PolicyMPPI:
             )
             
         # Compute all rewards
-        rewards = self.batch_reward(state_plans, action_plans)
+        rewards = policies.rewards.batch_reward(
+            state_plans, 
+            action_plans,
+            self.state_goal,
+            self.map_,
+        )
 
         # TODO
         # # Normalize rewards between 0-1 so that they don't blow up when exponentiated
@@ -267,7 +218,7 @@ class PolicyMPPI:
             state_plans         = cp.asnumpy(state_plans)
             action_plans        = cp.asnumpy(action_plans)
             rewards             = cp.asnumpy(rewards)
-            self.path_xyz       = cp.asnumpy(self.path_xyz)
+            self.state_goal     = cp.asnumpy(self.state_goal)
             optimal_state_plan  = cp.asnumpy(optimal_state_plan)
             optimal_action_plan = cp.asnumpy(optimal_action_plan)
             optimal_action      = cp.asnumpy(optimal_action)
