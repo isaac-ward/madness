@@ -74,7 +74,7 @@ class DynamicsQuadcopter3D:
         # produce erratic results that take advantage of unrealistic
         # and extremely rapid changes in control inputs
         magnitude_lo = 0
-        magnitude_hi = 4
+        magnitude_hi = 3
         return np.array([
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
