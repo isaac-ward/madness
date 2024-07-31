@@ -2,9 +2,10 @@
 
 ## Reproducibility
 
-- Begin by installing Docker [here](https://docs.docker.com/engine/install/).
+- A ```.env``` file is used to read in API keys. The logging library wandb is used, and developers should sign up for and include their API key and desired logging entity in the ```.env``` file. The file ```.env.example``` is provided as a template.
+- Install Docker [here](https://docs.docker.com/engine/install/).
 - **Ensure that the Docker daemon is running**.
-- Run the following commands **from the root folder of the project**:
+- Run the following commands **from the root folder of the project**. This should handle all dependencies.
 
 ```bash
 # Build the Docker image

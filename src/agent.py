@@ -2,11 +2,15 @@ import numpy as np
 import utils.logging
 import os
 
+from utils.general import ItemHistoryTracker
+
 class Agent:
     def __init__(
         self,
         state_initial,              # initial state
         policy,                     # how to determine the optimal next action
+        state_size,
+        action_size,
     ):
         """
         We'll start somewhere, and then we'll use the policy to determine
@@ -19,33 +23,29 @@ class Agent:
         self.lookback = 32
 
         # We'll also track the history of the states
-        self.state_history = [state_initial]
-        self.action_history = []
+        self.state_history_tracker  = ItemHistoryTracker(item_shape=(state_size,))
+        self.action_history_tracker = ItemHistoryTracker(item_shape=(action_size,))
+
+        # Shapes
+        self.state_size = state_size
+        self.action_size = action_size  
+
+    def get_histories(self):
+        num_states_desired  = self.lookback
+        num_actions_desired = self.lookback - 1
+        state_history = self.state_history_tracker.get_last_n_items_with_zero_pad(num_states_desired)
+        action_history = self.action_history_tracker.get_last_n_items_with_zero_pad(num_actions_desired)
+        return state_history, action_history
 
     def act(self):
         """
         Use the policy to determine the next action to take
         """
-        # Will be in the form s_0, a_0, s_1, a_1, ..., s_n
-        # TODO rewards
-        num_states_desired  = self.lookback  
-        num_actions_desired = self.lookback - 1
+        
+        state_history, action_history = self.get_histories()
 
-        # Helper to fill a padded zeros matrix with what is available
-        def fill_available_history(shape, available_history):
-            num_desired = shape[0]
-            num_available = len(available_history)
-            if num_available > num_desired:
-                return available_history[-num_desired:]
-            filled = np.zeros(shape)
-            if num_available > 0:
-                filled[-num_available:] = available_history
-            return filled
-
-        # Fill em up
-        # TODO this should not be hardcoded
-        state_history = fill_available_history((num_states_desired, self.policy.state_size), self.state_history)
-        action_history = fill_available_history((num_actions_desired, self.policy.action_size), self.action_history)
+        # Different policies require different inputs
+        # TODO
 
         # Provide the policy with the history to determine an action
         action = self.policy.act(
@@ -54,7 +54,7 @@ class Agent:
         )
 
         # Save the action and return
-        self.action_history.append(action)
+        self.action_history_tracker.append(action)
         return action
 
     def observe(self, state):
@@ -64,7 +64,15 @@ class Agent:
         # TODO partial observability
         # The environment keeps track of the state too, because they may 
         # be different if the agent is not perfectly informed
-        self.state_history.append(state)
+        self.state_history_tracker.append(state)
+
+    def reset(self, state_initial):
+        """
+        Reset the agent to a new state
+        """
+        self.state_history_tracker.reset()
+        self.action_history_tracker.reset()
+        self.state_history_tracker.append(state_initial)
 
     def log(
         self,
@@ -72,8 +80,8 @@ class Agent:
     ):
         utils.logging.save_state_and_action_trajectories(
             os.path.join(folder, "agent"),
-            self.state_history,
-            self.action_history,
+            self.state_history_tracker.get_history(),
+            self.action_history_tracker.get_history(),
         )
 
 

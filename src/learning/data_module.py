@@ -29,11 +29,11 @@ class EnvironmentDataModule(pl.LightningDataModule):
         # Create the training and validation datasets
         self.dataset_train = EnvironmentDataset(
             environment=copy.deepcopy(self.environment),
-            agent=self.agent,
+            agent=copy.deepcopy(self.agent),
         )
         self.dataset_val = EnvironmentDataset(
             environment=copy.deepcopy(self.environment),
-            agent=self.agent,
+            agent=copy.deepcopy(self.agent),
         )
 
     def train_dataloader(self):

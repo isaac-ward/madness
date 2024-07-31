@@ -57,7 +57,7 @@ class DynamicsQuadcopter3D:
     def state_size(self):
         return 12
     def action_size(self):
-        return 4
+        return len(self.action_ranges())
     def state_plot_groups(self):
         return [3, 3, 3, 3]
     def action_plot_groups(self):
@@ -180,3 +180,4 @@ def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, 
     # Use the Euler method to compute the new state
     states_new = states + dt * state_delta
     return states_new
+        
