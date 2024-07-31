@@ -60,6 +60,9 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         self.flow_network = self._flow_network()
         # the context embedder
         self.context_network = self._context_network()
+
+        # Print a network summary
+        
         
     def update_state_goal(
         self,
@@ -80,19 +83,26 @@ class PolicyFlowActionDistribution(pl.LightningModule):
 
         The flow should be parameterized by a fixed length context vector
         """
+
+        # Convienience and readability
+        A = self.mppi_computer.dynamics.action_size()
+        H = self.H
+        C = self.context_output_size
+        print(f"Flow network: A={A}, H={H}, C={C}")
+
         transforms = []
         for _ in range(self.num_flow_layers):
             # Reverses the elements of a 1d input
             # https://github.com/bayesiains/nflows/blob/3b122e5bbc14ed196301969c12d1c2d94fdfba47/nflows/transforms/permutations.py#L56
-            transforms.append(ReversePermutation(features=self.H * self.action_size))
+            transforms.append(ReversePermutation(features=H*A))
             # https://github.com/bayesiains/nflows/blob/3b122e5bbc14ed196301969c12d1c2d94fdfba47/nflows/transforms/autoregressive.py#L64
             transforms.append(MaskedAffineAutoregressiveTransform(
-                features=self.H * self.action_size, 
-                hidden_features=2 * self.H * self.action_size,
-                context_features=self.context_output_size
+                features=H*A, 
+                hidden_features=2*H*A,
+                context_features=C
             ))
         transform = CompositeTransform(transforms)
-        distribution = StandardNormal(shape=[self.H * self.action_size])
+        distribution = StandardNormal(shape=[H*A])
         flow = Flow(transform, distribution)
         return flow
 
@@ -117,7 +127,9 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # Assemble the context vector, which includes the
         # current state
         # goal state
-        state_current = state_history[-1]
+        # Ensure everything is a torch tensor
+        state_current = torch.tensor(state_history[-1], dtype=torch.float32)
+        state_goal    = torch.tensor(state_goal, dtype=torch.float32)
         context_input = torch.cat((state_current, state_goal), dim=0)
 
         # Generate a context vector from the desired contextual information
@@ -125,8 +137,10 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         context = self.context_network(context_input)
 
         # Draw K samples from the normalizing flow
+        # This seems to produce a K*H*A*C sized sample TODO fix
         actions = self.flow_network.sample(num_samples=self.K, context=context)
-        actions = actions.view(self.K, self.H, self.dynamic.action_size)
+        print(actions.shape)
+        actions = actions.view(self.K, self.H, self.mppi_computer.dynamics.action_size())
 
         # Compute the likelihood of the control sequences wrt the context vector
         # using the reverse mode of the normalizing flow
@@ -158,9 +172,6 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         return optimal_action_plan[0]
     
     def generic_step(self, batch, batch_idx, stage):
-        pass
-    
-    def training_step(self, batch, batch_idx):
         """
         Generate K samples from the learned optimal action distribution,
         and compute a loss that encourages the samples to be close to
@@ -175,6 +186,10 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # Run a forward pass, getting all the required information 
         # from the MPPI computer
         state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan, log_likelihoods = self.forward(state_history, action_history, state_goal)
+
+        # What was the average and best reward?
+        reward_best = torch.max(rewards)
+        reward_mean = torch.mean(rewards)
 
         # Compute the probabilities of optimality from the reward function
         # This is just the exponential of the rewards
@@ -197,14 +212,19 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         loss = -torch.mean(weights * log_likelihoods)
 
         # Do custom logging
-        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f'{stage}/loss',        loss,        on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f'{stage}/reward/best', reward_best, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f'{stage}/reward/mean', reward_mean, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
         # And return the loss
         return loss
+    
+    def training_step(self, batch, batch_idx):
+        return self.generic_step(batch, batch_idx, 'train')
 
     def validation_step(self, batch, batch_idx):
-        pass
+        return self.generic_step(batch, batch_idx, 'val')
         
     def configure_optimizers(self):
-        learnable_parameters = self.flow_network.parameters() + self.context_network.parameters()
-        return optim.Adam(learnable_parameters, lr=self.lr)
+        learnable_parameters = list(self.flow_network.parameters()) + list(self.context_network.parameters())
+        return optim.Adam(learnable_parameters, lr=self.learning_rate)
