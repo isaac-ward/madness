@@ -69,7 +69,7 @@ class Environment:
     @staticmethod
     def get_two_states_separated_by_distance(
         map_,
-        min_distance=10,
+        min_distance,
     ):
         """
         Useful for resetting the environment with the initial state and goal

@@ -13,6 +13,7 @@ services:
       - ./cache:/mnt/cache
       - ./logs:/mnt/logs
       - ./src:/mnt/src
+      - ./env:/mnt/env
     command: tail -f /dev/null
     environment:
       - NVIDIA_VISIBLE_DEVICES=all # Set to 'none' to disable GPU or specify device IDs

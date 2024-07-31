@@ -2,7 +2,7 @@
 
 ## Reproducibility
 
-- A ```.env``` file is used to read in API keys. The logging library wandb is used, and developers should sign up for and include their API key and desired logging entity in the ```.env``` file. The file ```.env.example``` is provided as a template.
+- Users should create and fill out a ```env/.env``` file; the file ```env/.env.example``` is provided as a template.
 - Install Docker [here](https://docs.docker.com/engine/install/).
 - **Ensure that the Docker daemon is running**.
 - Run the following commands **from the root folder of the project**. This should handle all dependencies.
@@ -19,6 +19,7 @@ docker-compose up -d --no-deps
 docker exec -it madness bash
 # Execute any main script in that shell
 python /mnt/src/main_mppi.py
+python /mnt/src/main_train.py
 python /mnt/src/main_make_data.py
 bash mnt/src/bash/make_data.sh 
 # Exit from the shell/container when done

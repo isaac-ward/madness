@@ -2,6 +2,8 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import Dataset
 
+from environment import Environment
+
 class EnvironmentDataset(Dataset):
     """
     Wraps a sequential decision-making environment into a
@@ -27,12 +29,16 @@ class EnvironmentDataset(Dataset):
         self.reset()
 
     def reset(self):
-        state_initial, state_goal = self.environment.get_two_states_separated_by_distance(min_distance=26)
+        state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+            self.environment.map,
+            min_distance=26
+        )
         self.environment.reset(
             state_initial=state_initial,
             state_goal=state_goal,
         )
         self.agent.reset(state_initial)
+        self.agent.policy.update_state_goal(state_goal)
 
     def __len__(self):
         return self.environment.episode_length
@@ -61,6 +67,9 @@ class EnvironmentDataset(Dataset):
 
         # TODO should our paradigm be adjusted to traditional RL where the environment
         # returns the reward?
+
+        # TODO fairly sure that we're doing everything twice - agent acts without
+        # grad and then with grad during a training step
             
         # Get the history of states and actions (as observed by the AGENT, 
         # not the ENVIRONMENT (ground truth)) so that they can be used for inference
