@@ -22,13 +22,17 @@ class EnvironmentDataset(Dataset):
         super().__init__()
         self.environment = environment
         self.agent = agent
+        
+        # Reset everything
+        self.reset()
 
-        # Ensure the environment is reset
-        state_initial, state_goal = self.environment.get_two_states_separated_by_distance()
+    def reset(self):
+        state_initial, state_goal = self.environment.get_two_states_separated_by_distance(min_distance=26)
         self.environment.reset(
             state_initial=state_initial,
             state_goal=state_goal,
         )
+        self.agent.reset(state_initial)
 
     def __len__(self):
         return self.environment.episode_length
@@ -49,24 +53,24 @@ class EnvironmentDataset(Dataset):
         state_goal_used = self.environment.state_goal
 
         # and make new observations for future decision
-        agent.observe(state)
+        self.agent.observe(state)
 
-        # We reset the environment as needed
+        # We reset the environment and agent as needed
         if done_flag:
-            state_initial, state_goal = self.environment.get_two_states_separated_by_distance()
-            self.environment.reset(
-                state_initial=state_initial,
-                state_goal=state_goal,
-            )
+            self.reset()
 
         # TODO should our paradigm be adjusted to traditional RL where the environment
         # returns the reward?
+            
+        # Get the history of states and actions (as observed by the AGENT, 
+        # not the ENVIRONMENT (ground truth)) so that they can be used for inference
+        state_history, action_history = self.agent.get_histories()
 
         # We return the information required for learning
         data = {
-            "state_current": torch.tensor(state, dtype=torch.float32),
+            "state_history": torch.tensor(state_history, dtype=torch.float32),
+            "action_history": torch.tensor(action_history, dtype=torch.float32),
             "state_goal": torch.tensor(state_goal_used, dtype=torch.float32),
-            "action": torch.tensor(action, dtype=torch.float32),
             "done_flag": done_flag,
             "done_message": done_message,
         }

@@ -265,7 +265,6 @@ class Map:
     ):
         return self.batch_is_not_valid(np.array([metres_xyz]), collision_radius)[0]
 
-
     # ----------------------------------------------------------------
 
     def plan_path(

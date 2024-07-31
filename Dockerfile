@@ -34,6 +34,7 @@ RUN conda update -n base -c defaults conda && conda clean -ya
 
 # Create an environment called madness and install packages
 RUN /opt/conda/bin/conda create -n madness python=3.10 -y
+RUN /bin/bash -c "source activate madness && pip install python-dotenv"
 RUN /bin/bash -c "source activate madness && pip install scipy"
 RUN /bin/bash -c "source activate madness && pip install numpy"
 RUN /bin/bash -c "source activate madness && pip install matplotlib"

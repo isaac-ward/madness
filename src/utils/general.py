@@ -67,3 +67,35 @@ class Cacher:
     def save(self, outputs_dict):
         with open(self.cache_filepath, "wb") as f:
             pickle.dump(outputs_dict, f)
+
+class ItemHistoryTracker:
+    """
+    This class is useful for representing state and action histories,
+    and provides utilities for taking the last n items with zero padding 
+    """
+    def __init__(self, item_shape):
+        self.history = []
+        self.item_shape = item_shape
+
+    def append(self, item):
+        self.history.append(item)
+
+    def get_last_n_items_with_zero_pad(self, n):
+        """
+        If we have less than n items, we pad with zeros at the start
+        of the returned list
+        """
+        items_available = len(self.history)
+        if items_available >= n:
+            return np.array(self.history[-n:])
+        else:
+            return np.array([np.zeros(self.item_shape) for _ in range(n - items_available)] + self.history)
+    
+    def get_history(self):
+        return np.array(self.history)
+
+    def reset(self):
+        self.history = []
+
+    def __len__(self):
+        return len(self.history)

@@ -18,6 +18,8 @@ from agent import Agent
 from visual import Visual
 from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
 from policies.mppi import PolicyMPPI
+import policies.samplers
+import standard
 
 # TODO implement wandb to allow for more efficient grid searching of parameters
 
@@ -36,36 +38,13 @@ if __name__ == "__main__":
 
     # The environment follows some true dynamics, and the agent
     # has an internal model of the environment
-    dyn = dynamics.DynamicsQuadcopter3D(
-        diameter=0.2,
-        mass=2.5,
-        Ix=0.5,
-        Iy=0.5,
-        Iz=0.3,
-        # +z is down
-        g=+9.81, 
-        # higher makes it easier to roll and pitch
-        thrust_coef=5,      
-        # higher makes it easier to yaw
-        drag_yaw_coef=5,   
-        # higher values lower the max velocity
-        drag_force_coef=5,   
-        dt=0.025,
-    )
+    dyn = standard.get_standard_dynamics_quadcopter_3d()
 
     # Create a map representation
-    map_ = Map(
-        map_filepath="maps/empty.csv",
-        voxel_per_x_metres=0.25,
-        extents_metres_xyz=[
-            [0, 30], 
-            [0, 30], 
-            [0, 30]
-        ],
-    )
+    map_ = standard.get_standard_map()
 
     # Start and goal states
-    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=25)
+    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=26)
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -75,27 +54,28 @@ if __name__ == "__main__":
     #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the environment
-    num_seconds = 8
+    num_seconds = 16
     num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=state_initial,
         state_goal=state_goal,
-        dynamics_model=dyn,
+        dynamics=dyn,
         map_=map_,
         episode_length=num_steps,
     )
 
     # Create the agent, which has an initial state and a policy
+    K = 10000
+    H = 50 #int(0.5/dynamics.dt), # X second horizon
+    #action_sampler = policies.samplers.RandomActionSampler(K, H, dyn.action_ranges())
+    action_sampler = policies.samplers.RolloverGaussianActionSampler(K, H, dyn.action_ranges())
     policy = PolicyMPPI(
-        state_size=dyn.state_size(),
-        action_size=dyn.action_size(),
         dynamics=copy.deepcopy(dyn),
-        K=1000,
-        H=50, #int(0.5/dynamics.dt), # X second horizon
-        action_ranges=dyn.action_ranges(),
+        action_sampler=action_sampler,
+        K=K,
+        H=H,
         lambda_=100,
         map_=map_,
-        # Keep this off, it's slow
         use_gpu_if_available=use_gpu_if_available,
     )
     policy.enable_logging(log_folder)
@@ -105,6 +85,8 @@ if __name__ == "__main__":
     agent = Agent(
         state_initial=state_initial,
         policy=policy,
+        state_size=dyn.state_size(),
+        action_size=dyn.action_size(),
     ) 
 
     # ----------------------------------------------------------------
