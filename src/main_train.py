@@ -54,6 +54,8 @@ if __name__ == "__main__":
         dynamics=dyn,
         K=K,
         H=H,
+        lambda_=None,
+        map_=map_,
         context_input_size=2*dyn.state_size(),
         context_output_size=64,
         num_flow_layers=3,
