@@ -45,7 +45,7 @@ class Agent:
         state_history, action_history = self.get_histories()
 
         # Different policies require different inputs
-        # TODO
+        # TODO: 
 
         # Provide the policy with the history to determine an action
         action = self.policy.act(

@@ -16,9 +16,11 @@ from agent import Agent
 from environment import Environment
 import standard
 
+torch.cuda.empty_cache()
 # Set the precision of the matrix multiplication to trade off precision 
 # for performance
-torch.set_float32_matmul_precision('high') # 'medium' | 'high'
+# 'medium' | 'high'
+torch.set_float32_matmul_precision('high') 
 
 if __name__ == "__main__":
 
@@ -26,7 +28,7 @@ if __name__ == "__main__":
     log_folder = utils.logging.make_log_folder(name="train")
 
     # Get the environment variables (api keys)
-    load_dotenv(dotenv_path=f"{utils.general.get_project_dir()}/env/.env")
+    load_dotenv(dotenv_path=utils.general.get_dotenv_path())
 
     # Create the standard objects needed for this paradigm
     dyn = standard.get_standard_dynamics_quadcopter_3d()
@@ -46,7 +48,7 @@ if __name__ == "__main__":
     )
 
     # Create the agent, which has an initial state and a policy
-    K = 1
+    K = 7
     H = 50 #int(0.5/dynamics.dt), # X second horizon
     policy = PolicyFlowActionDistribution(
         dynamics=dyn,
@@ -76,7 +78,7 @@ if __name__ == "__main__":
     )
 
     # We'll log with wandb
-    wandb.login(key=os.getenv('WANDB_API_KEY'))
+    os.environ["WANDB_API_KEY"] = os.getenv('WANDB_API_KEY')
     wandb_logger = WandbLogger(
         project=os.getenv('WANDB_PROJECT_NAME'),
         entity=os.getenv('WANDB_ENTITY_NAME'),
@@ -87,8 +89,8 @@ if __name__ == "__main__":
         max_epochs=32,
         check_val_every_n_epoch=4,
         # Change hardware settings accordingly
+        devices=[1],
         accelerator="gpu",
-        devices=1,
         #progress_bar_refresh_rate=1,
         logger=wandb_logger,
         callbacks=[
