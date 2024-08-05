@@ -1,4 +1,5 @@
 import math
+import torch
 import numpy as np
 import cupy as cp
 from scipy.spatial.transform import Rotation as R
@@ -119,8 +120,14 @@ def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, 
     This function works for batched states shaped (B, 12) and batched actions shaped (B, 4).
     """
 
-    # Do we have GPU access?
-    xp = cp.get_array_module(states)
+    # TODO ensure all inputs are of one type/on same device
+
+    # Are we using torch tensor?
+    if isinstance(states, torch.Tensor):
+        xp = torch
+    else:
+        # Are we using non-torch GPU acceleration? or CPU?
+        xp = cp.get_array_module(states)
     
     # For convenience
     k = thrust_coef
