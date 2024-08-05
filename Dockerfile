@@ -44,6 +44,7 @@ RUN /bin/bash -c "source activate madness && pip install cvxpy"
 RUN /bin/bash -c "source activate madness && pip install numba"
 RUN /bin/bash -c "source activate madness && pip install nflows"
 RUN /bin/bash -c "source activate madness && pip install lightning"
+RUN /bin/bash -c "source activate madness && pip install jax"
 RUN /bin/bash -c "source activate madness && conda install -c conda-forge cupy -y"
     
 # Ensure the madness environment is activated by default in bash

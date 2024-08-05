@@ -1,5 +1,5 @@
-import numpy as np
-import dynamics
+import jax.numpy as jnp
+import dynamics_jax as dynamics
 
 class PolicyiLQR:
     def __init__(
@@ -32,7 +32,7 @@ class PolicyiLQR:
         self.map_ = map_
 
         # Typically we'll sample about the previous best action plan
-        self._previous_optimal_action_plan = np.zeros((H, action_size))
+        self._previous_optimal_action_plan = jnp.zeros((H, action_size))
 
         # Will need a path to follow, but we want it to be
         # updated separately (changeable)
@@ -86,31 +86,31 @@ class PolicyiLQR:
             raise ValueError("Argument `max_iters` must be at least 1.")
 
         # Get state and control dimensions
-        n = np.shape(x_track)[1]  # state dimension
-        m = np.shape(u_track)[1]  # control dimension
+        n = jnp.shape(x_track)[1]  # state dimension
+        m = jnp.shape(u_track)[1]  # control dimension
 
         # Get total number of discrete control points on trajectory
-        N = np.shape(u_track)[0]
+        N = jnp.shape(u_track)[0]
 
         # Initialize control gains Y and offsets y
-        Y = np.zeros((N, m, n))
-        y = np.zeros((N, m))
+        Y = jnp.zeros((N, m, n))
+        y = jnp.zeros((N, m))
 
         # Initialize the nominal trajectory x_bar and u_bar
-        x_bar = np.zeros(np.shape(x_track))
-        x_bar[0] = np.copy(x_track[0])
-        u_bar = np.copy(u_track)
+        x_bar = jnp.zeros(jnp.shape(x_track))
+        x_bar[0] = jnp.copy(x_track[0])
+        u_bar = jnp.copy(u_track)
 
         # Initialize the nominal trajectory deviations dx and du
-        dx = np.zeros((N + 1, n))
-        du = np.zeros((N, m))
+        dx = jnp.zeros((N + 1, n))
+        du = jnp.zeros((N, m))
 
         # Initialize the time steps
-        dt = np.zeros(u_track.shape[0])
+        dt = jnp.zeros(u_track.shape[0])
 
         # Step through each discrete point and create a dynamically feasible trajectory
         for _k in range(N):
-            dt[_k] = np.linalg.norm(x_track[_k+1,[0,2]]-x_track[_k,[0,2]])/np.linalg.norm(x_track[_k,[1,3]])
+            dt[_k] = jnp.linalg.norm(x_track[_k+1,[0,2]]-x_track[_k,[0,2]])/jnp.linalg.norm(x_track[_k,[1,3]])
             x_bar[_k + 1] = quadrotor.dynamics_true_no_disturbances(x_bar[_k], u_bar[_k], dt=dt[_k])
 
         ## iLQR loop
@@ -123,8 +123,8 @@ class PolicyiLQR:
 
             # Backwards Pass: 
             qN = QN@(x_bar[N]-x_track[-1])
-            V = np.copy(QN)
-            vbar = np.copy(qN)
+            V = jnp.copy(QN)
+            vbar = jnp.copy(qN)
 
             for _k in range(N-1,-1,-1):
                 # Get Ak, Bk, and dk
@@ -137,33 +137,33 @@ class PolicyiLQR:
                 # Define S
                 reg = 1e-9 # term to help avoid singularities
                 Su = rk + vbar.T@Bk
-                Suu = R + Bk.T@V@Bk + reg*np.eye(m)
+                Suu = R + Bk.T@V@Bk + reg*jnp.eye(m)
                 Sux = Bk.T@V@Ak
 
                 # Define Y, y
-                Y[_k] = -np.linalg.pinv(Suu)@Sux
-                y[_k] = -np.linalg.pinv(Suu)@Su
+                Y[_k] = -jnp.linalg.pinv(Suu)@Sux
+                y[_k] = -jnp.linalg.pinv(Suu)@Su
 
                 # Update V, vbar
                 V = Q + Ak.T@V@Ak - Y[_k].T@Suu@Y[_k]
                 vbar = qk + Ak.T@vbar + Sux.T@y[_k]
 
             # Forwards Pass
-            u = np.zeros((N, m))
-            x = np.zeros((N + 1, n))
-            x[0] = np.copy(x_track[0])
+            u = jnp.zeros((N, m))
+            x = jnp.zeros((N + 1, n))
+            x[0] = jnp.copy(x_track[0])
             for _k in range(N):
                 dx[_k] = x[_k] - x_bar[_k]
                 du[_k] = y[_k] + Y[_k]@dx[_k]
                 u[_k] = u_bar[_k] + du[_k]
-                dt[_k] = np.linalg.norm(x_bar[_k+1,[0,2]]-x_bar[_k,[0,2]])/np.linalg.norm(x_bar[_k,[1,3]])
+                dt[_k] = jnp.linalg.norm(x_bar[_k+1,[0,2]]-x_bar[_k,[0,2]])/jnp.linalg.norm(x_bar[_k,[1,3]])
                 x[_k + 1] = quadrotor.dynamics_true_no_disturbances(x[_k], u[_k], dt=dt[_k])
-            x_bar = np.copy(x)
-            u_bar = np.copy(u)
+            x_bar = jnp.copy(x)
+            u_bar = jnp.copy(u)
 
-            print("iLQR iteration: " + str(_i) + "\ndu: " + str(np.max(np.abs(du))) + "\n")
+            print("iLQR iteration: " + str(_i) + "\ndu: " + str(jnp.max(jnp.abs(du))) + "\n")
 
-            if np.max(np.abs(du)) < eps:
+            if jnp.max(jnp.abs(du)) < eps:
                 converged = True
                 break
 
