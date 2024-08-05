@@ -1,5 +1,6 @@
-# Use the official Ubuntu base image
-FROM ubuntu:20.04
+# Use the official nvidia cuda image as base
+# https://hub.docker.com/r/nvidia/cuda
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -33,24 +34,18 @@ RUN /opt/conda/bin/conda init bash
 RUN conda update -n base -c defaults conda && conda clean -ya
 
 # Create an environment called madness and install packages
-RUN /opt/conda/bin/conda create -n madness python=3.10 -y
-RUN /bin/bash -c "source activate madness && pip install python-dotenv"
-RUN /bin/bash -c "source activate madness && pip install scipy"
-RUN /bin/bash -c "source activate madness && pip install numpy"
-RUN /bin/bash -c "source activate madness && pip install matplotlib"
-RUN /bin/bash -c "source activate madness && pip install tqdm"
-RUN /bin/bash -c "source activate madness && pip install networkx"
-RUN /bin/bash -c "source activate madness && pip install fastdtw"
-RUN /bin/bash -c "source activate madness && pip install cvxpy"
-RUN /bin/bash -c "source activate madness && pip install numba"
-RUN /bin/bash -c "source activate madness && pip install nflows"
-RUN /bin/bash -c "source activate madness && pip install torchinfo"
-RUN /bin/bash -c "source activate madness && pip install lightning"
-RUN /bin/bash -c "source activate madness && pip install wandb"
-RUN /bin/bash -c "source activate madness && conda install -c conda-forge cupy -y"
+RUN /bin/bash -c "source /opt/conda/bin/activate && \
+    conda create -n madness python=3.10 -y && \
+    conda activate madness && \
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
+    # pip install pytorch-lightning==1.9.0 && \
+    pip install pytorch-lightning==2.1.0 && \
+    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy numba nflows torchinfo wandb && \
+    conda install -c conda-forge cupy -y && \
+    conda clean -ya"
     
 # Ensure the madness environment is activated by default in bash
-RUN echo "source activate madness" >> /root/.bashrc
+RUN echo "source /opt/conda/bin/activate madness" >> /root/.bashrc
 
 # Set the default command to run bash
 CMD ["bash"]

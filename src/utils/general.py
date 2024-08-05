@@ -28,6 +28,9 @@ def get_logs_dir():
 def get_cache_dir():
     return os.path.join(get_project_dir(), 'cache')
 
+def get_dotenv_path():
+    return os.path.join(get_project_dir(), 'env/.env')
+
 def compute_hash(*args):
     hash_obj = hashlib.md5()
     for arg in args:
