@@ -11,7 +11,7 @@ from nflows.transforms import CompositeTransform, ReversePermutation
 from nflows.transforms.coupling import AffineCouplingTransform
 from nflows.transforms.autoregressive import MaskedAffineAutoregressiveTransform
 
-from policies.rewards import batch_reward
+import policies.costs
 from policies.mppi import MPPIComputer
 import policies.samplers
 
