@@ -141,18 +141,24 @@ class PolicyFlowActionDistribution(pl.LightningModule):
     
     def forward(self, state_history, action_history, state_goal):
 
-        # Tensorize
-        state_history = torch.tensor(state_history, dtype=torch.float32)
-        action_history = torch.tensor(action_history, dtype=torch.float32)
-        state_goal = torch.tensor(state_goal, dtype=torch.float32)
+        # Convienience variables
+        B = state_history.shape[0]
+        S = self.mppi_computer.dynamics.state_size()
+        A = self.mppi_computer.dynamics.action_size()
+        H = self.H
+        K = self.K
+        C = self.context_output_size
 
-        # If the inputs are not batched, add a batch dimension
-        if len(state_history.shape) == 2:
-            state_history = state_history.unsqueeze(0)
-        if len(action_history.shape) == 2:
-            action_history = action_history.unsqueeze(0)
-        if len(state_goal.shape) == 1:
-            state_goal = state_goal.unsqueeze(0)
+        # Assert that the histories and goals have a batch dimension
+        assert (state_history.shape[0] == B and action_history.shape[0] == B and state_goal.shape[0] == B), "Expected batch dimension to be first and equal for all inputs"    
+        assert state_history.shape == (B, H, S), f"Expected state_history to have shape (B={B}, H={H}, |S|={S}), got {state_history.shape}"
+        assert action_history.shape == (B, H-1, A), f"Expected action_history to have shape (B={B}, H={H-1}, |A|={A}), got {action_history.shape}"
+        assert state_goal.shape == (B, S), f"Expected state_goal to have shape (B={B}, |S|={S}), got {state_goal.shape}"
+
+        # Tensorize
+        state_history   = torch.tensor(state_history, dtype=torch.float32)
+        action_history  = torch.tensor(action_history, dtype=torch.float32)
+        state_goal      = torch.tensor(state_goal, dtype=torch.float32)
 
         # Assemble the context vector, which includes the
         # current state
@@ -160,11 +166,9 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         state_current = state_history[:,-1,:]
         context_input = torch.cat((state_current, state_goal), dim=-1)
 
-        # print(f"state_current: {state_current.shape}")
-        # print(f"state_goal: {state_goal.shape}")
-        # print(f"context_input: {context_input.shape}")
-
         # The context shape is (batch_size, context_size) at this point
+        assert context_input.shape == (B, self.context_input_size), f"Expected context vector to have shape (B={B}, |C|={C}), got {context_input.shape}"
+
         # TODO there could be something cool here with multiple context vectors
         # representing different things
 
@@ -175,31 +179,19 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # We'll get log_likelihoods as (batch_size, K)
         # Read this as 'generate K samples for each context vector', where we only have one
         # context vector
-        samples, log_likelihoods = self.model.sample_and_log_prob(self.K, context=context_input)
+        samples, log_likelihoods = self.model.sample_and_log_prob(K, context=context_input)
 
-        # print(f"samples: {samples.shape}")
-        # print(f"log_likelihoods: {log_likelihoods.shape}")
+        # Do some checks
+        assert samples.shape == (B, K, H*A), f"Expected action_plans to have shape (B={B}, K={K}, H*|A|={H*A}), got {samples.shape}"
+        assert log_likelihoods.shape == (B, K), f"Expected log_likelihoods to have shape (B={B}, K={K}), got {log_likelihoods.shape}"
 
-        # Reshape the samples into K, H-long sequences of action vectors of shape K,H,A
-        actions = samples.view(self.K, self.H, self.mppi_computer.dynamics.action_size())
-        # Numpify
-        #actions = actions.detach().cpu().numpy()
+        # Reshape the batch of samples into B lots of K, H-long sequences of action vectors
+        action_plans = samples.view(B, K, H, A)
 
-        # print(f"state_history: {state_history.shape}")
-        # print(f"action_history: {action_history.shape}")
-        # print(f"state_goal: {state_goal.shape}")
-        # print(f"actions: {actions.shape}")
+        # We can't assume that dynamics and rewards are differentiable
+        # TODO
 
-        # Compute the optimal future using MPPI
-        state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan = self.mppi_computer.compute(
-            state_history[0],
-            action_history[0],
-            state_goal[0],
-            # The MPPI computer needs to take a 'sampler'
-            policies.samplers.FixedSampler(actions),
-        )        
-        
-        return state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan, log_likelihoods
+        return action_plans, log_likelihoods
     
     def act(
         self,
@@ -211,7 +203,22 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             raise ValueError("A goal state must be set before acting")
         
         # Return the optimal action
-        _, _, _, _, optimal_action_plan, _ = self.forward(state_history, action_history, self.state_goal)
+        action_plans, log_likelihoods = self.forward(
+            # Batch size of 1
+            np.expand_dims(state_history, axis=0),
+            np.expand_dims(action_history, axis=0),
+            np.expand_dims(self.state_goal, axis=0),
+        )
+
+        # Compute the optimal future using MPPI
+        state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan = self.mppi_computer.compute(
+            state_history[0],
+            action_history[0],
+            self.state_goal[0],
+            # The MPPI computer needs to take a 'sampler'
+            policies.samplers.FixedSampler(action_plans),
+        )        
+
         return optimal_action_plan[0]
     
     def generic_step(self, batch, batch_idx, stage):
@@ -228,10 +235,13 @@ class PolicyFlowActionDistribution(pl.LightningModule):
 
         # TODO Replace with act
 
-        # Run a forward pass, getting all the required information 
+        # Run a pass, getting all the required information 
         # from the MPPI computer
-        state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan, log_likelihoods = \
-            self.forward(state_history, action_history, state_goal)
+        action_plans, log_likelihoods = self.forward(state_history, action_history, state_goal)
+
+        # To compute rewards we need to roll forward dynamics and compute rewards,
+        # and both of these would need to be backpropagated through
+        # TODO
 
         # Things need to be tensors and on the same device
         rewards = torch.tensor(rewards, dtype=torch.float32).detach().cpu()
