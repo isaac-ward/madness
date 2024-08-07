@@ -10,14 +10,14 @@ from scipy.stats.qmc import Sobol
 import utils.geometric
 import utils.general
 
-def batch_reward(
+def batch_cost(
     state_trajectory_plans,
     action_trajectory_plans,
     state_goal,
     map_,
 ):
     """
-    Given a batch of plans, return a scalar reward (higher is better) for each
+    Given a batch of plans, return a scalar cost (lower is better) for each
 
     state_trajectory_plans: (batch_size, H, state_size)
     action_trajectory_plans: (batch_size, H, action_size)
@@ -63,7 +63,7 @@ def batch_reward(
     # Minimize angular velocity
     #angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
 
-    # Assemble, and note we're using a reward paradigm
+    # Assemble
     cost = \
         1000 * goal_p_terms + \
         100 * path_towards_goal_p_terms + \
@@ -72,5 +72,4 @@ def batch_reward(
         0 * goal_r_terms + \
         0 * goal_v_terms + \
         0 * goal_w_terms
-    reward = -cost
-    return reward     
+    return cost     

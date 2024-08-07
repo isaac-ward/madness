@@ -45,7 +45,8 @@ class Visual:
         # https://matplotlib.org/stable/users/explain/colors/colormaps.html
         color_samples = 255
         colormap = colormap(np.linspace(0.0, 0.33, num=color_samples+1))
-        self.colormap_red_green = colormap
+        # Reverse because its costs not rewards
+        self.colormap_red_green = colormap[::-1]
 
     def sample_colormap(self, value_01):
         """
@@ -116,30 +117,30 @@ class Visual:
         # Close the figure
         plt.close(fig)
 
-    def load_mppi_steps_states_actions_rewards(self):
+    def load_mppi_steps_states_actions_costs(self):
         mppi_folder = os.path.join(self.run_folder, "policy", "mppi")
         step_folders = [f for f in os.listdir(mppi_folder) if os.path.isdir(os.path.join(mppi_folder, f))]
-        # Load the states, actions, and rewards for each step
+        # Load the states, actions, and costs for each step
         S = []
         A = []
         S_opt = []
         A_opt = []
-        R = []
+        J = []
         for step_folder in step_folders:
             this_folder = os.path.join(mppi_folder, step_folder)
             # Try loading the state and action trajectories
             state_trajectories, action_trajectories = utils.logging.load_state_and_action_trajectories(this_folder)
-            # And the rewards
-            rewards = utils.logging.unpickle_from_filepath(os.path.join(this_folder, "rewards.pkl"))
+            # And the costs
+            costs = utils.logging.unpickle_from_filepath(os.path.join(this_folder, "costs.pkl"))
             # And the optimal action plan
             optimal_state_plan, optimal_action_plan = utils.logging.load_state_and_action_trajectories(this_folder, suffix="optimal")
             S.append(state_trajectories)
             A.append(action_trajectories)
             S_opt.append(optimal_state_plan)
             A_opt.append(optimal_action_plan)
-            R.append(rewards)
-        S, A, S_opt, A_opt, R = np.array(S), np.array(A), np.array(S_opt), np.array(A_opt), np.array(R)
-        return S, A, S_opt, A_opt, R
+            J.append(costs)
+        S, A, S_opt, A_opt, J = np.array(S), np.array(A), np.array(S_opt), np.array(A_opt), np.array(J)
+        return S, A, S_opt, A_opt, J
 
     def render_video(
         self,
@@ -184,13 +185,13 @@ class Visual:
         except:
             pass
 
-        # And if it's an MPPI policy, we want to load the states, actions, and rewards
+        # And if it's an MPPI policy, we want to load the states, actions, and costs
         mppi_flag = False
         try:
-            mppi_states, mppi_actions, mppi_opt_states, mppi_opt_actions, mppi_rewards = self.load_mppi_steps_states_actions_rewards()
+            mppi_states, mppi_actions, mppi_opt_states, mppi_opt_actions, mppi_costs = self.load_mppi_steps_states_actions_costs()
             # For each step, over all samples, get the mins and maxes
-            mppi_reward_mins = [np.min(rewards) for rewards in mppi_rewards]
-            mppi_reward_maxs = [np.max(rewards) for rewards in mppi_rewards]
+            mppi_cost_mins = [np.min(c) for c in mppi_costs]
+            mppi_cost_maxs = [np.max(c) for c in mppi_costs]
             mppi_flag = True
         except:
             pass
@@ -534,14 +535,14 @@ class Visual:
                 # If we have access to MPPI data, then render it to some plots too
                 if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
 
-                    # What was the min and max reward this frame
-                    make_colors_local = False
+                    # What was the min and max cost this frame
+                    make_colors_local = True
                     if make_colors_local:
-                        mppi_reward_min = mppi_reward_mins[frame]
-                        mppi_reward_max = mppi_reward_maxs[frame]
+                        mppi_cost_min = mppi_cost_mins[frame]
+                        mppi_cost_max = mppi_cost_maxs[frame]
                     else:
-                        mppi_reward_min = min(mppi_reward_mins)
-                        mppi_reward_max = max(mppi_reward_maxs)
+                        mppi_cost_min = min(mppi_cost_mins)
+                        mppi_cost_max = max(mppi_cost_maxs)
 
                     # What was the actual trajectory used? We'll highlight it!
                     a_opt = mppi_opt_actions[frame]
@@ -563,13 +564,13 @@ class Visual:
                     )
 
                     # Plot every state trajectory from this frame
-                    # Only plot N random samples - upping this is a major source of slow down!
-                    num_random_samples = 64
-                    mppi_states_sampled = mppi_states[frame][np.random.choice(mppi_states.shape[1], num_random_samples, replace=False)]
+                    # Only plot N equally spaced samples - upping this is a major source of slow down!
+                    num_samples = 64
+                    mppi_states_sampled = mppi_states[frame][np.linspace(0, len(mppi_states[frame])-1, num_samples, dtype=int)]
                     for i, state_trajectory in enumerate(mppi_states_sampled):
-                        # Get the reward for this trajectory, scaled to 0,1
+                        # Get the cost for this trajectory, scaled to 0,1
                         # and then map it to a color
-                        reward_01 = (mppi_rewards[frame][i] - mppi_reward_min) / (mppi_reward_max - mppi_reward_min)
+                        cost_01 = (mppi_costs[frame][i] - mppi_cost_min) / (mppi_cost_max - mppi_cost_min)
 
                         # Include the current state so that it's not disjoint
                         st = np.vstack([state_history[frame], state_trajectory])
@@ -577,7 +578,7 @@ class Visual:
                             st[:, 0],
                             st[:, 1],
                             st[:, 2],
-                            color=self.sample_colormap(reward_01),
+                            color=self.sample_colormap(cost_01),
                             alpha=0.33,
                             linewidth=1,
                             linestyle='-',
@@ -620,28 +621,28 @@ class Visual:
                 
             # Render the mppi breakdown plot
             def plot_mppi_distribution():
-                # Plot the distribution of rewards for this frame
+                # Plot the distribution of costs for this frame
                 # (shape of mppi_states is (FRAMES, K, H, state_size))
                 _, K, H, _ = mppi_states.shape
-                rewards_this_frame = mppi_rewards[frame]
+                costs_this_frame = mppi_costs[frame]
                 num_bins = 100
                 # bins have to be constant!
-                mppi_reward_min = mppi_reward_mins[frame]
-                mppi_reward_max = mppi_reward_maxs[frame]
-                bins = np.linspace(mppi_reward_min, mppi_reward_max, num=num_bins+1)
-                N, _, patches = axs["mppi"].hist(rewards_this_frame, bins=bins, edgecolor='white', linewidth=0)
+                mppi_cost_min = mppi_cost_mins[frame]
+                mppi_cost_max = mppi_cost_maxs[frame]
+                bins = np.linspace(mppi_cost_min, mppi_cost_max, num=num_bins+1)
+                N, _, patches = axs["mppi"].hist(costs_this_frame, bins=bins, edgecolor='white', linewidth=0)
                 colors_per_bin = [self.sample_colormap(x) for x in np.linspace(0, 1, num_bins)]
                 for i in range(num_bins):
                     patches[i].set_facecolor(colors_per_bin[i])
-                # Plot the average reward as a vertical line, in the right color
-                avg_reward = np.mean(rewards_this_frame)
+                # Plot the average cost as a vertical line, in the right color
+                avg_cost = np.mean(costs_this_frame)
                 axs["mppi"].axvline(
-                    avg_reward, 
+                    avg_cost, 
                     color='k',
                     linewidth=2
                 )
                 # Set up the axis limits                
-                axs["mppi"].set_xlim(mppi_reward_min, mppi_reward_max)
+                axs["mppi"].set_xlim(mppi_cost_min, mppi_cost_max)
                 axs["mppi"].set_ylim(0, int(0.125 * K)) # Unlikely to be more X% of the samples in one bin
                 # Remove axis ticks
                 axs["mppi"].set_xticks([])

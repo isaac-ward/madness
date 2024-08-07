@@ -7,13 +7,13 @@ import shutil
 
 import utils.geometric
 import utils.general
-import policies.rewards
+import policies.costs
 import policies.samplers
 
 class MPPIComputer:
     """
     An MPPI computer handles the sampling of actions, rollouts of actions
-    wrt to some dynamics model, optimal action production (wrt some reward),
+    wrt to some dynamics model, optimal action production (wrt some reward/costs),
     and logging
     """
     def __init__(
@@ -48,7 +48,7 @@ class MPPIComputer:
         action_sampler,
     ):
         """
-        Returns as follows: state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan
+        Returns as follows: state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan
         """
 
         # Sample actions from the action sampler
@@ -58,8 +58,8 @@ class MPPIComputer:
         # out the states
         state_plans = np.zeros((self.K, self.H, self.dynamics.state_size()))
 
-        # We will compute rewards for each future
-        rewards = np.zeros((self.K,))
+        # We will compute costs for each future
+        costs = np.zeros((self.K,))
 
         # Roll out futures in parallel (needs to be serial because we need to compute
         # the state at t=0 before we can compute the state at t=1)
@@ -72,8 +72,8 @@ class MPPIComputer:
                 action_plans[:, h],
             )
             
-        # Compute all rewards
-        rewards = policies.rewards.batch_reward(
+        # Compute all costs
+        costs = policies.costs.batch_cost(
             state_plans, 
             action_plans,
             state_goal,
@@ -98,7 +98,7 @@ class MPPIComputer:
         # optimal_action = optimal_action_plan[0]    
 
         # Select the best plan and return the immediate action from that plan
-        optimal_index = np.argmax(rewards)
+        optimal_index = np.argmin(costs)
         optimal_action_plan = action_plans[optimal_index]
         optimal_state_plan  = state_plans[optimal_index]
 
@@ -107,7 +107,7 @@ class MPPIComputer:
         if isinstance(action_sampler, policies.samplers.RolloverGaussianActionSampler):
             action_sampler.update_previous_optimal_action_plan(optimal_action_plan)
 
-        return state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan
+        return state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan
 
 class PolicyMPPI:
     def __init__(
@@ -177,7 +177,7 @@ class PolicyMPPI:
             raise ValueError(f"{self.__class__.__name__} requires a goal state to follow")
         
         # Get the optimal action and other logging information
-        state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan = self.computer.compute(
+        state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan = self.computer.compute(
             state_history,
             action_history,
             self.state_goal,
@@ -189,7 +189,7 @@ class PolicyMPPI:
         # Logging from here on
         # ----------------------------------------------------------------
 
-        # Log the state and action plans alongside the reward, 
+        # Log the state and action plans alongside the costs, 
         # if we're logging
         if self.log_folder is not None:
             # Create a subfolder for this step
@@ -201,10 +201,10 @@ class PolicyMPPI:
                 state_plans,
                 action_plans,
             )
-            # Save the rewards
+            # Save the costs
             utils.logging.pickle_to_filepath(
-                os.path.join(folder, "rewards.pkl"),
-                rewards,
+                os.path.join(folder, "costs.pkl"),
+                costs,
             )
             # If we're logging we will want to see what the optimal plan was
             optimal_state_plan = np.zeros((self.computer.H, self.computer.dynamics.state_size()))

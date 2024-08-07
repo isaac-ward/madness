@@ -7,7 +7,6 @@ import shutil
 
 import utils.geometric
 import utils.general
-import policies.rewards
 import policies.samplers
 
 class MPPIComputer:
@@ -87,7 +86,7 @@ class MPPIComputer:
             )
             
         # Compute all rewards
-        rewards = policies.rewards.batch_reward(
+        rewards = policies.costs.batch_cost(
             state_plans, 
             action_plans,
             state_goal,
