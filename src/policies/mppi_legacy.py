@@ -61,6 +61,20 @@ class MPPIComputer:
         # We will compute rewards for each future
         rewards = np.zeros((self.K,))
 
+        # If GPU is available and we desire it, then we'll use it
+        using_gpu = self.use_gpu_if_available and cp.cuda.is_available()
+        # Move everything to the GPU if we're using it
+        if using_gpu:
+            state_history   = cp.array(state_history)
+            action_history  = cp.array(action_history)
+            state_plans     = cp.array(state_plans)
+            action_plans    = cp.array(action_plans)
+            rewards         = cp.array(rewards)
+            state_goal      = cp.array(state_goal)
+
+        # What module to use? cupy or numpy?
+        xp = cp.get_array_module(state_history)
+
         # Roll out futures in parallel (needs to be serial because we need to compute
         # the state at t=0 before we can compute the state at t=1)
         for h in tqdm(range(self.H), desc="Rolling out futures", leave=False, disable=True):
@@ -68,7 +82,7 @@ class MPPIComputer:
             state_plans[:, h] = self.dynamics.step(
                 # If it's our first computation, start at our last known state, otherwise
                 # start at the last computed state
-                np.tile(state_history[-1], (self.K, 1)) if h == 0 else state_plans[:, h - 1],
+                xp.tile(state_history[-1], (self.K, 1)) if h == 0 else state_plans[:, h - 1],
                 action_plans[:, h],
             )
             
@@ -101,6 +115,19 @@ class MPPIComputer:
         optimal_index = np.argmax(rewards)
         optimal_action_plan = action_plans[optimal_index]
         optimal_state_plan  = state_plans[optimal_index]
+        optimal_action = optimal_action_plan[0]
+
+        # Convert everything back to CPU if necessary
+        if using_gpu:
+            state_history       = cp.asnumpy(state_history)
+            action_history      = cp.asnumpy(action_history)
+            state_plans         = cp.asnumpy(state_plans)
+            action_plans        = cp.asnumpy(action_plans)
+            rewards             = cp.asnumpy(rewards)
+            state_goal          = cp.asnumpy(state_goal)
+            optimal_action      = cp.asnumpy(optimal_action)
+            optimal_state_plan  = cp.asnumpy(optimal_state_plan)
+            optimal_action_plan = cp.asnumpy(optimal_action_plan)
 
         # If we're using a action sampler that uses the previous optimal action plan
         # then we'll update it here

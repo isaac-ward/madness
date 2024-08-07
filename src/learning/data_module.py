@@ -2,6 +2,7 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import Dataset, DataLoader
 import copy
+import os
 
 from learning.dataset import EnvironmentDataset
 
@@ -24,6 +25,9 @@ class EnvironmentDataModule(pl.LightningDataModule):
         # the next action, and so the batch size is the number of
         # steps we take before updating the policy
         self.batch_size = batch_size
+
+        # For speeding up dataloaders
+        self.num_workers = os.cpu_count() - 1
     
     def setup(self, stage=None):
         # Create the training and validation datasets
@@ -37,10 +41,10 @@ class EnvironmentDataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self):
-        return DataLoader(self.dataset_train, batch_size=self.batch_size)
+        return DataLoader(self.dataset_train, batch_size=self.batch_size, num_workers=self.num_workers)
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.batch_size)
+        return DataLoader(self.dataset_val, batch_size=self.batch_size, num_workers=self.num_workers)
         
     
     
