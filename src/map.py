@@ -76,6 +76,8 @@ def test_columns():
             
     return np.array(points)
 
+# ----------------------------------------------------------------
+
 class Map:
     def __init__(
         self,
