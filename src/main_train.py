@@ -48,7 +48,7 @@ if __name__ == "__main__":
     )
 
     # Create the agent, which has an initial state and a policy
-    K = 7
+    K = 128
     H = 50 #int(0.5/dynamics.dt), # X second horizon
     policy = PolicyFlowActionDistribution(
         dynamics=dyn,
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         context_input_size=2*dyn.state_size(),
         context_output_size=64,
         num_flow_layers=3,
-        learning_rate=1e-3,
+        learning_rate=1e-4,
     )
     summary(policy)
 
@@ -90,16 +90,18 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         max_epochs=32,
         check_val_every_n_epoch=4,
+        num_sanity_val_steps=0, 
         # Change hardware settings accordingly
         devices=[1],
         accelerator="gpu",
         #progress_bar_refresh_rate=1,
         logger=wandb_logger,
         callbacks=[
-            make_k1_checkpoint_callback(log_folder, "val/reward/best", "max"),
-            make_k1_checkpoint_callback(log_folder, "val/reward/mean", "max"),
-            make_k1_checkpoint_callback(log_folder, "val/loss", "min"),
+            make_k1_checkpoint_callback(log_folder, "val/cost/min", "min"),
+            make_k1_checkpoint_callback(log_folder, "val/loss",     "min"),
         ],
+        # Improve numerical stability
+        gradient_clip_val=1.0  
     )
 
     # Perform the training (and validation)

@@ -72,4 +72,7 @@ def batch_cost(
         0 * goal_r_terms + \
         0 * goal_v_terms + \
         0 * goal_w_terms
-    return cost     
+    
+    # Big numbers will be exponentiated to zero given our floating 
+    # number precision
+    return cost / 1e6
