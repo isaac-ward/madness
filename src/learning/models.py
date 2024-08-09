@@ -146,25 +146,36 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         S = self.mppi_computer.dynamics.state_size()
         A = self.mppi_computer.dynamics.action_size()
         H = self.H
+        L = state_history.shape[1] # Lookback
         K = self.K
         C = self.context_output_size
 
+        # TODO: expand to handle batched inputs
+        # Batch size should only ever be 1 at this time
+        if B != 1:
+            raise ValueError(f"Batch size must be 1, but is {B}")
+
         # Assert that the histories and goals have a batch dimension
         assert (state_history.shape[0] == B and action_history.shape[0] == B and state_goal.shape[0] == B), "Expected batch dimension to be first and equal for all inputs"    
-        assert state_history.shape == (B, H, S), f"Expected state_history to have shape (B={B}, H={H}, |S|={S}), got {state_history.shape}"
-        assert action_history.shape == (B, H-1, A), f"Expected action_history to have shape (B={B}, H={H-1}, |A|={A}), got {action_history.shape}"
+        assert state_history.shape == (B, L, S), f"Expected state_history to have shape (B={B}, L={L}, |S|={S}), got {state_history.shape}"
+        assert action_history.shape == (B, L-1, A), f"Expected action_history to have shape (B={B}, L={L-1}, |A|={A}), got {action_history.shape}"
         assert state_goal.shape == (B, S), f"Expected state_goal to have shape (B={B}, |S|={S}), got {state_goal.shape}"
 
-        # Tensorize
-        state_history   = torch.tensor(state_history, dtype=torch.float32)
-        action_history  = torch.tensor(action_history, dtype=torch.float32)
-        state_goal      = torch.tensor(state_goal, dtype=torch.float32)
+        # Tensorize if they are not already tensors 
+        if not torch.is_tensor(state_history):
+            state_history = torch.tensor(state_history, dtype=torch.float32)
+        if not torch.is_tensor(action_history):
+            action_history = torch.tensor(action_history, dtype=torch.float32)
+        if not torch.is_tensor(state_goal):
+            state_goal = torch.tensor(state_goal, dtype=torch.float32)
 
         # Assemble the context vector, which includes the
         # current state
         # goal state
-        state_current = state_history[:,-1,:]
-        context_input = torch.cat((state_current, state_goal), dim=-1)
+        context_input = torch.cat((
+            state_history[:,-1,:], 
+            state_goal
+        ), dim=-1)
 
         # The context shape is (batch_size, context_size) at this point
         assert context_input.shape == (B, self.context_input_size), f"Expected context vector to have shape (B={B}, |C|={C}), got {context_input.shape}"
@@ -172,26 +183,61 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # TODO there could be something cool here with multiple context vectors
         # representing different things
 
+        # Ensure there are no nans in the context
+        if torch.isnan(context_input).any():
+            raise ValueError(f"Context vector contains NaNs")
+        print(context_input)
+
         # Sample from the normalizing flow and get log probs (this is more
         # efficient than sampling and then computing the log probs, though log
         # likelihoods are not needed during validation)
         # We'll get actions as (batch_size, K, H*A) 
-        # We'll get log_likelihoods as (batch_size, K)
+        # We'll get log_p_likelihoods as (batch_size, K)
         # Read this as 'generate K samples for each context vector', where we only have one
         # context vector
-        samples, log_likelihoods = self.model.sample_and_log_prob(K, context=context_input)
+        samples, log_p_likelihoods = self.model.sample_and_log_prob(K, context=context_input)
+
+        # Are there any nans in the result?
+        if torch.isnan(samples).any():
+            raise ValueError(f"Normalizing flow samples contain NaNs")
+        if torch.isnan(log_p_likelihoods).any():
+            raise ValueError(f"Normalizing flow log likelihoods contain NaNs")
+        
+        # Print the nyumber of nans
+        num_nans = torch.sum(torch.isnan(samples)).item()
+        print(f"Number of nans in samples: {num_nans}")
 
         # Do some checks
         assert samples.shape == (B, K, H*A), f"Expected action_plans to have shape (B={B}, K={K}, H*|A|={H*A}), got {samples.shape}"
-        assert log_likelihoods.shape == (B, K), f"Expected log_likelihoods to have shape (B={B}, K={K}), got {log_likelihoods.shape}"
+        assert log_p_likelihoods.shape == (B, K), f"Expected log_p_likelihoods to have shape (B={B}, K={K}), got {log_p_likelihoods.shape}"
 
         # Reshape the batch of samples into B lots of K, H-long sequences of action vectors
         action_plans = samples.view(B, K, H, A)
 
-        # We can't assume that dynamics and rewards are differentiable
-        # TODO
+        # To get a loss we'll need to see what trajectories these action plans
+        # result it, and score them, but we can't assume that dynamics and 
+        # rewards are differentiable, so we'll need to compute the trajectories
+        # and scores without grads (grad information will still be present in the
+        # conditional variational posterior)
 
-        return action_plans, log_likelihoods
+        # Copy the action plans and numpy-ify them
+        action_plans = action_plans[0].detach().cpu().numpy()
+
+        # Make sure the action plans have no nans
+        if np.isnan(action_plans).any():
+            raise ValueError("Action plans contain NaNs")
+
+        # Compute the optimal future using MPPI
+        state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan = self.mppi_computer.compute(
+            # Recall that batches are of size 1
+            state_history[0].detach().cpu().numpy(),
+            action_history[0].detach().cpu().numpy(),
+            state_goal[0].detach().cpu().numpy(),
+            # The MPPI computer needs to take a 'sampler'
+            policies.samplers.FixedSampler(action_plans),
+        )    
+
+        return state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan, log_p_likelihoods
     
     def act(
         self,
@@ -203,21 +249,12 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             raise ValueError("A goal state must be set before acting")
         
         # Return the optimal action
-        action_plans, log_likelihoods = self.forward(
+        state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan, log_likelihoods = self.forward(
             # Batch size of 1
             np.expand_dims(state_history, axis=0),
             np.expand_dims(action_history, axis=0),
             np.expand_dims(self.state_goal, axis=0),
-        )
-
-        # Compute the optimal future using MPPI
-        state_plans, action_plans, rewards, optimal_state_plan, optimal_action_plan = self.mppi_computer.compute(
-            state_history[0],
-            action_history[0],
-            self.state_goal[0],
-            # The MPPI computer needs to take a 'sampler'
-            policies.samplers.FixedSampler(action_plans),
-        )        
+        )    
 
         return optimal_action_plan[0]
     
@@ -233,51 +270,75 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         action_history = batch["action_history"]
         state_goal = batch["state_goal"]
 
-        # TODO Replace with act
+        # What is the batch size?
+        B = state_history.shape[0]
 
         # Run a pass, getting all the required information 
         # from the MPPI computer
-        action_plans, log_likelihoods = self.forward(state_history, action_history, state_goal)
+        state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan, log_p_likelihoods = self.forward(
+            # Batch size of 1
+            state_history,
+            action_history,
+            state_goal
+        )  
+        
+        # Note that after this call everything except log_p_likelihoods will be numpy.
+        # log_p_likelihoods will be a torch tensor, with grad information
 
-        # To compute rewards we need to roll forward dynamics and compute rewards,
-        # and both of these would need to be backpropagated through
-        # TODO
+        # We'll do everything with log probabilities for stability
+        # Costs. Note that we have the probability of a trajectory being optimal 
+        # is estimated by the exponential of the negative cost: p(o|tau) = exp(-cost(tau)),
+        # meaning that the log probability of optimality is -cost(tau)
+        costs = torch.tensor(costs, dtype=torch.float32)
+        costs = costs.to(log_p_likelihoods.device)
+        log_p_optimality = -costs
 
-        # Things need to be tensors and on the same device
-        rewards = torch.tensor(rewards, dtype=torch.float32).detach().cpu()
-        log_likelihoods = torch.tensor(log_likelihoods, dtype=torch.float32).detach().cpu()
+        # Addition in log space is multiplication in normal space
+        log_p_combined = log_p_optimality + log_p_likelihoods
 
-        # What was the average and best reward?
-        reward_best = torch.max(rewards)
-        reward_mean = torch.mean(rewards)
-
-        # Compute the probabilities of optimality from the reward function
-        # This is just the exponential of the rewards
-        p_opt = torch.exp(rewards)
-
-        # Compute the likelihood of the control sequences wrt the context vector
-        # using the reverse mode of the normalizing flow
-        p_likelihood = torch.exp(log_likelihoods)
-
-        # TODO hyperparameter weighting of opt/entropy
-
-        # Compute the loss weight for each sample
-        # Combine probabilities elementwise and then get the mean
-        p_combined = torch.mean(p_opt * p_likelihood)
         # What fraction of each samples combined probability does
         # each sample take up?
-        weights = (p_opt * p_likelihood) / p_combined
+        # In normal space this would be p_combined / mean(p_combined)
+        # In log space this becomes log(p_combined) - log(mean(p_combined))
+        # Note that softmax is = exp(x) / sum(exp(x)) which is proportionally correct
+        # TODO check this
+        weights = torch.softmax(log_p_combined, dim=0)
 
         # Assemble the total loss
-        loss = -torch.mean(weights * log_likelihoods)
+        loss = -torch.mean(weights * log_p_likelihoods)
+
+        # Ensure non NaNs anywhere
+        if torch.isnan(p_opt).any():
+            raise ValueError(f"p_opt contains {torch.sum(torch.isnan(p_opt)).item()} NaNs")
+        if torch.isnan(p_likelihood).any():
+            raise ValueError(f"p_likelihood contains {torch.sum(torch.isnan(p_likelihood)).item()} NaNs")
+        if torch.isnan(p_combined).any():
+            raise ValueError(f"p_combined contains {torch.sum(torch.isnan(p_combined)).item()} NaNs")
+        print("Probability distributions")
+        print(-costs)
+        print(log_likelihoods)
+        print(p_opt)
+        print(p_likelihood)
+        print(p_combined)
+        if torch.isnan(weights).any():
+            raise ValueError(f"Weights contain {torch.sum(torch.isnan(weights)).item()} NaNs")
+        if torch.isnan(log_likelihoods).any():
+            raise ValueError(f"Log likelihoods contain {torch.sum(torch.isnan(log_likelihoods)).item()} NaNs")
+        if torch.isnan(loss).any():
+            raise ValueError(f"Loss contains {torch.sum(torch.isnan(loss)).item()} NaNs")
 
         # Do custom logging
-        self.log(f'{stage}/loss',        loss,        on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log(f'{stage}/reward/best', reward_best, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log(f'{stage}/reward/mean', reward_mean, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self._log_scalar_per_step(f'{stage}/loss', loss)
+        self._log_scalar_per_step(f'{stage}/cost/min', torch.min(costs))
+        self._log_scalar_per_step(f'{stage}/cost/mean', torch.mean(costs))
+        self._log_scalar_per_step(f'{stage}/cost/max', torch.max(costs))
 
         # And return the loss
         return loss
+    
+    def _log_scalar_per_step(self, name, value):
+        B = 1
+        self.log(name, value, on_step=True, on_epoch=True, prog_bar=True, logger=True, batch_size=B)
     
     def training_step(self, batch, batch_idx):
         return self.generic_step(batch, batch_idx, 'train')
