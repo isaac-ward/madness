@@ -1,5 +1,4 @@
 import math
-import torch
 import numpy as np
 import cupy as cp
 from scipy.spatial.transform import Rotation as R
@@ -58,7 +57,7 @@ class DynamicsQuadcopter3D:
     def state_size(self):
         return 12
     def action_size(self):
-        return len(self.action_ranges())
+        return 4
     def state_plot_groups(self):
         return [3, 3, 3, 3]
     def action_plot_groups(self):
@@ -75,7 +74,7 @@ class DynamicsQuadcopter3D:
         # produce erratic results that take advantage of unrealistic
         # and extremely rapid changes in control inputs
         magnitude_lo = 0
-        magnitude_hi = 3
+        magnitude_hi = 2.5
         return np.array([
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
@@ -120,14 +119,8 @@ def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, 
     This function works for batched states shaped (B, 12) and batched actions shaped (B, 4).
     """
 
-    # TODO ensure all inputs are of one type/on same device
-
-    # Are we using torch tensor?
-    if isinstance(states, torch.Tensor):
-        xp = torch
-    else:
-        # Are we using non-torch GPU acceleration? or CPU?
-        xp = cp.get_array_module(states)
+    # Do we have GPU access?
+    xp = cp.get_array_module(states)
     
     # For convenience
     k = thrust_coef
@@ -141,12 +134,13 @@ def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, 
     xd, yd, zd     = states[:, 6],  states[:, 7],  states[:, 8]
     p, q, r        = states[:, 9],  states[:, 10], states[:, 11]
     w1, w2, w3, w4 = actions[:, 0], actions[:, 1], actions[:, 2], actions[:, 3]
+
+    # Confirm that actions are in the allowed ranges
+    # TODO
+
     # For convenience and to match with the KTH paper
     ψ, θ, φ = rz, ry, rx
 
-    # Inputs need to be clipped into in-range
-    # TODO 
-    
     # Compute sin, cos, and tan (xyz order is φ θ ψ)
     s_ψ, c_ψ      = xp.sin(ψ), xp.cos(ψ)
     s_θ, c_θ, t_θ = xp.sin(θ), xp.cos(θ), xp.tan(θ)
@@ -190,4 +184,3 @@ def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, 
     # Use the Euler method to compute the new state
     states_new = states + dt * state_delta
     return states_new
-        

@@ -13,7 +13,7 @@ import utils.general
 import utils.logging
 import dynamics
 from environment import Environment
-from map import Map
+from mapping import Map
 from agent import Agent
 from visual import Visual
 from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     )
 
     # Create the agent, which has an initial state and a policy
-    K = 10000
+    K = 1024
     H = 50 #int(0.5/dynamics.dt), # X second horizon
     #action_sampler = policies.samplers.RandomActionSampler(K, H, dyn.action_ranges())
     action_sampler = policies.samplers.RolloverGaussianActionSampler(K, H, dyn.action_ranges())
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         state_initial=state_initial,
         policy=policy,
         state_size=dyn.state_size(),
-        action_size=dyn.action_size(),
+        action_ranges=dyn.action_ranges(),
     ) 
 
     # ----------------------------------------------------------------

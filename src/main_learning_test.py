@@ -13,7 +13,7 @@ import utils.general
 import utils.logging
 import dynamics
 from environment import Environment
-from map import Map
+from mapping import Map
 from agent import Agent
 from visual import Visual
 from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
@@ -66,13 +66,13 @@ if __name__ == "__main__":
     )
 
     # Create the agent, which has an initial state and a policy
-    K = 128
-    H = 50 #int(0.5/dynamics.dt), # X second horizon
-    #action_sampler = policies.samplers.RandomActionSampler(K, H, dyn.action_ranges())
+    fadp_arguments = standard.get_standard_flow_action_dist_policy_arguments()
+    K = fadp_arguments["K"]
+    H = fadp_arguments["H"]
     action_sampler = policies.samplers.RolloverGaussianActionSampler(K, H, dyn.action_ranges())
     policy = PolicyFlowActionDistribution.load_from_checkpoint(
-        checkpoint_path="/mnt/logs/train_2024-08-09-21-40-10/checkpoints/min_val_cost_min.ckpt",
-        **standard.get_standard_flow_action_dist_policy_arguments(),
+        checkpoint_path="/mnt/logs/train_2024-08-13-22-19-30/checkpoints/min_val_cost_min.ckpt",
+        **fadp_arguments,
     )
     policy.enable_logging(log_folder)
     policy.update_state_goal(state_goal)
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         state_initial=state_initial,
         policy=policy,
         state_size=dyn.state_size(),
-        action_size=dyn.action_size(),
+        action_ranges=dyn.action_ranges(),
     ) 
 
     # ----------------------------------------------------------------
