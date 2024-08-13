@@ -74,6 +74,15 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # No logging by default
         self.log_folder = None
 
+        # Print out model architecture information
+        print(f"{self.__class__.__name__} initialized:")
+        print(f"\t-K={K}")
+        print(f"\t-H={H}")
+        print(f"\t-context_input_size={context_input_size}")
+        print(f"\t-context_output_size={context_output_size}")
+        print(f"\t-num_flow_layers={num_flow_layers}")
+        print(f"\t-learning_rate={learning_rate}")
+
     def device(self):
         return self.dummy.device
         
@@ -126,8 +135,8 @@ class PolicyFlowActionDistribution(pl.LightningModule):
                 in_features,
                 out_features, 
                 context_features=C,
-                hidden_features=128, 
-                num_blocks=3,
+                hidden_features=256, 
+                num_blocks=8,
                 use_batch_norm=False,
             )
             return net
@@ -156,12 +165,13 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             transforms.append(reverse_permutation)
 
         # Need a context network
+        context_hidden_size = 256
         context_network = nn.Sequential(
-            nn.Linear(self.context_input_size, 64),
+            nn.Linear(self.context_input_size, context_hidden_size),
             nn.ReLU(),
-            nn.Linear(64, 64),
+            nn.Linear(context_hidden_size, context_hidden_size),
             nn.ReLU(),
-            nn.Linear(64, self.context_output_size)
+            nn.Linear(context_hidden_size, self.context_output_size)
         )
 
         # Convert into a single composite transform
@@ -249,6 +259,10 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # Copy the action plans and numpy-ify them
         action_plans = action_plans[0].detach().cpu().numpy()
 
+        # Action plans need to be in the allowed ranges (if not then clip)
+        action_ranges = self.mppi_computer.dynamics.action_ranges()
+        action_plans = np.clip(action_plans, action_ranges[:,0], action_ranges[:,1])
+
         # Make sure the action plans have no nans
         if np.isnan(action_plans).any():
             raise ValueError("Action plans contain NaNs")
@@ -262,6 +276,9 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             # The MPPI computer needs to take a 'sampler'
             policies.samplers.FixedSampler(action_plans),
         )    
+
+        # If logging is enabled then provide it
+        # TODO take from act and put in here
 
         return state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan, log_p_likelihoods
     
@@ -365,8 +382,17 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         costs = costs.to(log_p_likelihoods.device)
         log_p_optimality = -costs
 
+        # Here we define some hyperparameters that balance exploration and exploitation
+        # exploitation refers to optimality, and exploration refers to the entropy of the
+        # action distribution
+        # If the following variable is large, then the probability of optimality is 
+        # considered more so than the spread of the action distribution when computing
+        # the loss
+        prefer_optimality_over_entropy = 0.5
+
         # Addition in log space is multiplication in normal space
-        log_p_combined = log_p_optimality + log_p_likelihoods
+        # Multiplication in log space is exponentiation in normal space
+        log_p_combined = prefer_optimality_over_entropy * log_p_optimality + log_p_likelihoods
 
         # What fraction of each samples combined probability does
         # each sample take up?
@@ -401,7 +427,6 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         self.log(name, value, on_step=True, on_epoch=True, prog_bar=True, logger=True, batch_size=B)
 
     def _log_probability_distribution(self, name, distribution):
-        
         self.logger.experiment.log({name: wandb.Histogram(distribution)}, step=self.global_step)
     
     def training_step(self, batch, batch_idx):
@@ -409,6 +434,15 @@ class PolicyFlowActionDistribution(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         return self.generic_step(batch, batch_idx, 'val')
+
+    def on_validation_epoch_start(self):
+        # Enable logging
+        print("TODO: enable logging")
+
+    def on_validation_epoch_end(self):
+        # Disable logging, create visualization, and 
+        # delete uncessary logs
+        print("TODO: disable logging, render, clear logs")
         
     def configure_optimizers(self):
         learnable_parameters = self.model.parameters()

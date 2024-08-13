@@ -10,12 +10,19 @@ class Agent:
         state_initial,              # initial state
         policy,                     # how to determine the optimal next action
         state_size,
-        action_size,
+        action_ranges,
     ):
         """
         We'll start somewhere, and then we'll use the policy to determine
         the next action to take
         """
+
+        # Shapes
+        self.state_size = state_size
+        self.action_size = len(action_ranges)  
+
+        # Action bounds
+        self.action_ranges = action_ranges
         
         self.policy = policy
         # How many steps in the past does the policy have
@@ -23,12 +30,8 @@ class Agent:
         self.lookback = 32
 
         # We'll also track the history of the states
-        self.state_history_tracker  = ItemHistoryTracker(item_shape=(state_size,))
-        self.action_history_tracker = ItemHistoryTracker(item_shape=(action_size,))
-
-        # Shapes
-        self.state_size = state_size
-        self.action_size = action_size  
+        self.state_history_tracker  = ItemHistoryTracker(item_shape=(self.state_size,))
+        self.action_history_tracker = ItemHistoryTracker(item_shape=(self.action_size,))
 
     def get_histories(self):
         num_states_desired  = self.lookback
@@ -52,6 +55,9 @@ class Agent:
             state_history,
             action_history,
         )
+
+        # Clip the action to the action ranges
+        action = np.clip(action, self.action_ranges[:, 0], self.action_ranges[:, 1])
 
         # Save the action and return
         self.action_history_tracker.append(action)

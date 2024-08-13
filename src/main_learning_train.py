@@ -48,9 +48,10 @@ if __name__ == "__main__":
     )
 
     # Create the agent, which has an initial state and a policy
-    K = 128
-    H = 50 #int(0.5/dynamics.dt), # X second horizon
-    policy = PolicyFlowActionDistribution(**standard.get_standard_flow_action_dist_policy_arguments())
+    fadp_arguments = standard.get_standard_flow_action_dist_policy_arguments()
+    K = fadp_arguments["K"]
+    H = fadp_arguments["H"]
+    policy = PolicyFlowActionDistribution(**fadp_arguments)
     summary(policy)
 
     # Can now create an agent, the state_initial will be set by the
@@ -59,7 +60,7 @@ if __name__ == "__main__":
         state_initial=None,
         policy=policy,
         state_size=dyn.state_size(),
-        action_size=dyn.action_size(),
+        action_ranges=dyn.action_ranges(),
     ) 
 
     # Create a data module, and a trainer, and get to learnin'!
@@ -79,10 +80,10 @@ if __name__ == "__main__":
     # Create a trainer
     trainer = pl.Trainer(
         max_epochs=32,
-        check_val_every_n_epoch=4,
+        check_val_every_n_epoch=1,
         num_sanity_val_steps=2, 
         # Change hardware settings accordingly
-        devices=[1],
+        devices=[0],
         accelerator="gpu",
         #progress_bar_refresh_rate=1,
         logger=wandb_logger,
