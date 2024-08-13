@@ -121,7 +121,7 @@ class PolicyMPPI:
         use_gpu_if_available=False,
     ):
         # Use an MPPI computer to do the heavy lifting
-        self.computer = MPPIComputer(
+        self.mppi_computer = MPPIComputer(
             dynamics=dynamics,
             K=K,
             H=H,
@@ -177,7 +177,7 @@ class PolicyMPPI:
             raise ValueError(f"{self.__class__.__name__} requires a goal state to follow")
         
         # Get the optimal action and other logging information
-        state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan = self.computer.compute(
+        state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan = self.mppi_computer.compute(
             state_history,
             action_history,
             self.state_goal,
@@ -207,9 +207,9 @@ class PolicyMPPI:
                 costs,
             )
             # If we're logging we will want to see what the optimal plan was
-            optimal_state_plan = np.zeros((self.computer.H, self.computer.dynamics.state_size()))
-            for h in range(self.computer.H):
-                optimal_state_plan[h] = self.computer.dynamics.step(
+            optimal_state_plan = np.zeros((self.mppi_computer.H, self.mppi_computer.dynamics.state_size()))
+            for h in range(self.mppi_computer.H):
+                optimal_state_plan[h] = self.mppi_computer.dynamics.step(
                     state_history[-1] if h == 0 else optimal_state_plan[h - 1],
                     optimal_action_plan[h],
                 )

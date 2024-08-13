@@ -6,6 +6,8 @@ import shutil
 
 from scipy.stats.qmc import Sobol
 
+#from learning.models import PolicyFlowActionDistribution
+
 class Sampler:
     def __init__(
         self,
@@ -108,3 +110,16 @@ class RolloverGaussianActionSampler(Sampler):
     
     def update_previous_optimal_action_plan(self, optimal_action_plan):
         self.previous_optimal_action_plan = optimal_action_plan
+
+# ----------------------------------------------------------------
+
+# TODO: Implement a sampler that samples actions from a learned policy
+# TODO: reconsider how MPPI computer is being used in policy - may need to have a sampler model
+# that is imported here and by the policy for training
+# class FlowActionSampler(Sampler):
+#     def __init__(self, K, H, action_ranges, policy):
+#         super().__init__(K, H, action_ranges)
+#         self.policy = policy
+
+#     def sample(self):
+#         return self.policy.sample_actions(self.K, self.H)

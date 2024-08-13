@@ -354,7 +354,9 @@ class Visual:
             def moving_average(actions, window_size):
                 """Calculate the moving average of the actions with zero padding to ensure the output size is the same as the input size."""
                 if len(actions) < window_size:
-                    raise ValueError(f"Not enough data points for moving average. Minimum required: {window_size}, available: {len(actions)}")
+                    # TODO replace with a warning and return the original
+                    #raise ValueError(f"Not enough data points for moving average. Minimum required: {window_size}, available: {len(actions)}")
+                    return actions
                 
                 # array, pad_width (before, after)
                 padded_actions = np.pad(actions, ((window_size, 0), (0, 0)), mode='edge')

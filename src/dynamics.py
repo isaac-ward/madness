@@ -144,6 +144,9 @@ def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, 
     # For convenience and to match with the KTH paper
     ψ, θ, φ = rz, ry, rx
 
+    # Inputs need to be clipped into in-range
+    # TODO 
+    
     # Compute sin, cos, and tan (xyz order is φ θ ψ)
     s_ψ, c_ψ      = xp.sin(ψ), xp.cos(ψ)
     s_θ, c_θ, t_θ = xp.sin(θ), xp.cos(θ), xp.tan(θ)

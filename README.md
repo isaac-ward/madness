@@ -14,11 +14,12 @@
 docker-compose build --no-cache
 # Start up a container of the built image in the host machine
 docker-compose up -d --no-deps
-# Open a shell inside that container
+# Open a shell inside that container (multiple shells can be opened in one container)
 docker exec -it madness bash
 # Execute any main script in that shell
 python /mnt/src/main_mppi.py
-python /mnt/src/main_train.py
+python /mnt/src/main_learning_train.py
+python /mnt/src/main_learning_test.py
 python /mnt/src/main_make_data.py
 bash mnt/src/bash/make_data.sh 
 # Exit from the shell/container when done
