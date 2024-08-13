@@ -50,17 +50,7 @@ if __name__ == "__main__":
     # Create the agent, which has an initial state and a policy
     K = 128
     H = 50 #int(0.5/dynamics.dt), # X second horizon
-    policy = PolicyFlowActionDistribution(
-        dynamics=dyn,
-        K=K,
-        H=H,
-        lambda_=None,
-        map_=map_,
-        context_input_size=2*dyn.state_size(),
-        context_output_size=64,
-        num_flow_layers=3,
-        learning_rate=1e-4,
-    )
+    policy = PolicyFlowActionDistribution(**standard.get_standard_flow_action_dist_policy_arguments())
     summary(policy)
 
     # Can now create an agent, the state_initial will be set by the
@@ -90,7 +80,7 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         max_epochs=32,
         check_val_every_n_epoch=4,
-        num_sanity_val_steps=0, 
+        num_sanity_val_steps=2, 
         # Change hardware settings accordingly
         devices=[1],
         accelerator="gpu",

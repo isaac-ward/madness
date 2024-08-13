@@ -29,3 +29,18 @@ def get_standard_map():
             [0, 30]
         ],
     )
+
+def get_standard_flow_action_dist_policy_arguments():
+    dyn = get_standard_dynamics_quadcopter_3d()
+    map_ = get_standard_map()
+    return {
+        "dynamics": dyn,
+        "K": 128,
+        "H": 50,
+        "lambda_": None,
+        "map_": map_,
+        "context_input_size": 2*dyn.state_size(),
+        "context_output_size": 64,
+        "num_flow_layers": 3,
+        "learning_rate": 1e-4,
+    }
