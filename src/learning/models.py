@@ -5,6 +5,7 @@ import numpy as np
 import pytorch_lightning as pl
 import os 
 import shutil
+import warnings
 
 import wandb
 import nflows.nn.nets
@@ -20,6 +21,7 @@ import utils.logging
 import policies.costs
 from policies.mppi import MPPIComputer
 import policies.samplers
+from visual import Visual
 
 class PolicyFlowActionDistribution(pl.LightningModule):
     """
@@ -39,6 +41,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         context_output_size,
         num_flow_layers,
         learning_rate,
+        log_folder,
     ):
         # Initialize the parent class (pl.LightningModule)
         super(PolicyFlowActionDistribution, self).__init__()
@@ -72,7 +75,10 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         self.dummy = nn.Parameter(torch.zeros(1))
 
         # No logging by default
-        self.log_folder = None
+        self.log_folder = log_folder
+        self.policy_mppi_folder = os.path.join(self.log_folder, "policy", "mppi")
+        os.makedirs(self.policy_mppi_folder, exist_ok=True)
+        self.logging_enabled = False
 
         # Print out model architecture information
         print(f"{self.__class__.__name__} initialized:")
@@ -92,21 +98,16 @@ class PolicyFlowActionDistribution(pl.LightningModule):
     ):
         self.state_goal = state_goal
 
-    def enable_logging(
-        self,
-        run_folder,
-    ):
-        """
-        Enable logging to a folder
-        """
-        self.log_folder = os.path.join(run_folder, "policy", "mppi")
+    def update_logging_enabled(self, logging_enabled):
+        self.logging_enabled = logging_enabled
 
     def delete_logs(self):
         """
         Delete all logs
         """
-        if self.log_folder is not None:
-            shutil.rmtree(self.log_folder)
+        if os.path.exists(self.policy_mppi_folder):
+            print(f"Deleting logs in {self.policy_mppi_folder}")
+            shutil.rmtree(self.policy_mppi_folder)
 
     def _create_model(self):
         """
@@ -180,7 +181,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         flow = Flow(transform, distribution, embedding_net=context_network)
         return flow
     
-    def forward(self, state_history, action_history, state_goal):
+    def forward(self, state_history, action_history, state_goal, force_no_logging=False):
 
         # Convienience variables
         B = state_history.shape[0]
@@ -268,20 +269,68 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             raise ValueError("Action plans contain NaNs")
 
         # Compute the optimal future using MPPI
+        # Recall that batches are of size 1
+        state_history = state_history[0].detach().cpu().numpy()
+        action_history = action_history[0].detach().cpu().numpy()
+        state_goal = state_goal[0].detach().cpu().numpy()
         state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan = self.mppi_computer.compute(
-            # Recall that batches are of size 1
-            state_history[0].detach().cpu().numpy(),
-            action_history[0].detach().cpu().numpy(),
-            state_goal[0].detach().cpu().numpy(),
+            state_history,
+            action_history,
+            state_goal,
             # The MPPI computer needs to take a 'sampler'
             policies.samplers.FixedSampler(action_plans),
         )    
 
         # If logging is enabled then provide it
-        # TODO take from act and put in here
+        if self.logging_enabled and not force_no_logging:
+            self._log_helper(
+                state_history, action_history, state_goal,
+                state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan, 
+                log_p_likelihoods
+            )
 
         return state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan, log_p_likelihoods
     
+    def _log_helper(
+        self, 
+        state_history, action_history, state_goal,
+        state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan, 
+        log_p_likelihoods
+    ):
+
+        # Create a subfolder for this step
+        folder = os.path.join(self.policy_mppi_folder, f"step_{utils.general.get_timestamp(ultra_precise=True)}")
+        os.makedirs(folder, exist_ok=True)
+
+        # Save the state and action plans
+        utils.logging.save_state_and_action_trajectories(
+            folder,
+            state_plans,
+            action_plans,
+        )
+
+        # Save the costs
+        utils.logging.pickle_to_filepath(
+            os.path.join(folder, "costs.pkl"),
+            costs,
+        )
+
+        # If we're logging we will want to see what the optimal plan was
+        optimal_state_plan = np.zeros((self.mppi_computer.H, self.mppi_computer.dynamics.state_size()))
+        for h in range(self.mppi_computer.H):
+            optimal_state_plan[h] = self.mppi_computer.dynamics.step(
+                state_history[-1] if h == 0 else optimal_state_plan[h - 1],
+                optimal_action_plan[h],
+            )
+
+        # Save the optimal plans
+        utils.logging.save_state_and_action_trajectories(
+            folder,
+            optimal_state_plan,
+            optimal_action_plan,
+            suffix="optimal",
+        )
+
     def act(
         self,
         state_history,
@@ -304,46 +353,13 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             torch.unsqueeze(state_history, 0),
             torch.unsqueeze(action_history, 0),
             torch.unsqueeze(state_goal, 0),
+            force_no_logging=True,
         )    
 
         # Back to numpy
         state_history = state_history.detach().cpu().numpy()
         action_history = action_history.detach().cpu().numpy()
         state_goal = state_goal.detach().cpu().numpy()
-
-        # Log the state and action plans alongside the costs, 
-        # if we're logging
-        if self.log_folder is not None:
-            # Create a subfolder for this step
-            folder = os.path.join(self.log_folder, f"step_{utils.general.get_timestamp(ultra_precise=True)}")
-            os.makedirs(folder, exist_ok=True)
-            # Save the state and action plans
-            utils.logging.save_state_and_action_trajectories(
-                folder,
-                state_plans,
-                action_plans,
-            )
-            # Save the costs
-            utils.logging.pickle_to_filepath(
-                os.path.join(folder, "costs.pkl"),
-                costs,
-            )
-            # If we're logging we will want to see what the optimal plan was
-            optimal_state_plan = np.zeros((self.mppi_computer.H, self.mppi_computer.dynamics.state_size()))
-            for h in range(self.mppi_computer.H):
-                optimal_state_plan[h] = self.mppi_computer.dynamics.step(
-                    state_history[-1] if h == 0 else optimal_state_plan[h - 1],
-                    optimal_action_plan[h],
-                )
-
-            # Save the optimal plans
-            utils.logging.save_state_and_action_trajectories(
-                folder,
-                optimal_state_plan,
-                optimal_action_plan,
-                suffix="optimal",
-            )
-
 
         return optimal_action_plan[0]
     
@@ -358,6 +374,11 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         state_history = batch["state_history"]
         action_history = batch["action_history"]
         state_goal = batch["state_goal"]
+
+        # Check the done flag, if it's done then complete this training/validation stage
+        # TODO only works for batch size = 1
+        if batch["done_flag"][0]: # and stage == "val":
+            raise StopIteration(f"Environment is done, flag: {batch['done_message']}")
 
         # What is the batch size?
         B = state_history.shape[0]
@@ -417,7 +438,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         self._log_scalar_per_step(f'{stage}/loss', loss)
         self._log_scalar_per_step(f'{stage}/cost/min', torch.min(costs))
         self._log_scalar_per_step(f'{stage}/cost/mean', torch.mean(costs))
-        self._log_scalar_per_step(f'{stage}/cost/max', torch.max(costs))
+        #self._log_scalar_per_step(f'{stage}/cost/max', torch.max(costs))
 
         # And return the loss
         return loss
@@ -436,13 +457,40 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         return self.generic_step(batch, batch_idx, 'val')
 
     def on_validation_epoch_start(self):
-        # Enable logging
-        print("TODO: enable logging")
+        self.update_logging_enabled(True)
 
     def on_validation_epoch_end(self):
-        # Disable logging, create visualization, and 
-        # delete uncessary logs
-        print("TODO: disable logging, render, clear logs")
+
+        # If the log folder does not have more than 10 steps in it, return (i.e. when we're doing
+        # validation sanity checks)
+        if len(os.listdir(self.policy_mppi_folder)) < 10:
+            warnings.warn("Not enough steps to create a video - are you running a validation sanity check?")
+        
+        else:
+
+            # # Get the agent and environment to log
+            # self.trainer.datamodule.dataset_val.agent.log(self.log_folder)
+            # self.trainer.datamodule.dataset_val.environment.log(self.log_folder)
+
+            # print(len(self.trainer.datamodule.dataset_val.agent.state_history_tracker))
+            # print(len(self.trainer.datamodule.dataset_val.agent.action_history_tracker))
+            # print(len(self.trainer.datamodule.dataset_val.environment.state_history_tracker))
+            # print(len(self.trainer.datamodule.dataset_val.environment.action_history_tracker))
+
+            # Create visualization
+            visual = Visual(self.log_folder)
+            #visual.plot_histories()
+            video_filepath = visual.render_video(desired_fps=25)
+
+            # Upload the video to wandb and delete the file
+            wandb.log({"video": wandb.Video(video_filepath)}, step=self.global_step)
+            os.remove(video_filepath)
+
+        # Delete the logs
+        self.delete_logs()
+
+        # Don't log outside of validation
+        self.update_logging_enabled(False)
         
     def configure_optimizers(self):
         learnable_parameters = self.model.parameters()

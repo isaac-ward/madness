@@ -65,6 +65,6 @@ def load_state_and_action_trajectories(
 
     if suffix != "": suffix = f"_{suffix}"
 
-    state_trajectories = np.load(os.path.join(folder_load, f"state_trajectories{suffix}.npz"))["arr_0"]
-    action_trajectories = np.load(os.path.join(folder_load, f"action_trajectories{suffix}.npz"))["arr_0"]
+    state_trajectories = np.load(os.path.join(folder_load, f"state_trajectories{suffix}.npz"), allow_pickle=True)["arr_0"]
+    action_trajectories = np.load(os.path.join(folder_load, f"action_trajectories{suffix}.npz"), allow_pickle=True)["arr_0"]
     return state_trajectories, action_trajectories

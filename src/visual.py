@@ -157,6 +157,10 @@ class Visual:
 
         # Load the environment data (they were saved with savez)
         state_history, action_history = utils.logging.load_state_and_action_trajectories(os.path.join(self.run_folder, "environment"))
+        desired_state_shape = (state_history.shape[0], 12)
+        assert state_history.shape == desired_state_shape, f"State history shape {state_history.shape} != {desired_state_shape}"
+        desired_action_shape = (action_history.shape[0], 4)
+        assert action_history.shape == desired_action_shape, f"Action history shape {action_history.shape} != {desired_action_shape}"
         dynamics = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "dynamics.pkl"))
         map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
 
@@ -173,14 +177,14 @@ class Visual:
         # We also want the policy path, if it exists
         path_flag = False
         try:
-            path_xyz = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "policy", "path_xyz.pkl"))
+            path_xyz = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "path_xyz.pkl"))
             path_flag = True
         except:
             pass
 
         path_smooth_flag = False
         try:
-            path_xyz_smooth = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "policy", "path_xyz_smooth.pkl"))
+            path_xyz_smooth = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "path_xyz_smooth.pkl"))
             path_smooth_flag = True
         except:
             pass
@@ -687,3 +691,6 @@ class Visual:
         
         # Free resources
         plt.close(fig)
+
+        # Return the filepath
+        return filepath_output

@@ -15,10 +15,11 @@ class EnvironmentDataModule(pl.LightningDataModule):
     data module that we can fit to using Lightning AI
     """
 
-    def __init__(self, environment, agent, batch_size=1):
+    def __init__(self, environment, agent, log_folder, batch_size=1):
         super().__init__()
         self.environment = environment
         self.agent = agent
+        self.log_folder = log_folder
         # Note that this is a little different to the notion of a
         # traditional supervised learning batch_size. Since we're
         # on-policy, we're going to be using the agent to determine
@@ -27,17 +28,20 @@ class EnvironmentDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
 
         # For speeding up dataloaders
-        self.num_workers = os.cpu_count() - 1
+        #self.num_workers = os.cpu_count() - 1
+        self.num_workers = 1
     
     def setup(self, stage=None):
         # Create the training and validation datasets
         self.dataset_train = EnvironmentDataset(
             environment=copy.deepcopy(self.environment),
             agent=copy.deepcopy(self.agent),
+            log_folder=None, # Don't log during training
         )
         self.dataset_val = EnvironmentDataset(
             environment=copy.deepcopy(self.environment),
             agent=copy.deepcopy(self.agent),
+            log_folder=self.log_folder,
         )
 
     def train_dataloader(self):

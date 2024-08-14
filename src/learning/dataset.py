@@ -1,6 +1,8 @@
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import Dataset
+import warnings
+import utils.logging
 
 from environment import Environment
 
@@ -20,15 +22,22 @@ class EnvironmentDataset(Dataset):
            the policy
     """
 
-    def __init__(self, environment, agent):
+    def __init__(self, environment, agent, log_folder):
         super().__init__()
         self.environment = environment
         self.agent = agent
+        self.log_folder = log_folder
         
         # Reset everything
         self.reset()
 
     def reset(self):
+
+        # If the log folder is set, we log the state and action trajectories
+        if self.log_folder is not None:
+            self.environment.log(self.log_folder)
+            self.agent.log(self.log_folder)
+
         state_initial, state_goal = Environment.get_two_states_separated_by_distance(
             self.environment.map,
             min_distance=26
@@ -63,6 +72,7 @@ class EnvironmentDataset(Dataset):
 
         # We reset the environment and agent as needed
         if done_flag:
+            warnings.warn(f"Environment is done, flag: {done_message}")
             self.reset()
 
         # TODO should our paradigm be adjusted to traditional RL where the environment
