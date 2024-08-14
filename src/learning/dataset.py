@@ -72,7 +72,7 @@ class EnvironmentDataset(Dataset):
 
         # We reset the environment and agent as needed
         if done_flag:
-            warnings.warn(f"Environment is done, flag: {done_message}")
+            #warnings.warn(f"Environment is done, flag: {done_message}")
             self.reset()
 
         # TODO should our paradigm be adjusted to traditional RL where the environment
