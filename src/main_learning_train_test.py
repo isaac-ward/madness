@@ -27,6 +27,9 @@ if __name__ == "__main__":
     # Will log everything to here
     log_folder = utils.logging.make_log_folder(name="train")
 
+    # Seed everything
+    utils.general.random_seed(42)
+
     # Get the environment variables (api keys)
     load_dotenv(dotenv_path=utils.general.get_dotenv_path())
 

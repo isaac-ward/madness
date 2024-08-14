@@ -411,7 +411,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # the loss
         # i.e. if this is big our distribution is dialed in on the optimal trajectory
         #      if this is small our distribution is more spread out, and less concerned with optimality
-        prefer_optimality_over_entropy = 0.001
+        prefer_optimality_over_entropy = 500
 
         # Addition in log space is multiplication in normal space
         # Multiplication in log space is exponentiation in normal space

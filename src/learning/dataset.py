@@ -3,6 +3,9 @@ import torch
 from torch.utils.data import Dataset
 import warnings
 import utils.logging
+import utils.general
+from tqdm import tqdm
+import numpy as np
 
 from environment import Environment
 
@@ -22,11 +25,25 @@ class EnvironmentDataset(Dataset):
            the policy
     """
 
-    def __init__(self, environment, agent, log_folder):
+    def __init__(self, environment, agent, stage, log_folder):
         super().__init__()
         self.environment = environment
         self.agent = agent
+        self.stage = stage
         self.log_folder = log_folder
+
+        # Generate all the task configurations ahead of time
+        self.task_configurations = []
+        for i in tqdm(range(100), desc="Generating task configurations"):
+            state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+                self.environment.map,
+                min_distance=26
+            )
+            self.task_configurations.append({
+                "state_initial": state_initial,
+                "state_goal": state_goal,
+            })      
+        self.current_task_configuration_idx = np.random.randint(0, len(self.task_configurations))
         
         # Reset everything
         self.reset()
@@ -34,18 +51,22 @@ class EnvironmentDataset(Dataset):
     def reset(self):
 
         # If the log folder is set, we log the state and action trajectories
+        # Note that this overwrites the old
         if self.log_folder is not None:
             self.environment.log(self.log_folder)
             self.agent.log(self.log_folder)
 
-        state_initial, state_goal = Environment.get_two_states_separated_by_distance(
-            self.environment.map,
-            min_distance=26
-        )
-        self.environment.reset(
-            state_initial=state_initial,
-            state_goal=state_goal,
-        )
+        # Get a new task
+        state_initial = self.task_configurations[self.current_task_configuration_idx]["state_initial"]
+        state_goal    = self.task_configurations[self.current_task_configuration_idx]["state_goal"]
+        self.current_task_configuration_idx = (self.current_task_configuration_idx + 1) % len(self.task_configurations)
+
+        # Report what the new task is
+        if self.stage == "val":
+            print(f"New val task: idx={self.current_task_configuration_idx}, {state_initial[:3]} -> {state_goal[:3]}")
+
+        # Update the environment and agent
+        self.environment.reset(state_initial, state_goal)
         self.agent.reset(state_initial)
         self.agent.policy.update_state_goal(state_goal)
 

@@ -26,7 +26,7 @@ import standard
 if __name__ == "__main__":
 
     # Seed everything
-    utils.general.seed(42)
+    utils.general.random_seed(42)
 
     # Are we using GPU? 
     # NOTE: suggest false for now because it's slow
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     # Log everything of interest
     agent.log(log_folder)
     environment.log(log_folder)
-    
+
     # Render visuals
     visual = Visual(log_folder)
     visual.plot_histories()
