@@ -1,12 +1,22 @@
 import os 
+import time
 import datetime
 import hashlib
 import pickle
+import random
+import torch
 
 import numpy as np
 
-def seed(seed):
+def random_seed(seed):
+    random.seed(seed)
+    torch.manual_seed(seed)
     np.random.seed(seed)
+
+def time_based_random_seed():
+    # Use down to the microsecond
+    seed = int(time.time() * 1e6) % (2**32)
+    random_seed(seed)
 
 def get_timestamp(ultra_precise=False):
     if ultra_precise:

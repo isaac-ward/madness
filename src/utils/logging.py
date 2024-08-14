@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pickle
+import warnings
 from utils.general import get_logs_dir, get_timestamp
 
 def make_log_folder(name="run"):
@@ -29,6 +30,11 @@ def pickle_to_filepath(filepath, object):
     """
     Pickle an object to a folder
     """
+
+    # Warn if the file already exists
+    if os.path.exists(filepath):
+        warnings.warn(f"File already exists at {filepath}. Overwriting.")
+
     with open(filepath, "wb") as f:
         pickle.dump(object, f)
 

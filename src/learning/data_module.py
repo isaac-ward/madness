@@ -36,11 +36,13 @@ class EnvironmentDataModule(pl.LightningDataModule):
         self.dataset_train = EnvironmentDataset(
             environment=copy.deepcopy(self.environment),
             agent=copy.deepcopy(self.agent),
+            stage="train",
             log_folder=None, # Don't log during training
         )
         self.dataset_val = EnvironmentDataset(
             environment=copy.deepcopy(self.environment),
             agent=copy.deepcopy(self.agent),
+            stage="val",
             log_folder=self.log_folder,
         )
 
