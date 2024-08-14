@@ -542,7 +542,7 @@ class Visual:
                 if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
 
                     # What was the min and max cost this frame
-                    make_colors_local = True
+                    make_colors_local = False
                     if make_colors_local:
                         mppi_cost_min = mppi_cost_mins[frame]
                         mppi_cost_max = mppi_cost_maxs[frame]

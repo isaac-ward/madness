@@ -377,7 +377,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
 
         # Check the done flag, if it's done then complete this training/validation stage
         # TODO only works for batch size = 1
-        if batch["done_flag"][0]: # and stage == "val":
+        if batch["done_flag"][0] and stage == "val":
             raise StopIteration(f"Environment is done, flag: {batch['done_message']}")
 
         # What is the batch size?
@@ -409,7 +409,9 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # If the following variable is large, then the probability of optimality is 
         # considered more so than the spread of the action distribution when computing
         # the loss
-        prefer_optimality_over_entropy = 0.5
+        # i.e. if this is big our distribution is dialed in on the optimal trajectory
+        #      if this is small our distribution is more spread out, and less concerned with optimality
+        prefer_optimality_over_entropy = 0.001
 
         # Addition in log space is multiplication in normal space
         # Multiplication in log space is exponentiation in normal space
