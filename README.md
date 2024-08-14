@@ -18,10 +18,7 @@ docker-compose up -d --no-deps
 docker exec -it madness bash
 # Execute any main script in that shell
 python /mnt/src/main_mppi.py
-python /mnt/src/main_learning_train.py
-python /mnt/src/main_learning_test.py
-python /mnt/src/main_make_data.py
-bash mnt/src/bash/make_data.sh 
+python /mnt/src/main_learning_train_test.py
 # Exit from the shell/container when done
 exit
 # Close the container from the host machine

@@ -54,7 +54,7 @@ class Environment:
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
         done_message = ""
-        if len(self.state_history_tracker) > self.episode_length:
+        if len(self.state_history_tracker) == self.episode_length:
             done_flag = True
             done_message = "Ran out of steps"
         elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_radius):
@@ -124,6 +124,12 @@ class Environment:
     ):
 
         folder_environment = os.path.join(folder, "environment")
+
+        # Save the path (start->goal)
+        utils.logging.pickle_to_filepath(
+            f"{folder_environment}/path_xyz.pkl",
+            np.array([self.state_history_tracker.history[0], self.state_goal]),
+        )
 
         # Save the history
         utils.logging.save_state_and_action_trajectories(

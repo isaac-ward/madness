@@ -5,6 +5,7 @@ from scipy.spatial.transform import Rotation as R
 import pickle
 import os
 from numba import njit, prange, cuda, float32
+import warnings
 
 import utils.general as general
 import utils.geometric as geometric
@@ -135,7 +136,7 @@ def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, 
     p, q, r        = states[:, 9],  states[:, 10], states[:, 11]
     w1, w2, w3, w4 = actions[:, 0], actions[:, 1], actions[:, 2], actions[:, 3]
 
-    # Confirm that actions are in the allowed ranges
+    # Confirm that actions are in the allowed ranges and warn if out
     # TODO
 
     # For convenience and to match with the KTH paper

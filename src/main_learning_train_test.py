@@ -51,7 +51,7 @@ if __name__ == "__main__":
     fadp_arguments = standard.get_standard_flow_action_dist_policy_arguments()
     K = fadp_arguments["K"]
     H = fadp_arguments["H"]
-    policy = PolicyFlowActionDistribution(**fadp_arguments)
+    policy = PolicyFlowActionDistribution(**fadp_arguments, log_folder=log_folder)
     summary(policy)
 
     # Can now create an agent, the state_initial will be set by the
@@ -67,6 +67,7 @@ if __name__ == "__main__":
     data_module = EnvironmentDataModule(
         environment=environment,
         agent=agent,
+        log_folder=log_folder,
         batch_size=1,
     )
 
@@ -81,7 +82,7 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         max_epochs=32,
         check_val_every_n_epoch=1,
-        num_sanity_val_steps=2, 
+        num_sanity_val_steps=4, 
         # Change hardware settings accordingly
         devices=[0],
         accelerator="gpu",

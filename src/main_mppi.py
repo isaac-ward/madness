@@ -123,15 +123,7 @@ if __name__ == "__main__":
     # Log everything of interest
     agent.log(log_folder)
     environment.log(log_folder)
-    utils.logging.pickle_to_filepath(
-        f"{log_folder}/policy/path_xyz.pkl",
-        path_xyz,
-    )
-    # utils.logging.pickle_to_filepath(
-    #     f"{log_folder}/policy/path_xyz_smooth.pkl",
-    #     path_xyz_smooth,
-    # )
-
+    
     # Render visuals
     visual = Visual(log_folder)
     visual.plot_histories()
