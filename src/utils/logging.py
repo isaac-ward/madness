@@ -26,13 +26,13 @@ def ensure_log_subfolder_exists(log_folder, subfolder_name):
     if not os.path.exists(subfolder):
         os.makedirs(subfolder)
 
-def pickle_to_filepath(filepath, object):
+def pickle_to_filepath(filepath, object, verbose=False):
     """
     Pickle an object to a folder
     """
 
     # Warn if the file already exists
-    if os.path.exists(filepath):
+    if os.path.exists(filepath) and verbose:
         warnings.warn(f"File already exists at {filepath}. Overwriting.")
 
     with open(filepath, "wb") as f:
@@ -57,6 +57,12 @@ def save_state_and_action_trajectories(
     """
 
     if suffix != "": suffix = f"_{suffix}"
+
+    # For debugging purposes save the shapes to text files
+    with open(os.path.join(folder_save, f"state_trajectories_shape{suffix}.txt"), "w") as f:
+        f.write(str(state_trajectories.shape))
+    with open(os.path.join(folder_save, f"action_trajectories_shape{suffix}.txt"), "w") as f:
+        f.write(str(action_trajectories.shape))
 
     np.savez(os.path.join(folder_save, f"state_trajectories{suffix}.npz"), np.array(state_trajectories))
     np.savez(os.path.join(folder_save, f"action_trajectories{suffix}.npz"), np.array(action_trajectories))

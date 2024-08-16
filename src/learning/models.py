@@ -378,7 +378,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # Check the done flag, if it's done then complete this training/validation stage
         # TODO only works for batch size = 1
         if batch["done_flag"][0] and stage == "val":
-            raise StopIteration(f"Environment is done, flag: {batch['done_message']}")
+            raise StopIteration(f"Validation environment is done, flag: {batch['done_message']}")
 
         # What is the batch size?
         B = state_history.shape[0]
@@ -437,17 +437,21 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         loss = -torch.mean(weights * log_p_likelihoods)
 
         # Do custom logging
-        self._log_scalar_per_step(f'{stage}/loss', loss)
-        self._log_scalar_per_step(f'{stage}/cost/min', torch.min(costs))
+        self._log_scalar_per_step(f'{stage}/loss', loss, prog_bar=True)
+        self._log_scalar_per_step(f'{stage}/cost/min', torch.min(costs), prog_bar=True)
         self._log_scalar_per_step(f'{stage}/cost/mean', torch.mean(costs))
         #self._log_scalar_per_step(f'{stage}/cost/max', torch.max(costs))
+
+        # Double check that the task is changing during training
+        dist_initial_to_goal = torch.linalg.norm(state_goal[0] - state_history[0][0])
+        self._log_scalar_per_step(f'{stage}/dist_initial_to_goal', dist_initial_to_goal, prog_bar=True)
 
         # And return the loss
         return loss
     
-    def _log_scalar_per_step(self, name, value):
+    def _log_scalar_per_step(self, name, value, prog_bar=False):
         B = 1
-        self.log(name, value, on_step=True, on_epoch=True, prog_bar=True, logger=True, batch_size=B)
+        self.log(name, value, on_step=True, on_epoch=True, prog_bar=prog_bar, logger=True, batch_size=B)
 
     def _log_probability_distribution(self, name, distribution):
         self.logger.experiment.log({name: wandb.Histogram(distribution)}, step=self.global_step)
@@ -484,9 +488,14 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             #visual.plot_histories()
             video_filepath = visual.render_video(desired_fps=25)
 
+            # Rename the video to include the current timestamp
+            timestamp = utils.general.get_timestamp(ultra_precise=True)
+            video_filepath_new = video_filepath.replace(".mp4", f"_{timestamp}.mp4")
+            os.rename(video_filepath, video_filepath_new)
+
             # Upload the video to wandb and delete the file
-            wandb.log({"video": wandb.Video(video_filepath)}, step=self.global_step)
-            os.remove(video_filepath)
+            wandb.log({"video": wandb.Video(video_filepath_new)}, step=self.global_step)
+            #os.remove(video_filepath)
 
         # Delete the logs
         self.delete_logs()

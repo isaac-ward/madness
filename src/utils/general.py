@@ -18,6 +18,10 @@ def time_based_random_seed():
     seed = int(time.time() * 1e6) % (2**32)
     random_seed(seed)
 
+def get_time_based_rng():
+    seed = int(time.time() * 1e6) % (2**32)
+    return np.random.default_rng(seed)
+
 def get_timestamp(ultra_precise=False):
     if ultra_precise:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")

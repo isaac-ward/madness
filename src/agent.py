@@ -72,13 +72,14 @@ class Agent:
         # be different if the agent is not perfectly informed
         self.state_history_tracker.append(state)
 
-    def reset(self, state_initial):
+    def reset(self, state_initial, state_goal):
         """
         Reset the agent to a new state
         """
         self.state_history_tracker.reset()
         self.action_history_tracker.reset()
         self.state_history_tracker.append(state_initial)
+        self.policy.update_state_goal(state_goal)
 
     def log(
         self,

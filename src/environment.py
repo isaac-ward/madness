@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import warnings 
 
 import utils.logging
 from utils.general import ItemHistoryTracker
@@ -54,7 +55,8 @@ class Environment:
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
         done_message = ""
-        if len(self.state_history_tracker) == self.episode_length:
+        # TODO Does this need to be -1?
+        if len(self.state_history_tracker) == self.episode_length - 1:
             done_flag = True
             done_message = "Ran out of steps"
         elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_radius):
@@ -70,6 +72,7 @@ class Environment:
     def get_two_states_separated_by_distance(
         map_,
         min_distance,
+        rng=None,
     ):
         """
         Useful for resetting the environment with the initial state and goal
@@ -77,13 +80,15 @@ class Environment:
         Extents is a list of 3 tuples of (min, max) for each dimension
         """
 
+        rng = np.random.default_rng() if (rng is None) else rng
+
         extents = map_.extents_metres_xyz
         
         # Get a random state
         state_initial = np.array([
-            np.random.uniform(low=extents[0][0], high=extents[0][1]),
-            np.random.uniform(low=extents[1][0], high=extents[1][1]),
-            np.random.uniform(low=extents[2][0], high=extents[2][1]),
+            rng.uniform(low=extents[0][0], high=extents[0][1]),
+            rng.uniform(low=extents[1][0], high=extents[1][1]),
+            rng.uniform(low=extents[2][0], high=extents[2][1]),
             0, 0, 0,
             0, 0, 0,
             0, 0, 0,
@@ -94,9 +99,9 @@ class Environment:
         attempts = 1000
         while np.linalg.norm(state_goal[0:3] - state_initial[0:3]) < min_distance and attempts > 0:
             state_goal = np.array([
-                np.random.uniform(low=extents[0][0], high=extents[0][1]),
-                np.random.uniform(low=extents[1][0], high=extents[1][1]),
-                np.random.uniform(low=extents[2][0], high=extents[2][1]),
+                rng.uniform(low=extents[0][0], high=extents[0][1]),
+                rng.uniform(low=extents[1][0], high=extents[1][1]),
+                rng.uniform(low=extents[2][0], high=extents[2][1]),
                 0, 0, 0,
                 0, 0, 0,
                 0, 0, 0,
@@ -130,6 +135,10 @@ class Environment:
             f"{folder_environment}/path_xyz.pkl",
             np.array([self.state_history_tracker.history[0], self.state_goal]),
         )
+
+        # If the state history is empty then provide a warning
+        if len(self.state_history_tracker) == 0:
+            warnings.warn("No state history to log (saving empty npz file regardless)")
 
         # Save the history
         utils.logging.save_state_and_action_trajectories(
