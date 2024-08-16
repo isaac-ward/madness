@@ -32,20 +32,7 @@ class EnvironmentDataset(Dataset):
         self.stage = stage
         self.log_folder = log_folder
 
-        # Generate all the task configurations ahead of time
-        self.task_configurations = []
-        for i in tqdm(range(100), desc="Generating task configurations"):
-            state_initial, state_goal = Environment.get_two_states_separated_by_distance(
-                self.environment.map,
-                min_distance=26
-            )
-            self.task_configurations.append({
-                "state_initial": state_initial,
-                "state_goal": state_goal,
-            })      
-        self.current_task_configuration_idx = np.random.randint(0, len(self.task_configurations))
-        
-        # Reset everything
+        # Reset everything and finish congifuring the dataset
         self.reset()
 
     def reset(self):
@@ -53,22 +40,20 @@ class EnvironmentDataset(Dataset):
         # If the log folder is set, we log the state and action trajectories
         # Note that this overwrites the old
         if self.log_folder is not None:
+            warnings.warn(f"Logging environment and agent to {self.log_folder}")
             self.environment.log(self.log_folder)
             self.agent.log(self.log_folder)
 
-        # Get a new task
-        state_initial = self.task_configurations[self.current_task_configuration_idx]["state_initial"]
-        state_goal    = self.task_configurations[self.current_task_configuration_idx]["state_goal"]
-        self.current_task_configuration_idx = (self.current_task_configuration_idx + 1) % len(self.task_configurations)
-
-        # Report what the new task is
-        if self.stage == "val":
-            print(f"New val task: idx={self.current_task_configuration_idx}, {state_initial[:3]} -> {state_goal[:3]}")
+        # Generate the task that this episode represents
+        state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+            self.environment.map,
+            min_distance=26,
+            rng=utils.general.get_time_based_rng(),
+        )
 
         # Update the environment and agent
         self.environment.reset(state_initial, state_goal)
-        self.agent.reset(state_initial)
-        self.agent.policy.update_state_goal(state_goal)
+        self.agent.reset(state_initial, state_goal)
 
     def __len__(self):
         return self.environment.episode_length
@@ -92,8 +77,9 @@ class EnvironmentDataset(Dataset):
         self.agent.observe(state)
 
         # We reset the environment and agent as needed
+        print(f"Done flag: {done_flag}")
         if done_flag:
-            #warnings.warn(f"Environment is done, flag: {done_message}")
+            warnings.warn(f"Environment is done, flag: {done_message}")
             self.reset()
 
         # TODO should our paradigm be adjusted to traditional RL where the environment
