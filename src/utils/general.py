@@ -24,7 +24,9 @@ def get_time_based_rng():
 
 def get_timestamp(ultra_precise=False):
     if ultra_precise:
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+        # Really want uniqueness here, so we go down to the nanosecond
+        now = datetime.datetime.now()
+        timestamp = now.strftime("%Y-%m-%d-%H-%M-%S") + "-%06d" % now.microsecond
     else:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")  
     return timestamp
