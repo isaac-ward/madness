@@ -9,6 +9,8 @@ import numpy as np
 
 from environment import Environment
 
+# TODO these should just represent tasks, and the agent should do the roll forward
+
 class EnvironmentDataset(Dataset):
     """
     Wraps a sequential decision-making environment into a
@@ -40,7 +42,6 @@ class EnvironmentDataset(Dataset):
         # If the log folder is set, we log the state and action trajectories
         # Note that this overwrites the old
         if self.log_folder is not None:
-            warnings.warn(f"Logging environment and agent to {self.log_folder}")
             self.environment.log(self.log_folder)
             self.agent.log(self.log_folder)
 
@@ -50,6 +51,9 @@ class EnvironmentDataset(Dataset):
             min_distance=26,
             rng=utils.general.get_time_based_rng(),
         )
+
+        if self.stage == "val":
+            print(f"Resetting environment for validation, initial state: {state_initial[:3]}, goal state: {state_goal[:3]}")
 
         # Update the environment and agent
         self.environment.reset(state_initial, state_goal)
@@ -76,12 +80,6 @@ class EnvironmentDataset(Dataset):
         # and make new observations for future decision
         self.agent.observe(state)
 
-        # We reset the environment and agent as needed
-        print(f"Done flag: {done_flag}")
-        if done_flag:
-            warnings.warn(f"Environment is done, flag: {done_message}")
-            self.reset()
-
         # TODO should our paradigm be adjusted to traditional RL where the environment
         # returns the reward?
 
@@ -94,12 +92,20 @@ class EnvironmentDataset(Dataset):
 
         # We return the information required for learning
         data = {
+            "state_initial": torch.tensor(self.environment.state_history_tracker.get_first_item(), dtype=torch.float32),
             "state_history": torch.tensor(state_history, dtype=torch.float32),
             "action_history": torch.tensor(action_history, dtype=torch.float32),
             "state_goal": torch.tensor(state_goal_used, dtype=torch.float32),
             "done_flag": done_flag,
             "done_message": done_message,
         }
+
+        if self.stage == "val": print(data['state_initial'][:3], data['state_goal'][:3])
+
+        # We reset the environment and agent as needed (do this after the data is constructed)
+        if done_flag:
+            warnings.warn(f"Environment is done, flag: {done_message}")
+            self.reset()
 
         return data
     
