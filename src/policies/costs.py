@@ -67,7 +67,7 @@ def batch_cost(
     cost = \
         1000 * goal_p_terms + \
         100 * path_towards_goal_p_terms + \
-        50 * path_towards_goal_v_terms + \
+        10 * path_towards_goal_v_terms + \
         10000 * invalid_terms + \
         0 * goal_r_terms + \
         0 * goal_v_terms + \
