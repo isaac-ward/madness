@@ -23,6 +23,8 @@ from policies.mppi import MPPIComputer
 import policies.samplers
 from visual import Visual
 
+from environment import Environment
+
 class PolicyFlowActionDistribution(pl.LightningModule):
     """
     Learns the optimal action distribution for MPPI using normalizing flows
@@ -41,6 +43,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         context_output_size,
         num_flow_layers,
         learning_rate,
+        environment,
         log_folder,
     ):
         # Initialize the parent class (pl.LightningModule)
@@ -79,6 +82,10 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         self.policy_mppi_folder = os.path.join(self.log_folder, "policy", "mppi")
         os.makedirs(self.policy_mppi_folder, exist_ok=True)
         self.logging_enabled = False
+
+        # Need an access to environment during training
+        self.environment = environment
+        self._environment_reset()
 
         # Print out model architecture information
         print(f"{self.__class__.__name__} initialized:")
@@ -299,7 +306,11 @@ class PolicyFlowActionDistribution(pl.LightningModule):
     ):
 
         # Create a subfolder for this step
-        folder = os.path.join(self.policy_mppi_folder, f"step_{utils.general.get_timestamp(ultra_precise=True)}")
+        try:
+            num_in_folder = len(os.listdir(self.policy_mppi_folder))
+        except FileNotFoundError:
+            num_in_folder = 0
+        folder = os.path.join(self.policy_mppi_folder, f"step-{utils.general.get_timestamp(ultra_precise=True)}")
         os.makedirs(folder, exist_ok=True)
 
         # Save the state and action plans
@@ -362,7 +373,23 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         state_goal = state_goal.detach().cpu().numpy()
 
         return optimal_action_plan[0]
-    
+
+    def _environment_reset(self):
+        # If the log folder is set, we log the state and action trajectories
+        # Note that this overwrites the old
+        if self.log_folder is not None:
+            self.environment.log(self.log_folder)
+
+        # Generate the task that this episode represents
+        state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+            self.environment.map,
+            min_distance=26,
+            rng=utils.general.get_time_based_rng(),
+        )
+
+        # Reset the environment
+        self.environment.reset(state_initial, state_goal)
+
     def generic_step(self, batch, batch_idx, stage):
         """
         Generate K samples from the learned optimal action distribution,
@@ -370,28 +397,36 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         the optimal action distribution
         """
 
-        # Start by getting the contextual variables
-        state_initial = batch["state_initial"]
-        state_history = batch["state_history"]
-        action_history = batch["action_history"]
-        state_goal = batch["state_goal"]
+        # Start by getting the context variables
+        state_initial = self.environment.state_history_tracker.get_first_item()
+        state_goal    = self.environment.state_goal
 
-        # Check the done flag, if it's done then complete this training/validation stage
-        # TODO only works for batch size = 1
-        if batch["done_flag"][0] and stage == "val":
-            raise StopIteration(f"Validation environment is done, flag: {batch['done_message']}")
+        # And other policy inputs
+        state_history  = self.environment.state_history_tracker.get_last_n_items_with_zero_pad(self.H)
+        action_history = self.environment.action_history_tracker.get_last_n_items_with_zero_pad(self.H-1)
 
         # What is the batch size?
-        B = state_history.shape[0]
+        B = 1
 
         # Run a pass, getting all the required information 
         # from the MPPI computer
         state_plans, action_plans, costs, optimal_state_plan, optimal_action_plan, log_p_likelihoods = self.forward(
             # Batch size of 1
-            state_history,
-            action_history,
-            state_goal
+            torch.unsqueeze(torch.tensor(state_history, dtype=torch.float32), 0).to(self.device()),
+            torch.unsqueeze(torch.tensor(action_history, dtype=torch.float32), 0).to(self.device()),
+            torch.unsqueeze(torch.tensor(state_goal, dtype=torch.float32), 0).to(self.device()),
         )  
+
+        # Get the optimal action plan and step it forward
+        state, done_flag, done_message = self.environment.step(optimal_action_plan[0])
+
+        # If we're done then reset
+        if done_flag:
+            self._environment_reset()
+
+            # Only do one episode in validation
+            if stage == "val":
+                raise StopIteration(f"Validation environment is done, flag: {done_message}")
         
         # Note that after this call everything except log_p_likelihoods will be numpy.
         # log_p_likelihoods will be a torch tensor, with grad information
@@ -444,7 +479,8 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         #self._log_scalar_per_step(f'{stage}/cost/max', torch.max(costs))
 
         # Double check that the task is changing during training
-        dist_initial_to_goal = torch.linalg.norm(state_goal[0] - state_initial[0])
+        # Loggers like to only log tensors, so cast before passing
+        dist_initial_to_goal = torch.tensor(np.linalg.norm(state_goal[0:3] - state_initial[0:3]), dtype=torch.float32)
         self._log_scalar_per_step(f'{stage}/dist_initial_to_goal', dist_initial_to_goal, prog_bar=True)
 
         # And return the loss
@@ -466,6 +502,10 @@ class PolicyFlowActionDistribution(pl.LightningModule):
     def on_validation_epoch_start(self):
         self.update_logging_enabled(True)
 
+        # And reset the environment (the training environment may not have finished,
+        # as opposed to the validation environment which MUST finish)
+        self._environment_reset()
+
     def on_validation_epoch_end(self):
 
         # If the log folder does not have more than 10 steps in it, return (i.e. when we're doing
@@ -474,15 +514,6 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             warnings.warn("Not enough steps to create a video - are you running a validation sanity check?")
         
         else:
-
-            # # Get the agent and environment to log
-            # self.trainer.datamodule.dataset_val.agent.log(self.log_folder)
-            # self.trainer.datamodule.dataset_val.environment.log(self.log_folder)
-
-            # print(len(self.trainer.datamodule.dataset_val.agent.state_history_tracker))
-            # print(len(self.trainer.datamodule.dataset_val.agent.action_history_tracker))
-            # print(len(self.trainer.datamodule.dataset_val.environment.state_history_tracker))
-            # print(len(self.trainer.datamodule.dataset_val.environment.action_history_tracker))
 
             # Create visualization
             visual = Visual(self.log_folder)

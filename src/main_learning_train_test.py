@@ -10,7 +10,7 @@ import utils.general
 import utils.logging
 from utils.learning import make_k1_checkpoint_callback
 import dynamics
-from learning.data_module import EnvironmentDataModule
+from learning.data_module import DummyDataModule
 from learning.models import PolicyFlowActionDistribution
 from agent import Agent
 from environment import Environment
@@ -40,9 +40,10 @@ if __name__ == "__main__":
     # Create the environment - the state_initial and state_goal 
     # are randomly generated in the dataset, so we don't need to 
     # specify them here
-    num_seconds = 2
+    num_seconds = 16
     num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
+        # These can initially be set to none as they will be reset
         state_initial=None,
         state_goal=None,
         dynamics=dyn,
@@ -54,7 +55,11 @@ if __name__ == "__main__":
     fadp_arguments = standard.get_standard_flow_action_dist_policy_arguments()
     K = fadp_arguments["K"]
     H = fadp_arguments["H"]
-    policy = PolicyFlowActionDistribution(**fadp_arguments, log_folder=log_folder)
+    policy = PolicyFlowActionDistribution(
+        **fadp_arguments, 
+        environment=environment,
+        log_folder=log_folder
+    )
     summary(policy)
 
     # Can now create an agent, the state_initial will be set by the
@@ -67,9 +72,8 @@ if __name__ == "__main__":
     ) 
 
     # Create a data module, and a trainer, and get to learnin'!
-    data_module = EnvironmentDataModule(
-        environment=environment,
-        agent=agent,
+    data_module = DummyDataModule(
+        episode_length=num_steps,
         log_folder=log_folder,
         batch_size=1,
     )
