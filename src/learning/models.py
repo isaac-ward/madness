@@ -371,6 +371,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         """
 
         # Start by getting the contextual variables
+        state_initial = batch["state_initial"]
         state_history = batch["state_history"]
         action_history = batch["action_history"]
         state_goal = batch["state_goal"]
@@ -443,7 +444,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         #self._log_scalar_per_step(f'{stage}/cost/max', torch.max(costs))
 
         # Double check that the task is changing during training
-        dist_initial_to_goal = torch.linalg.norm(state_goal[0] - state_history[0][0])
+        dist_initial_to_goal = torch.linalg.norm(state_goal[0] - state_initial[0])
         self._log_scalar_per_step(f'{stage}/dist_initial_to_goal', dist_initial_to_goal, prog_bar=True)
 
         # And return the loss
@@ -494,7 +495,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             os.rename(video_filepath, video_filepath_new)
 
             # Upload the video to wandb and delete the file
-            wandb.log({"video": wandb.Video(video_filepath_new)}, step=self.global_step)
+            wandb.log({"video": wandb.Video(video_filepath_new)})
             #os.remove(video_filepath)
 
         # Delete the logs

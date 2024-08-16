@@ -40,7 +40,7 @@ if __name__ == "__main__":
     # Create the environment - the state_initial and state_goal 
     # are randomly generated in the dataset, so we don't need to 
     # specify them here
-    num_seconds = 16
+    num_seconds = 2
     num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=None,

@@ -111,6 +111,15 @@ class ItemHistoryTracker:
     def get_history(self):
         return np.array(self.history)
 
+    def get_item(index):
+        return self.history[index]
+
+    def get_first_item(self):
+        return self.history[0]
+
+    def get_last_item(self):
+        return self.history[-1]
+
     def reset(self):
         self.history = []
 

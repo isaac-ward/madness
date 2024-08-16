@@ -47,7 +47,7 @@ class Environment:
         a done flag
         """
         # Get the new state
-        state = self.state_history_tracker.get_last_n_items_with_zero_pad(1)[0]
+        state = self.state_history_tracker.get_last_item()
         new_state = self.dynamics.step(state, action)
         # Log everything
         self.action_history_tracker.append(action)
@@ -55,8 +55,7 @@ class Environment:
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
         done_message = ""
-        # TODO Does this need to be -1?
-        if len(self.state_history_tracker) == self.episode_length - 1:
+        if len(self.state_history_tracker) == self.episode_length:
             done_flag = True
             done_message = "Ran out of steps"
         elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_radius):
@@ -80,7 +79,9 @@ class Environment:
         Extents is a list of 3 tuples of (min, max) for each dimension
         """
 
-        rng = np.random.default_rng() if (rng is None) else rng
+        if rng is None:
+            #warnings.warn("No random number generator provided, using default")
+            rng = np.random.default_rng()            
 
         extents = map_.extents_metres_xyz
         
@@ -133,7 +134,7 @@ class Environment:
         # Save the path (start->goal)
         utils.logging.pickle_to_filepath(
             f"{folder_environment}/path_xyz.pkl",
-            np.array([self.state_history_tracker.history[0], self.state_goal]),
+            np.array([self.state_history_tracker.get_first_item(), self.state_goal]),
         )
 
         # If the state history is empty then provide a warning

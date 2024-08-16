@@ -45,6 +45,22 @@ def unpickle_from_filepath(filepath):
     with open(filepath, "rb") as f:
         return pickle.load(f)
 
+def write_shape_to_text_file(filepath, array):
+    """
+    Write the shape of an array to a text file
+    """
+    with open(filepath, "w") as f:
+        f.write(str(array.shape))
+
+def write_preview_to_text_file(filepath, array, num_entries=4):
+    """
+    Write a preview of an array to a text file
+    """
+    with open(filepath, "w") as f:
+        f.write(str(array[:num_entries]))
+        f.write("\n...\n")
+        f.write(str(array[-num_entries:]))
+
 def save_state_and_action_trajectories(
     folder_save,
     state_trajectories,
@@ -59,10 +75,12 @@ def save_state_and_action_trajectories(
     if suffix != "": suffix = f"_{suffix}"
 
     # For debugging purposes save the shapes to text files
-    with open(os.path.join(folder_save, f"state_trajectories_shape{suffix}.txt"), "w") as f:
-        f.write(str(state_trajectories.shape))
-    with open(os.path.join(folder_save, f"action_trajectories_shape{suffix}.txt"), "w") as f:
-        f.write(str(action_trajectories.shape))
+    write_shape_to_text_file(os.path.join(folder_save, f"state_trajectories_shape{suffix}.txt"), state_trajectories)
+    write_shape_to_text_file(os.path.join(folder_save, f"action_trajectories_shape{suffix}.txt"), action_trajectories)
+
+    # For debugging purposes save the first 4 and last 4 entries to text files
+    write_preview_to_text_file(os.path.join(folder_save, f"state_trajectories_preview{suffix}.txt"), state_trajectories)
+    write_preview_to_text_file(os.path.join(folder_save, f"action_trajectories_preview{suffix}.txt"), action_trajectories)
 
     np.savez(os.path.join(folder_save, f"state_trajectories{suffix}.npz"), np.array(state_trajectories))
     np.savez(os.path.join(folder_save, f"action_trajectories{suffix}.npz"), np.array(action_trajectories))

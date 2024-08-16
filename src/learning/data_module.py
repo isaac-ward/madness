@@ -28,8 +28,9 @@ class EnvironmentDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
 
         # For speeding up dataloaders
-        #self.num_workers = 1
-        self.num_workers = os.cpu_count()//2 - 1
+        #self.num_workers = os.cpu_count()//2 - 1
+        # NOTE this has to be one for the RL paradigm to work
+        self.num_workers = 1
     
     def setup(self, stage=None):
         # Create the training and validation datasets
