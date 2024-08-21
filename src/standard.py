@@ -35,7 +35,7 @@ def get_standard_flow_action_dist_policy_arguments():
     map_ = get_standard_map()
     return {
         "dynamics": dyn,
-        "K": 1000,
+        "K": 512,
         "H": 50,
         "lambda_": None,
         "map_": map_,
