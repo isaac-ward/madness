@@ -6,6 +6,8 @@ import pytorch_lightning as pl
 import os 
 import shutil
 import warnings
+import matplotlib.pyplot as plt
+import tempfile
 
 import wandb
 import nflows.nn.nets
@@ -438,6 +440,20 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         costs = torch.tensor(costs, dtype=torch.float32)
         costs = costs.to(log_p_likelihoods.device)
         log_p_optimality = -costs
+        log_p_optimality = log_p_optimality.view(B, self.K)
+
+        # Assert same shapes
+        assert log_p_optimality.shape == log_p_likelihoods.shape, f"Expected log_p_optimality and log_p_likelihoods to have the same shape, got {log_p_optimality.shape} and {log_p_likelihoods.shape} respectively"
+
+        # We now ensure that both the log likelihoods and the log optimality when converted into 
+        # probability space would sum to 1, as we want to balance the two and ensure they are on
+        # the same scale, as well as ensure that they represent true probability distributions
+        def _make_log_probs_valid_probability_distribution(log_probs):
+            # Use torch.logsumexp for numerically stable normalization
+            log_probs_normalized = log_probs - torch.logsumexp(log_probs, dim=1, keepdim=True)
+            return log_probs_normalized
+        log_p_optimality  = _make_sum_to_1_logspace(log_p_optimality)
+        log_p_likelihoods = _make_sum_to_1_logspace(log_p_likelihoods)
 
         # Here we define some hyperparameters that balance exploration and exploitation
         # exploitation refers to optimality, and exploration refers to the entropy of the
@@ -447,7 +463,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # the loss
         # i.e. if this is big our distribution is dialed in on the optimal trajectory
         #      if this is small our distribution is more spread out, and less concerned with optimality
-        prefer_optimality_over_entropy = 500
+        prefer_optimality_over_entropy = 1
 
         # Addition in log space is multiplication in normal space
         # Multiplication in log space is exponentiation in normal space
@@ -470,7 +486,20 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         assert not torch.isnan(weights).any(), f"Weights contain {torch.sum(torch.isnan(weights)).item()}/{B*self.K} NaNs"
 
         # Assemble the total loss
-        loss = -torch.mean(weights * log_p_likelihoods)
+        log_p_likelihood_weighted_losses = -weights * log_p_likelihoods
+        loss = torch.mean(log_p_likelihood_weighted_losses)
+
+        # Log the probability distributions in probability space, to do this we exponentiate
+        # and normalize and move to cpu
+        if batch_idx % 100 == 0:
+            self._log_probability_distributions(
+                f"{stage}/probs_and_weights", 
+                log_p_optimality, 
+                log_p_likelihoods, 
+                log_p_combined, 
+                weights,
+                log_p_likelihood_weighted_losses,
+            )
 
         # Do custom logging
         self._log_scalar_per_step(f'{stage}/loss', loss, prog_bar=True)
@@ -490,9 +519,42 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         B = 1
         self.log(name, value, on_step=True, on_epoch=True, prog_bar=prog_bar, logger=True, batch_size=B)
 
-    def _log_probability_distribution(self, name, distribution):
-        self.logger.experiment.log({name: wandb.Histogram(distribution)}, step=self.global_step)
-    
+    def _log_probability_distributions(self, title, log_p_optimality, log_p_likelihoods, log_p_combined, weights, log_p_likelihood_weighted_losses):
+        # Define an inner function to avoid code repetition
+        def plot_distribution(ax, values, color, xlabel, ylabel):
+            values = values.detach().cpu().numpy().squeeze()
+            assert len(values.shape) == 1, f"Expected values to be 1D, got shape={values.shape}"
+            # No gaps between bars
+            ax.bar(range(len(values)), values, color=color, width=1.0)
+            ax.set_ylabel(ylabel)
+            ax.set_xlabel(xlabel)
+            ax.set_xticks([])  # Hide x-ticks
+            # Squeeze x axis
+            ax.set_xlim(-0.5, len(values) - 0.5)
+
+        # Create a figure with four subplots stacked vertically
+        fig, axs = plt.subplots(5, 1, figsize=(14, 6))
+
+        # Plot the distributions using the inner function
+        plot_distribution(axs[0], log_p_optimality, 'blue', '(more negative=relatively higher cost=less optimal)', 'Log\nOptimality')
+        plot_distribution(axs[1], log_p_likelihoods, 'red', '(more negative=less likely=more explorative & closer to zero=more likely=more exploitative)', 'Log\nLikelihood')
+        plot_distribution(axs[2], log_p_combined, 'purple', '(more negative=less multiobjective desirability=lower weight)', 'Log\nCombined')
+        plot_distribution(axs[3], weights, 'black', '(larger=more contribution to loss=more penalized)', 'Weights')
+        plot_distribution(axs[4], log_p_likelihood_weighted_losses, 'black', '(larger=associated with more penalized behavior)', 'Log Likelihood\nWeighted Losses')
+
+        plt.tight_layout()  # Adjust layout to fit everything nicely
+
+        # Create a temporary file to save the plot, with delete=True
+        with tempfile.NamedTemporaryFile(delete=True, suffix='.png') as tmpfile:
+            # Save the figure
+            plt.savefig(tmpfile.name)
+
+            # Log the figure as an image to Wandb before the file gets deleted
+            self.logger.experiment.log({title: wandb.Image(tmpfile.name)})
+
+        # Close the plot to free up memory
+        plt.close()
+
     def training_step(self, batch, batch_idx):
         return self.generic_step(batch, batch_idx, 'train')
 
