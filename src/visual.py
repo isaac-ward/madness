@@ -541,7 +541,7 @@ class Visual:
                 # If we have access to MPPI data, then render it to some plots too
                 if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
 
-                    # What was the min and max cost this frame
+                    # What was the min and max cost this frame (true), or throughout the whole run (false)
                     make_colors_local = False
                     if make_colors_local:
                         mppi_cost_min = mppi_cost_mins[frame]

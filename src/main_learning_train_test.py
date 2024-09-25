@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
     # Create a trainer
     trainer = pl.Trainer(
-        max_epochs=32,
+        max_epochs=32, # 32
         check_val_every_n_epoch=1,
         num_sanity_val_steps=4, 
         # Change hardware settings accordingly
