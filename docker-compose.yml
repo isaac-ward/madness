@@ -1,6 +1,17 @@
-version: '3'
+version: '3.8'
 services:
   madness:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    #runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all # Set to 'none' to disable GPU or specify device IDs
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     container_name: madness
     build:
       context: ./
@@ -13,15 +24,5 @@ services:
       - ./cache:/mnt/cache
       - ./logs:/mnt/logs
       - ./src:/mnt/src
+      - ./env:/mnt/env
     command: tail -f /dev/null
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all # Set to 'none' to disable GPU or specify device IDs
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    # GPU pass through (if available)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]

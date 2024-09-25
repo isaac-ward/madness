@@ -10,6 +10,9 @@ import copy
 from utils.general import Cacher
 import utils.logging
 
+def test_nothing():
+    return np.zeros((1,3))
+
 def test_points():
     # It's gonna be N points from 0,0,0 to 10,0,0
     N = 100
@@ -95,7 +98,8 @@ class Map:
         self.extents_metres_xyz = extents_metres_xyz
         
         # Load the map file as an occupancy grid
-        self.points = test_columns()
+        #self.points = test_columns()
+        self.points = test_nothing()
 
         # Create a voxel grid representation of the map
         num_voxels_per_axis = [
@@ -127,7 +131,7 @@ class Map:
         print(f"\t-voxel_grid (shape): {self.voxel_grid.shape}")
         print(f"\t-voxel_grid (total): {np.prod(self.voxel_grid.shape):.0f}")
         print(f"\t-voxel_grid (occupied): {np.sum(self.voxel_grid):.0f}")
-        print(f"\t-voxel_grid (occupied %): {np.sum(self.voxel_grid) / np.prod(self.voxel_grid.shape) * 100:.6f}%")
+        print(f"\t-voxel_grid (occupied %): {np.sum(self.voxel_grid) / np.prod(self.voxel_grid.shape) * 100:.6f} %")
     
     # ----------------------------------------------------------------
         
@@ -253,6 +257,13 @@ class Map:
             self.batch_is_collision(batch_metres_xyzs, collision_radius),
             self.batch_is_out_of_bounds(batch_metres_xyzs),
         )
+    
+    def is_not_valid(
+        self,
+        metres_xyz,
+        collision_radius,
+    ):
+        return self.batch_is_not_valid(np.array([metres_xyz]), collision_radius)[0]
 
     # ----------------------------------------------------------------
 
