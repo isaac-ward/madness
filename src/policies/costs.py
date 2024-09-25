@@ -57,11 +57,14 @@ def batch_cost(
     flat_p = p.reshape((batch_size * H, 3))
     invalid_terms = xp.sum(map_.batch_is_not_valid(flat_p, collision_radius=1).reshape((batch_size, H)), axis=1)
 
-    # Minimize velocity
-    #velocity_terms = xp.sum(xp.linalg.norm(v, axis=2), axis=1)
+    # # Minimize velocity
+    # velocity_terms = xp.sum(xp.linalg.norm(v, axis=2), axis=1)
 
-    # Minimize angular velocity
-    #angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
+    # # Minimize angular velocity
+    # angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
+
+    # Term for minimizing control effort
+    control_effort_terms = xp.sum(xp.linalg.norm(action_trajectory_plans, axis=2), axis=1)
 
     # Assemble
     cost = \
@@ -71,8 +74,14 @@ def batch_cost(
         10000 * invalid_terms + \
         0 * goal_r_terms + \
         0 * goal_v_terms + \
-        0 * goal_w_terms
+        0 * goal_w_terms + \
+        0 * control_effort_terms
+    
+    # Assert the correct shape
+    assert xp.shape(cost) == (batch_size,), f"Cost shape is {xp.shape(cost)}, expected {(batch_size,)}"
     
     # Big numbers will be exponentiated to zero given our floating 
     # number precision
-    return cost / 1e6
+    # NOTE: choosing the division factor here is important - inspect the loss weight
+    # computations and pick a number that doesn't overly flatten the log optimality plot
+    return cost / 1e3

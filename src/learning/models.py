@@ -452,8 +452,8 @@ class PolicyFlowActionDistribution(pl.LightningModule):
             # Use torch.logsumexp for numerically stable normalization
             log_probs_normalized = log_probs - torch.logsumexp(log_probs, dim=1, keepdim=True)
             return log_probs_normalized
-        log_p_optimality  = _make_sum_to_1_logspace(log_p_optimality)
-        log_p_likelihoods = _make_sum_to_1_logspace(log_p_likelihoods)
+        log_p_optimality  = _make_log_probs_valid_probability_distribution(log_p_optimality)
+        log_p_likelihoods = _make_log_probs_valid_probability_distribution(log_p_likelihoods)
 
         # Here we define some hyperparameters that balance exploration and exploitation
         # exploitation refers to optimality, and exploration refers to the entropy of the
@@ -463,11 +463,11 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # the loss
         # i.e. if this is big our distribution is dialed in on the optimal trajectory
         #      if this is small our distribution is more spread out, and less concerned with optimality
-        prefer_optimality_over_entropy = 1
+        prefer_optimality_over_exploration = 1
 
         # Addition in log space is multiplication in normal space
         # Multiplication in log space is exponentiation in normal space
-        log_p_combined = prefer_optimality_over_entropy * log_p_optimality + log_p_likelihoods
+        log_p_combined = prefer_optimality_over_exploration * log_p_optimality + log_p_likelihoods
 
         # What fraction of each samples combined probability does
         # each sample take up?
@@ -478,7 +478,11 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # calculation
         # Recall that dim here makes every slice along the dim sum to 1, so this
         # needs to be across all samples
-        weights = torch.softmax(log_p_combined, dim=1)
+        # NOTE we have a temperature parameter:
+        # if T > 1, then we have a flatter, more uniform distribution
+        # if T < 1, then we have a sharper, more peaked distribution
+        temperature = 100
+        weights = torch.softmax(log_p_combined / temperature, dim=1)
 
         # Assert the shape of weights
         assert weights.shape == (B, self.K), f"Expected weights to have shape (B={B}, K={self.K}), got {weights.shape}"
@@ -489,9 +493,37 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         log_p_likelihood_weighted_losses = -weights * log_p_likelihoods
         loss = torch.mean(log_p_likelihood_weighted_losses)
 
+        # An alternative approach to the loss is to only keep the samples that are 
+        # beneficial - then do the mean log likelihood of ONLY THOSE samples
+        # loss = -flow.log_prob(inputs=x).mean()
+        # TODO select the:
+        # X% least cost 
+        # X% most explorative samples (the ones that best explore state space)
+        def score_cost(index):
+            return costs[index]
+        def score_exploration(index):
+            # Return the length in positional space by looking at the state plans
+            # and computing the distance along the path
+            state_plan = state_plans[index]
+            return torch.sum(torch.linalg.norm(state_plan[1:] - state_plan[:-1], dim=1))
+        percentage_taken = 0.5
+        num_samples_to_take = int(percentage_taken * self.K)
+        # Get the least cost and most explorative samples
+        def get_best_samples(score_fn):
+            scores = score_fn(torch.arange(self.K))
+            sorted_indices = torch.argsort(scores)
+            return sorted_indices[:num_samples_to_take]
+        best_cost_indices = get_best_samples(score_cost)
+        best_exploration_indices = get_best_samples(score_exploration)
+        # Combine the two
+        best_indices = torch.unique(torch.cat((best_cost_indices, best_exploration_indices)))
+        # Compute the loss
+        loss = -torch.mean(log_p_likelihoods[best_indices])
+
         # Log the probability distributions in probability space, to do this we exponentiate
         # and normalize and move to cpu
-        if batch_idx % 100 == 0:
+        log_probability_plots = False 
+        if batch_idx % 50 == 0 and log_probability_plots:
             self._log_probability_distributions(
                 f"{stage}/probs_and_weights", 
                 log_p_optimality, 
@@ -544,6 +576,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
 
         plt.tight_layout()  # Adjust layout to fit everything nicely
 
+        # TODO move this approach to utilities
         # Create a temporary file to save the plot, with delete=True
         with tempfile.NamedTemporaryFile(delete=True, suffix='.png') as tmpfile:
             # Save the figure
