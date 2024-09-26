@@ -1,5 +1,7 @@
 import jax.numpy as jnp
 import dynamics_jax as dynamics
+import os
+import shutil
 
 class PolicyiLQR:
     def __init__(
@@ -12,7 +14,7 @@ class PolicyiLQR:
         action_ranges,
         lambda_,
         map_,
-        use_gpu_if_available=True,
+        use_gpu_if_available=False,
     ):
         """
         Roll out a bunch of random actions and select the best one
@@ -43,6 +45,39 @@ class PolicyiLQR:
 
         # If we're using a GPU, we'll need to move some things over
         self.use_gpu_if_available = use_gpu_if_available
+
+        # Defaultly no logging
+        self.log_folder = None
+
+        # Defaultly no goal
+        self.state_goal = None
+    
+    def update_state_goal(
+        self,
+        state_goal,
+    ):
+        """
+        Update the path to follow
+        """
+        self.state_goal = state_goal
+
+    def enable_logging(
+        self,
+        run_folder,
+    ):
+        """
+        Enable logging to a folder
+        """
+        self.log_folder = os.path.join(run_folder, "policy", "mppi")
+
+    def delete_logs(self):
+        """
+        Delete all logs
+        """
+        if self.log_folder is not None:
+            shutil.rmtree(self.log_folder)
+
+    # ----------------------------------------------------------------
     
     def ilqr(self,x_track,u_track,quadrotor:dynamics.DynamicsQuadcopter3D,Q,R,QN,eps=1e-3,max_iters=1000):
         """
