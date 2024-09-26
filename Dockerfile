@@ -40,7 +40,7 @@ RUN /bin/bash -c "source /opt/conda/bin/activate && \
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
     # pip install pytorch-lightning==1.9.0 && \
     pip install pytorch-lightning==2.1.0 && \
-    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy numba nflows torchinfo wandb && \
+    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy nflows torchinfo wandb && \
     conda install -c conda-forge cupy -y && \
     conda clean -ya"
     
