@@ -40,22 +40,9 @@ RUN /bin/bash -c "source /opt/conda/bin/activate && \
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
     # pip install pytorch-lightning==1.9.0 && \
     pip install pytorch-lightning==2.1.0 && \
-    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy numba nflows torchinfo wandb && \
+    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy numba nflows torchinfo wandb jax && \
     conda install -c conda-forge cupy -y && \
     conda clean -ya"
-RUN /opt/conda/bin/conda create -n madness python=3.10 -y
-RUN /bin/bash -c "source activate madness && pip install scipy"
-RUN /bin/bash -c "source activate madness && pip install numpy"
-RUN /bin/bash -c "source activate madness && pip install matplotlib"
-RUN /bin/bash -c "source activate madness && pip install tqdm"
-RUN /bin/bash -c "source activate madness && pip install networkx"
-RUN /bin/bash -c "source activate madness && pip install fastdtw"
-RUN /bin/bash -c "source activate madness && pip install cvxpy"
-RUN /bin/bash -c "source activate madness && pip install numba"
-RUN /bin/bash -c "source activate madness && pip install nflows"
-RUN /bin/bash -c "source activate madness && pip install lightning"
-RUN /bin/bash -c "source activate madness && pip install jax"
-RUN /bin/bash -c "source activate madness && conda install -c conda-forge cupy -y"
     
 # Ensure the madness environment is activated by default in bash
 RUN echo "source /opt/conda/bin/activate madness" >> /root/.bashrc
