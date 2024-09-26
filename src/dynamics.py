@@ -4,7 +4,6 @@ import cupy as cp
 from scipy.spatial.transform import Rotation as R
 import pickle
 import os
-from numba import njit, prange, cuda, float32
 import warnings
 
 import utils.general as general
