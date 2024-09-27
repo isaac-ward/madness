@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # Are we using GPU? 
     # NOTE: suggest false for now because it's slow
     use_gpu_if_available = False
-    keep_policy_logs = False
+    keep_policy_logs = True
 
     # Will log everything to here
     log_folder = utils.logging.make_log_folder(name="run")

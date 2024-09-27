@@ -120,6 +120,8 @@ class Visual:
     def load_mppi_steps_states_actions_costs(self):
         mppi_folder = os.path.join(self.run_folder, "policy", "mppi")
         step_folders = [f for f in os.listdir(mppi_folder) if os.path.isdir(os.path.join(mppi_folder, f))]
+        # Sort alphabetically
+        step_folders = sorted(step_folders, reverse=False)
         # Load the states, actions, and costs for each step
         S = []
         A = []
