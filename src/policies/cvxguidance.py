@@ -11,6 +11,50 @@ import policies.samplers
 # TODO
 # import sdf.sdf write and import sdf class that holds sphere locations and sizes (plus the field?)
 
+class ConvexSolver:
+    def __init__(
+            self,
+            dt,
+            K,
+            dynamics,
+            state_history,
+            state_goal
+    ):
+        self.dynamics = dynamics
+        self.K = K
+        self.dt = dt
+        self.action = cvx.Variable((self.K,2))
+        self.state = cvx.Variable(self.K + 1, self.dynamics.state_size())
+        self.constraints = []
+        self.objective = cvx.sum( [ cvx.square(self.action[i,1]) + cvx.square(self.action[i,2]) for i in range(K) ] )
+
+    def dyn_constraints(
+            self
+    ):
+        self.constraints += []
+
+    def sdf_constraints(
+            self
+    ):
+        self.constraints += []
+
+    def boundary_constraints(
+            self
+    ):
+        self.constraints += []
+
+    def solve(
+            self
+    ):
+        prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
+        prob.solve()
+
+        optimal_action_history = self.action.value
+        optimal_state_history = self.state.value
+
+        return optimal_action_history, optimal_state_history
+
+
 class PolicyConvex:
     def __init__(
             self,
@@ -51,5 +95,5 @@ class PolicyConvex:
             state_history
     ):
         
-        optimal_action_history, optimal_state_history = 
-        return optimal_action_history, optimal_state_history
+        optimal_action, optimal_state = 
+        return optimal_action, optimal_state
