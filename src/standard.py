@@ -32,7 +32,7 @@ def get_standard_map():
 
 def get_28x28x28_at_111():
     return Map(
-        map_filepath="/mnt/assets/maps/28x28x28_at_1-1-1.obj",
+        map_filepath="/workspace/assets/maps/28x28x28_at_1-1-1.obj",
         voxel_per_x_metres=0.25,
         extents_metres_xyz=[
             [0, 30], 
@@ -43,7 +43,7 @@ def get_28x28x28_at_111():
 
 def get_28x28x28_at_111_with_obstacles():
     return Map(
-        map_filepath="/mnt/assets/maps/28x28x28_at_1-1-1_with_obstacles.obj",
+        map_filepath="/workspace/assets/maps/28x28x28_at_1-1-1_with_obstacles.obj",
         voxel_per_x_metres=0.25,
         extents_metres_xyz=[
             [0, 30], 
