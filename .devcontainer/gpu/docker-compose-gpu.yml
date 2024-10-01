@@ -14,15 +14,11 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     container_name: madness
     build:
-      context: ./
+      context: ../../
       dockerfile: Dockerfile
     ports:
       - "22:22"
       - "8888:8888"
     volumes:
-      - ./assets:/mnt/assets
-      - ./cache:/mnt/cache
-      - ./logs:/mnt/logs
-      - ./src:/mnt/src
-      - ./env:/mnt/env
+      - ../../:/workspace
     command: tail -f /dev/null
