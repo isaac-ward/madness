@@ -1,0 +1,14 @@
+{
+  "dockerComposeFile": "docker-compose-gpu.yml",
+  "service": "madness",
+  "workspaceFolder": "/workspace",
+  "settings": {
+      "python.pythonPath": "/opt/conda/envs/madness/bin/python"
+    },
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python","ms-python.debugpy"]
+    }
+
+  }
+}
