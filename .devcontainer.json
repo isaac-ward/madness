@@ -2,7 +2,7 @@
   "dockerFile": "Dockerfile",
   "customizations": {
     "vscode": {
-      "extensions": ["ms-python.debugpy"]
+      "extensions": ["ms-python.python","ms-python.debugpy"]
     }
   }
 }
