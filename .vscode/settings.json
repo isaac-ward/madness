@@ -1,0 +1,6 @@
+{
+
+    // Specifies the Python interpreter to use
+    "python.defaultInterpreterPath": "/opt/conda/envs/madness/bin/python",
+
+}
