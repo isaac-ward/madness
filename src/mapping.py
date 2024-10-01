@@ -7,8 +7,10 @@ import scipy.spatial
 import networkx as nx
 from tqdm import tqdm
 import copy
+import trimesh
 from utils.general import Cacher
 import utils.logging
+import warnings
 
 def test_nothing():
     return np.zeros((1,3))
@@ -97,9 +99,17 @@ class Map:
         self.voxel_per_x_metres = voxel_per_x_metres
         self.extents_metres_xyz = extents_metres_xyz
         
-        # Load the map file as an occupancy grid
-        #self.points = test_columns()
-        self.points = test_nothing()
+        # Load the map file as an occupancy grid, if the file exists
+        try:
+            # Use trimesh to load the obj file
+            mesh = trimesh.load(map_filepath)
+            self.points = np.array(mesh.vertices)
+            print(f"Loaded map file at: {map_filepath}, found {len(self.points)} points")
+            
+        except:
+            warnings.warning(f"Error loading map file at: {map_filepath}, using 'nothing' test map")
+            #self.points = test_columns()
+            self.points = test_nothing()
 
         # Create a voxel grid representation of the map
         num_voxels_per_axis = [
