@@ -41,9 +41,13 @@ if __name__ == "__main__":
     dyn = standard.get_standard_dynamics_quadcopter_3d()
 
     # Create a map representation
-    map_ = standard.get_standard_map()
+    #map_ = standard.get_standard_map()
+    map_ = standard.get_28x28x28_at_111()
+    #map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
+    # NOTE: The following utility finds two random points - it doesn't check for collisions!
+    # If you're using a map with invalid positions then you might need to specify the start and goal states manually
     state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=26)
 
     # # Generate a path from the initial state to the goal state

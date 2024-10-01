@@ -1,0 +1,3 @@
+1. Select object(s) that are to comprise the new map
+2. File -> Export -> Wavefront(.obj)
+3. Select options as shown in docs/blender/export-options.png
