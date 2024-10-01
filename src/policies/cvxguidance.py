@@ -61,6 +61,8 @@ class PolicyConvex:
             dynamics,
             sdf_nearest
             ):
+        
+        self.solver = ConvexSolver
         self.dynamics = dynamics
         
         self.sdf = sdf_nearest
@@ -91,9 +93,9 @@ class PolicyConvex:
         self.update_sdf(sdf_nearest)
 
     def act(
-            self
+            self,
             state_history
     ):
-        
-        optimal_action, optimal_state = 
-        return optimal_action, optimal_state
+    
+        optimal_action_history, optimal_state_history = self.solver.solve()
+        return optimal_action_history[0], optimal_state_history[0]
