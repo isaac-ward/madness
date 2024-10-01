@@ -107,7 +107,7 @@ class Map:
             print(f"Loaded map file at: {map_filepath}, found {len(self.points)} points")
             
         except:
-            warnings.warning(f"Error loading map file at: {map_filepath}, using 'nothing' test map")
+            warnings.warn(f"Error loading map file at: {map_filepath}, using 'nothing' test map")
             #self.points = test_columns()
             self.points = test_nothing()
 
