@@ -14,9 +14,9 @@
 - When prompted with a drop down menu, select "basic" for no gpu acceleration and "gpu" for gpu acceleration
 #### Option B (Terminal Interface)
 - Open a terminal in VSCode
-- Change directories into .devcontainer/
-- Run the following commands without changes for the default Docker build (no gpu acceleration)
-  - To run with gpu acceleration, replace `docker-compose` with `docker-compose-gpu`
+- Change directories into `.devcontainer/<build>`
+  - Replace `<build>` with `basic` or `gpu` depending on whether you would like gpu acceleration
+- Run the following commands
 
 ```bash
 # Build the Docker image in the host machine
