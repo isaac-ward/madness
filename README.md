@@ -1,11 +1,21 @@
 # madness
 
 ## Reproducibility
-
+### Installation and Setup
 - Users should create and fill out a ```env/.env``` file; the file ```env/.env.example``` is provided as a template. This requires creating an account on https://wandb.ai/.
 - Install Docker [here](https://docs.docker.com/engine/install/).
 - **Ensure that the Docker daemon is running**. Edit the Docker Desktop settings under *Docker Engine* to allow for the nvidia runtime.
-- Run the following commands:
+- Open Visual Studio Code at the project root
+- Install the 'Dev Containers' extension
+### Build and Open Contianer
+#### Option A (IDE Interface)
+- Use the keyboard command <kbd>Ctrl + Shift + P</kbd> (Windows) or <kbd>command + shift + P</kbd> (MacOS) to open the Command Palette.
+- Type the command 'Dev Containers: Reopen in Container' and hit <kbd>Enter</kbd> (Windodws) or <kbd> return </kbd> (MacOS)
+- When prompted with a drop down menu, select "basic" for no gpu acceleration and "gpu" for gpu acceleration
+#### Option B (Terminal Interface)
+- Change directories into .devcontainer/
+- Run the following commands without changes for the default Docker build (no gpu acceleration)
+  - To run with gpu acceleration, replace `docker-compose` with `docker-compose-gpu`
 
 ```bash
 # Build the Docker image in the host machine
@@ -14,6 +24,12 @@
 docker-compose build --no-cache
 # Start up a container of the built image in the host machine
 docker-compose up -d --no-deps
+``` 
+
+## Unit Test
+- Run the following commands in the VSCode terminal (open one if necessary)
+
+```bash
 # Open a shell inside that container (multiple shells can be opened in one container)
 docker exec -it madness bash
 # Execute any main script in that shell
