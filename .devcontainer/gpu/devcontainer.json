@@ -1,5 +1,5 @@
 {
-  "dockerComposeFile": "docker-compose-gpu.yml",
+  "dockerComposeFile": "docker-compose.yml",
   "service": "madness",
   "workspaceFolder": "/workspace",
   "customizations": {
