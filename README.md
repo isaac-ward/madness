@@ -9,8 +9,8 @@
 - Install the 'Dev Containers' extension
 ### Build and Open Contianer
 #### Option A (IDE Interface)
-- Use the keyboard command <kbd>Ctrl + Shift + P</kbd> (Windows) or <kbd>command + shift + P</kbd> (MacOS) to open the Command Palette.
-- Type the command 'Dev Containers: Reopen in Container' and hit <kbd>Enter</kbd> (Windodws) or <kbd> return </kbd> (MacOS)
+- Use the keyboard command <kbd>Ctrl + Shift + P</kbd> (Windows) or <kbd>⌘ + ⇧ + P</kbd> (MacOS) to open the Command Palette.
+- Type the command 'Dev Containers: Reopen in Container' and hit <kbd>Enter</kbd> (Windodws) or <kbd> ⏎ </kbd> (MacOS)
 - When prompted with a drop down menu, select "basic" for no gpu acceleration and "gpu" for gpu acceleration
 #### Option B (Terminal Interface)
 - Change directories into .devcontainer/
