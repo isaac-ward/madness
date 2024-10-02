@@ -8,27 +8,13 @@
 - Open Visual Studio Code at the project root
 - Install the 'Dev Containers' extension
 ### Build and Open Contianer
-#### Option A (IDE Interface)
 - Use the keyboard command <kbd>Ctrl + Shift + P</kbd> (Windows) or <kbd>⌘ + ⇧ + P</kbd> (MacOS) to open the Command Palette.
 - Type the command 'Dev Containers: Reopen in Container' and hit <kbd>Enter</kbd> (Windodws) or <kbd> return ⏎ </kbd> (MacOS)
 - When prompted with a drop down menu, select "basic" for no gpu acceleration and "gpu" for gpu acceleration
-#### Option B (Terminal Interface)
-- Open a terminal in VSCode
-- Change directories into `.devcontainer/<build>`
-  - Replace `<build>` with `basic` or `gpu` depending on whether you would like gpu acceleration
-- Run the following commands
 
-```bash
-# Build the Docker image in the host machine
-# (you can remove the --no-cache flag to use cached builds
-# this speeds up future builds, but may cause issues if the Dockerfile is edited)
-docker-compose build --no-cache
-# Start up a container of the built image in the host machine
-docker-compose up -d --no-deps
-``` 
-
-## Unit Test
-- Run the following commands in the VSCode terminal (open one if necessary)
+### Unit Test
+- Once you are in the container, open a terminal
+- Run the following commands to perform a basic test of the MPPI guidance and control architecture
 
 ```bash
 # Open a shell inside that container (multiple shells can be opened in one container)
