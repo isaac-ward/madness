@@ -10,9 +10,10 @@
 ### Build and Open Contianer
 #### Option A (IDE Interface)
 - Use the keyboard command <kbd>Ctrl + Shift + P</kbd> (Windows) or <kbd>⌘ + ⇧ + P</kbd> (MacOS) to open the Command Palette.
-- Type the command 'Dev Containers: Reopen in Container' and hit <kbd>Enter</kbd> (Windodws) or <kbd> ⏎ </kbd> (MacOS)
+- Type the command 'Dev Containers: Reopen in Container' and hit <kbd>Enter</kbd> (Windodws) or <kbd> return ⏎ </kbd> (MacOS)
 - When prompted with a drop down menu, select "basic" for no gpu acceleration and "gpu" for gpu acceleration
 #### Option B (Terminal Interface)
+- Open a terminal in VSCode
 - Change directories into .devcontainer/
 - Run the following commands without changes for the default Docker build (no gpu acceleration)
   - To run with gpu acceleration, replace `docker-compose` with `docker-compose-gpu`
