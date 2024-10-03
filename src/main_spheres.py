@@ -145,10 +145,14 @@ def get_max_radius(center,radius_guess=50):
 
 class SDF:
     def __init__(
+        self,
         center_metres_xyz,
         radius_metres,
     ):
-        
+        """
+        """
+        self.center_metres_xyz = center_metres_xyz
+        self.radius_metres = radius_metres
 
 
 if __name__ == "__main__":
