@@ -191,6 +191,12 @@ class Map:
         ]
         return metres_coords
     
+    def batch_voxel_coords_to_metres(
+        self,
+        batch_voxel_coords,
+    ):
+        return np.array([ self.voxel_coords_to_metres(x) for x in batch_voxel_coords ])
+    
     # ----------------------------------------------------------------
     
     def voxel_coord_in_bounds(
@@ -225,7 +231,15 @@ class Map:
         distances, indices = self.kd_tree.query(batch_metres_xyzs)
         return distances < collision_radius
     
-    def batch_is_out_of_bounds(
+    def batch_is_out_of_bounds_voxel_coords(
+        self,
+        batch_voxel_coords,
+    ):
+        # Convert to metres xyz then call other function
+        batch_metres_xyzs = self.batch_voxel_coords_to_metres(batch_voxel_coords)
+        return self.batch_is_out_of_bounds_metres_xyz(batch_metres_xyzs)
+    
+    def batch_is_out_of_bounds_metres_xyz(
         self,
         batch_metres_xyzs,
     ):
@@ -265,7 +279,7 @@ class Map:
         """
         return np.logical_or(
             self.batch_is_collision(batch_metres_xyzs, collision_radius),
-            self.batch_is_out_of_bounds(batch_metres_xyzs),
+            self.batch_is_out_of_bounds_metres_xyz(batch_metres_xyzs),
         )
     
     def is_not_valid(
