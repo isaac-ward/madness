@@ -24,6 +24,13 @@ import standard
 
 # TODO implement wandb to allow for more efficient grid searching of parameters
 
+class cube:
+    def __init__(self,center,radius):
+        """
+        """
+        self.center = center
+        self.radius = radius
+
 def build_cube(center:np.ndarray,radius:int):
     """
     """
@@ -112,11 +119,37 @@ def find_max_cube(center:np.ndarray):
             if map_.is_voxel_occupied(points_horizon[_i]):
                 no_collision = False
                 break
+        
+        if radius > 10:
+            break
     
     # Reduce radius to safe occupancy
     radius -= 1
 
-    return radius
+    # Build cube
+    sol_cube = cube(center,radius)
+
+    return sol_cube
+
+def get_max_radius(center,radius_guess=50):
+    """
+    """
+    # Get all voxels within radius_guess
+    voxels_to_check = list()
+    for _x in range(-radius_guess,radius_guess):
+        for _y in range(-radius_guess,radius_guess):
+            for _z in range(-radius_guess,radius_guess):
+                if (_x-center[0])**2 + (_y-center[1])**2 + (_z-center[2])**2 <= radius_guess**2:
+                    voxels_to_check.append(np.array())
+                    """"""
+
+class SDF:
+    def __init__(
+        center_metres_xyz,
+        radius_metres,
+    ):
+        
+
 
 if __name__ == "__main__":
 
@@ -156,15 +189,20 @@ if __name__ == "__main__":
     start_point = map_.metres_to_voxel_coords(state_initial[:3])
 
     # Create a list to hold centers and radii
-    centers = list()
-    radii = list()
+    cubes = list()
 
     # Add starting point to list
-    centers.append(start_point)
-    radii.append(find_max_cube(start_point))
+    cubes.append(find_max_cube(start_point))
 
-    # Pick next point
-    
+    # ----------------------------------------------------------------
+    # Logging from here on
+    # ----------------------------------------------------------------
+
+    # Save the cubes
+    utils.logging.pickle_to_filepath(
+        os.path.join(log_folder, "signed_distance_function.pkl"),
+        cubes,
+    )
 
     # Create the environment
     num_seconds = 16
@@ -191,5 +229,6 @@ if __name__ == "__main__":
 
     # Render visuals
     visual = Visual(log_folder)
-    visual.plot_histories()
-    visual.render_video(desired_fps=25)
+    #visual.plot_histories()
+    #visual.render_video(desired_fps=25)
+    visual.plot_environment()
