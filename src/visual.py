@@ -117,6 +117,28 @@ class Visual:
         # Close the figure
         plt.close(fig)
 
+    def plot_environment(self):
+
+        # For plot environment to work correctly we need the following
+        # - signed_distance_function.pkl
+        # - map.pkl
+
+        # Create a figure
+        fig = plt.figure(figsize=(12, 8))
+        # 1 row, two columns
+        gs = gridspec.GridSpec(4, 4) #, height_ratios=[1, 1, 0.15, 0.15, 0.15, 0.15])
+        axs = {
+            # main world view render
+            "main": fig.add_subplot(gs[0, 0], projection='3d'),
+
+            # orthographic views (from which axis)
+            "z": fig.add_subplot(gs[0, 1], projection='3d'),
+            "x": fig.add_subplot(gs[1, 0], projection='3d'),
+            "y": fig.add_subplot(gs[1, 1], projection='3d'),
+        }
+
+        pass
+
     def load_mppi_steps_states_actions_costs(self):
         mppi_folder = os.path.join(self.run_folder, "policy", "mppi")
         step_folders = [f for f in os.listdir(mppi_folder) if os.path.isdir(os.path.join(mppi_folder, f))]
