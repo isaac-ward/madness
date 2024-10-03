@@ -20,8 +20,8 @@
 # Open a shell inside that container (multiple shells can be opened in one container)
 docker exec -it madness bash
 # Execute any main script in that shell
-python /mnt/src/main_mppi.py
-python /mnt/src/main_learning_train_test.py
+python /src/main_mppi.py
+python /src/main_learning_train_test.py
 # Exit from the shell/container when done
 exit
 # Close the container from the host machine
