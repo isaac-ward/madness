@@ -300,12 +300,17 @@ class Map:
     ):
         # Given a center voxel coordinate and a radius in voxels, return all the voxels
         # within that radius (sphere)
+
+        # Voxels are given as integer values
+        center_voxel_coords_ints = [int(center_voxel_coords[0]),int(center_voxel_coords[1]),int(center_voxel_coords[2])]
+        radius_voxels = int(radius_voxels)
+
         return np.array([
             [x, y, z]
-            for x in range(center_voxel_coords[0] - radius_voxels, center_voxel_coords[0] + radius_voxels + 1)
-            for y in range(center_voxel_coords[1] - radius_voxels, center_voxel_coords[1] + radius_voxels + 1)
-            for z in range(center_voxel_coords[2] - radius_voxels, center_voxel_coords[2] + radius_voxels + 1)
-            if np.linalg.norm(np.array([x, y, z]) - np.array(center_voxel_coords)) <= radius_voxels
+            for x in range(center_voxel_coords_ints[0] - radius_voxels, center_voxel_coords_ints[0] + radius_voxels + 1)
+            for y in range(center_voxel_coords_ints[1] - radius_voxels, center_voxel_coords_ints[1] + radius_voxels + 1)
+            for z in range(center_voxel_coords_ints[2] - radius_voxels, center_voxel_coords_ints[2] + radius_voxels + 1)
+            if np.linalg.norm(np.array([x, y, z]) - np.array(center_voxel_coords_ints)) <= radius_voxels
         ])
 
     # ----------------------------------------------------------------
