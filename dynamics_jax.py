@@ -2,7 +2,6 @@ import math
 from scipy.spatial.transform import Rotation as R
 import pickle
 import os
-from numba import njit, prange, cuda, float32
 import jax.numpy as jnp
 import jax
 
