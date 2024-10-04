@@ -79,6 +79,8 @@ class SDF:
 
         # To get the interior voxels, create a meshgrid at the correct resolution,
         # the same size as the map, and then check if each point is within the sphere
+        print(radius_metres)
+        print(center_metres_xyz)
         interior_voxel_coords = mapping.get_voxels_within_radius(
             center_metres_xyz,
             radius_metres,
@@ -106,6 +108,63 @@ class SDF:
         s += f"  voxel_per_x_metres: {self.voxel_per_x_metres}\n"
         return s
 
+    def astar_within_sphere(
+            self,
+            astar):
+        """
+        """
+        # Calculate squared distance from center for each vector
+        distances_squared = np.sum((astar - self.center_metres_xyz) ** 2, axis=1)
+        
+        # Compare distances to the squared radius
+        return (distances_squared <= self.radius_metres ** 2).astype(int)
+
+    def line_sphere_intersection_two_points(self,astar_in_sphere,astar_out_sphere):
+        # Extract variables
+        print(astar_in_sphere)
+        print(astar_out_sphere)
+        x1,y1,z1 = astar_in_sphere[0],astar_in_sphere[1],astar_in_sphere[2]
+        x2,y2,z2 = astar_out_sphere[0],astar_out_sphere[1],astar_out_sphere[2]
+        x3,y3,z3 = self.center_metres_xyz[0],self.center_metres_xyz[1],self.center_metres_xyz[2]
+        
+        # Solve for u
+        u = ((x3-x1)*(x2-x1)+(y3-y1)*(y2-y1)+(z3-z1)*(z2-z1)) / ((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)+(z2-z1)*(z2-z1))
+        print(u)
+        
+        # Get intersection point
+        crossover_point = np.zeros(3)
+        crossover_point[0] = x1+u*(x2-x1)
+        crossover_point[1] = y1+u*(y2-y1)
+        crossover_point[2] = z1+u*(z2-z1)
+
+        return crossover_point
+    
+    def get_next_sdf_center(self,astar:np.array):
+        """
+        """
+        # Check what elements of Astar path are within the sphere
+        astar_in_sphere = self.astar_within_sphere(astar)
+
+        # Check if last position is in sphere
+        # If it is we done!
+        if astar_in_sphere[-1] == 1:
+            return np.zeros(3), True
+        
+        # Get last switch from 1 to 0
+        last_in = np.zeros(3)
+        last_out = np.zeros(3)
+        for _i in range(len(astar_in_sphere) - 1, 0, -1):
+            if astar_in_sphere[_i] == 0 and astar_in_sphere[_i-1] == 1:
+                last_in = np.copy(astar[_i-1])
+                last_out = np.copy(astar[_i])
+
+        # Get intersection between sphere and Astar line
+        new_sdf_center = self.line_sphere_intersection_two_points(last_in,last_out)
+
+        # TODO add some randomness
+
+        return new_sdf_center, False
+
 if __name__ == "__main__":
 
     # Seed everything
@@ -131,22 +190,36 @@ if __name__ == "__main__":
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
     # If you're using a map with invalid positions then you might need to specify the start and goal states manually
-    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=26)
+    #state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=26)
+    state_initial = np.zeros(12)
+    state_initial[:3] = 10
+    state_goal = np.zeros(12)
+    state_goal[:3] = 26
 
     # # Generate a path from the initial state to the goal state
-    """xyz_initial = state_initial[0:3]
+    xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
-    path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)"""
-    
-    # Get the current starting position
-    start_point = map_.metres_to_voxel_coords(state_initial[:3])
+    path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create a list to hold centers and radii
-    sdfs = [ SDF.get_optimal_sdf(start_point, map_) ]
+    sdfs = [ SDF.get_optimal_sdf(xyz_initial, map_) ]
+    max_spheres = 50
+    for _i in range(max_spheres):
+        # Get new center
+        new_start_point, search_complete = sdfs[-1].get_next_sdf_center(path_xyz_smooth)
 
-    print(sdfs[0])
+        # Check if new sdf is needed
+        if search_complete:
+            break
+
+        # Build new sdf
+        sdfs.append(SDF.get_optimal_sdf(new_start_point, map_))
+        print(sdfs[-1].center_metres_xyz)
+        print(sdfs[-1].radius_metres)
+
+    print(len(sdfs))
 
     # ----------------------------------------------------------------
     # Logging from here on
