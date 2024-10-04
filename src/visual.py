@@ -124,9 +124,9 @@ class Visual:
         # - map.pkl
 
         # Create a figure
-        fig = plt.figure(figsize=(12, 8))
+        fig = plt.figure(figsize=(12, 12))
         # 1 row, two columns
-        gs = gridspec.GridSpec(4, 4) #, height_ratios=[1, 1, 0.15, 0.15, 0.15, 0.15])
+        gs = gridspec.GridSpec(2, 2) #, height_ratios=[1, 1, 0.15, 0.15, 0.15, 0.15])
         axs = {
             # main world view render
             "main": fig.add_subplot(gs[0, 0], projection='3d'),
@@ -137,7 +137,162 @@ class Visual:
             "y": fig.add_subplot(gs[1, 1], projection='3d'),
         }
 
-        pass
+        # Load the map and the signed distance function data
+        map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
+        sdfs = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "signed_distance_function.pkl"))
+
+        # shape is (3,2) and is the lower and upper bounds for each axis
+        extents = map_.extents_metres_xyz
+
+        # Now get the voxel grid info for rendering
+        print("Precomputing voxel information...", end="")
+
+        # Precompute the voxel representation stuff 
+        voxel_occupied_centers = np.argwhere(map_.voxel_grid == 1)
+        voxel_occupied_centers = [ map_.voxel_coords_to_metres(v) for v in voxel_occupied_centers ]
+
+        print("done")
+
+        def setup_axes_3d(axs, ax_name):
+            # xyz are the locations of the drone this frame
+            
+            # These axes in the same aspect ratio
+            for ax_name in ["main", "x", "y", "z"]:
+                axs[ax_name].set_box_aspect([1,1,1])
+
+            # These axes need the same extents
+            for ax_name in ["main", "x", "y", "z"]:
+                axs[ax_name].set_xlim(*extents[0])
+                axs[ax_name].set_ylim(*extents[1])
+                axs[ax_name].set_zlim(*extents[2])
+
+            # These axes should have removed ticks
+            for ax_name in ["x", "y", "z"]:
+                # This has the effect of removing the grid too
+                axs[ax_name].set_xticks([])
+                axs[ax_name].set_yticks([])
+                axs[ax_name].set_zticks([])
+
+            # Remove the axis themselves
+            for ax_name in ["x", "y", "z"]:
+                axs[ax_name].axis('off')
+                
+            # These axes should be orthographic
+            for ax_name in ["x", "y", "z"]:
+                axs[ax_name].set_proj_type('ortho')
+
+            def write_label_to_top_left_of_axis(ax, text):
+                ax.text2D(0.5, 0.95, text, transform=ax.transAxes, verticalalignment='top', horizontalalignment='center')
+
+            # Manually set the rotation of the orthographic views
+            # Useful link: https://matplotlib.org/stable/api/_as_gen/mpl_toolkits.mplot3d.axes3d.Axes3D.view_init.html
+            # x is the behind view (along -x axis)
+            write_label_to_top_left_of_axis(axs["x"], "behind (↓z →y)")
+            axs["x"].view_init(azim=0, elev=180, roll=0)
+            # y is the right view (along -y axis)
+            write_label_to_top_left_of_axis(axs["y"], "right (↓z →x)")
+            axs["y"].view_init(azim=90, elev=0, roll=180)
+            # z is the top view (along -z axis)
+            write_label_to_top_left_of_axis(axs["z"], "top (↓y →x)")
+            axs["z"].view_init(azim=90, elev=-90, roll=180)
+
+            # Set the rotation of the project views to be the same and
+            # to suit a NED frame orientation as in the KTH paper figure 2
+            # Default for Axes3D is 
+            # azim, elev, roll = -60, 30, 0
+            azim, elev, roll = 60, -30, 180
+            axs["main"].view_init(azim=azim, elev=elev, roll=roll)
+
+        for axes_name in ["main", "x", "y", "z"]:
+            setup_axes_3d(axs, axes_name)
+
+        # In 3D, plot the bounding box
+        # In 3D, plot the bounding box
+        for axes_name in ["main", "x", "y", "z"]:
+            def draw_bounding_box(ax, bounding_box):
+                x1, x2 = bounding_box[0]
+                y1, y2 = bounding_box[1]
+                z1, z2 = bounding_box[2]
+                # Draw the cuboid
+                col = 'r'
+                ls = ':'
+                alpha = 0.5
+                ax.plot([x1, x2], [y1, y1], [z1, z1], color=col, linestyle=ls, alpha=alpha) # | (up)
+                ax.plot([x2, x2], [y1, y2], [z1, z1], color=col, linestyle=ls, alpha=alpha) # -->
+                ax.plot([x2, x1], [y2, y2], [z1, z1], color=col, linestyle=ls, alpha=alpha) # | (down)
+                ax.plot([x1, x1], [y2, y1], [z1, z1], color=col, linestyle=ls, alpha=alpha) # <--
+
+                ax.plot([x1, x2], [y1, y1], [z2, z2], color=col, linestyle=ls, alpha=alpha) # | (up)
+                ax.plot([x2, x2], [y1, y2], [z2, z2], color=col, linestyle=ls, alpha=alpha) # -->
+                ax.plot([x2, x1], [y2, y2], [z2, z2], color=col, linestyle=ls, alpha=alpha) # | (down)
+                ax.plot([x1, x1], [y2, y1], [z2, z2], color=col, linestyle=ls, alpha=alpha) # <--
+                
+                ax.plot([x1, x1], [y1, y1], [z1, z2], color=col, linestyle=ls, alpha=alpha) # | (up)
+                ax.plot([x2, x2], [y2, y2], [z1, z2], color=col, linestyle=ls, alpha=alpha) # -->
+                ax.plot([x1, x1], [y2, y2], [z1, z2], color=col, linestyle=ls, alpha=alpha) # | (down)
+                ax.plot([x2, x2], [y1, y1], [z1, z2], color=col, linestyle=ls, alpha=alpha) # <--
+
+            # Shape is (3,2) and is the lower and upper bounds for each axis
+            ax = axs[axes_name]
+            draw_bounding_box(ax, map_.extents_metres_xyz)
+            
+            # In 3D, plot the voxel map
+            # Plot an X at each filled voxel center
+            ax.scatter(
+                [v[0] for v in voxel_occupied_centers],
+                [v[1] for v in voxel_occupied_centers],
+                [v[2] for v in voxel_occupied_centers],
+                color='red',
+                marker='x',
+                alpha=0.1,
+            )
+
+            # Now we go through and plot each sphere (orthogonals as a circle,
+            # main as a sphere)
+            for sdf in sdfs:
+                #print(f"{sdf}")
+
+                # Get the center and radius
+                center = sdf.center_metres_xyz
+                radius = sdf.radius_metres
+                
+                # We'll make the spheres
+                color = 'purple'
+                
+                # Behavior changes depending on axis
+                #if axes_name == "main":
+
+                # Plot using 3d, which we'll do by
+                ax.scatter(
+                    [v[0] for v in sdf.interior_voxel_coords],
+                    [v[1] for v in sdf.interior_voxel_coords],
+                    [v[2] for v in sdf.interior_voxel_coords],
+                    color=color,
+                    marker='x',
+                    alpha=0.5,
+                )
+
+                # else:
+                #     if axes_name == "x":
+                #         c1, c2 = 1, 2
+                #     elif axes_name == "y":
+                #         c1, c2 = 0, 2
+                #     elif axes_name == "z":
+                #         c1, c2 = 0, 1
+                #     # Plot using circle patches
+                #     circle = patches.Circle(
+                #         (center[c1], center[c2]),
+                #         radius,
+                #         color=color,
+                #         # no fill
+                #         fill=False,
+                #         linewidth=1,
+                #     )
+                #     ax.add_patch(circle)
+
+        # Save the figure
+        #plt.tight_layout()
+        fig.savefig(os.path.join(self.visuals_folder, "environment.png"))               
 
     def load_mppi_steps_states_actions_costs(self):
         mppi_folder = os.path.join(self.run_folder, "policy", "mppi")

@@ -27,9 +27,17 @@ class SDF:
         self,
         center_metres_xyz,
         radius_metres,
+        center_voxel_coords,
+        radius_voxels,
+        interior_voxel_coords,
+        voxel_per_x_metres,
     ):
         self.center_metres_xyz = center_metres_xyz
         self.radius_metres = radius_metres
+        self.center_voxel_coords = center_voxel_coords
+        self.radius_voxels = radius_voxels
+        self.interior_voxel_coords = interior_voxel_coords     
+        self.voxel_per_x_metres = voxel_per_x_metres   
 
     @staticmethod
     def find_max_non_collision_radius(
@@ -66,17 +74,37 @@ class SDF:
         center_metres_xyz,
         mapping,
     ):
-        # Get the maximum radius
-        radius = SDF.find_max_non_collision_radius(center_metres_xyz, mapping)
+        # Get the maximum radius (in metres)
+        radius_metres = SDF.find_max_non_collision_radius(center_metres_xyz, mapping)
 
+        # To get the interior voxels, create a meshgrid at the correct resolution,
+        # the same size as the map, and then check if each point is within the sphere
+        interior_voxel_coords = mapping.get_voxels_within_radius(
+            center_metres_xyz,
+            radius_metres,
+        )
+        
         # Create the SDF object
-        sdf = SDF(center_metres_xyz,radius)
+        sdf = SDF(
+            center_metres_xyz=center_metres_xyz,
+            radius_metres=radius_metres,
+            center_voxel_coords=mapping.metres_to_voxel_coords(center_metres_xyz),
+            radius_voxels=radius_metres / mapping.voxel_per_x_metres,
+            interior_voxel_coords=interior_voxel_coords,
+            voxel_per_x_metres=mapping.voxel_per_x_metres,
+        )
 
         return sdf
     
     def __str__(self):
-        return f"SDF(center={self.center_metres_xyz}, radius={self.radius_metres})"
-
+        s = "SDF:\n"
+        s += f"  center_metres_xyz: {self.center_metres_xyz}\n"
+        s += f"  radius_metres: {self.radius_metres}\n"
+        s += f"  center_voxel_coords: {self.center_voxel_coords}\n"
+        s += f"  radius_voxels: {self.radius_voxels}\n"
+        s += f"  num_interior_voxels: {len(self.interior_voxel_coords)}\n"
+        s += f"  voxel_per_x_metres: {self.voxel_per_x_metres}\n"
+        return s
 
 if __name__ == "__main__":
 
@@ -143,10 +171,7 @@ if __name__ == "__main__":
 
     # ----------------------------------------------------------------
 
-    # Build a sphere at the start
-    pbar = tqdm(total=num_steps, desc="Running simulation")
-    
-    pbar.close()
+    # No simulation
 
     # ----------------------------------------------------------------
 
