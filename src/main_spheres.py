@@ -79,8 +79,6 @@ class SDF:
 
         # To get the interior voxels, create a meshgrid at the correct resolution,
         # the same size as the map, and then check if each point is within the sphere
-        print(radius_metres)
-        print(center_metres_xyz)
         interior_voxel_coords = mapping.get_voxels_within_radius(
             center_metres_xyz,
             radius_metres,
@@ -119,31 +117,58 @@ class SDF:
         # Compare distances to the squared radius
         return (distances_squared <= self.radius_metres ** 2).astype(int)
 
-    def line_sphere_intersection_two_points(self,astar_in_sphere,astar_out_sphere):
+    def line_sphere_intersection_two_points(
+            self,
+            astar_in_sphere,
+            astar_out_sphere
+    ):
         # Extract variables
-        print(astar_in_sphere)
-        print(astar_out_sphere)
-        x1,y1,z1 = astar_in_sphere[0],astar_in_sphere[1],astar_in_sphere[2]
-        x2,y2,z2 = astar_out_sphere[0],astar_out_sphere[1],astar_out_sphere[2]
-        x3,y3,z3 = self.center_metres_xyz[0],self.center_metres_xyz[1],self.center_metres_xyz[2]
+        # Convert inputs to numpy arrays for easier vector operations
+        P1 = astar_in_sphere
+        P2 = astar_out_sphere
+        C = self.center_metres_xyz
+        R = self.radius_metres
         
-        # Solve for u
-        u = ((x3-x1)*(x2-x1)+(y3-y1)*(y2-y1)+(z3-z1)*(z2-z1)) / ((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)+(z2-z1)*(z2-z1))
-        print(u)
+        # Compute the quadratic coefficients
+        a = np.dot(P2 - P1, P2 - P1)
+        b = 2 * np.dot(P2 - P1, P1 - C)
+        c = np.dot(P1 - C, P1 - C) - R**2
         
-        # Get intersection point
-        crossover_point = np.zeros(3)
-        crossover_point[0] = x1+u*(x2-x1)
-        crossover_point[1] = y1+u*(y2-y1)
-        crossover_point[2] = z1+u*(z2-z1)
-
-        return crossover_point
+        # Solve the quadratic equation: at^2 + bt + c = 0
+        discriminant = b**2 - 4 * a * c
+        
+        if discriminant < 0:
+            # No real solutions, no intersection
+            return None
+        
+        # Two solutions for t
+        t1 = (-b + np.sqrt(discriminant)) / (2 * a)
+        t2 = (-b - np.sqrt(discriminant)) / (2 * a)
+        
+        # Calculate the intersection points
+        intersection1 = P1 + t1 * (P2 - P1) if 0 <= t1 <= 1 else None
+        intersection2 = P1 + t2 * (P2 - P1) if 0 <= t2 <= 1 else None
+        
+        # Choose the intersection point closer to P2
+        if intersection1 is not None and intersection2 is not None:
+            # Calculate distances to P2
+            dist1 = np.linalg.norm(intersection1 - P2)
+            dist2 = np.linalg.norm(intersection2 - P2)
+            # Return the point closer to P2
+            return intersection1 if dist1 < dist2 else intersection2
+        elif intersection1 is not None:
+            return intersection1
+        elif intersection2 is not None:
+            return intersection2
+        else:
+            return None
     
     def get_next_sdf_center(self,astar:np.array):
         """
         """
         # Check what elements of Astar path are within the sphere
         astar_in_sphere = self.astar_within_sphere(astar)
+        print(astar_in_sphere)
 
         # Check if last position is in sphere
         # If it is we done!
@@ -205,7 +230,7 @@ if __name__ == "__main__":
 
     # Create a list to hold centers and radii
     sdfs = [ SDF.get_optimal_sdf(xyz_initial, map_) ]
-    max_spheres = 50
+    max_spheres = 10
     for _i in range(max_spheres):
         # Get new center
         new_start_point, search_complete = sdfs[-1].get_next_sdf_center(path_xyz_smooth)
