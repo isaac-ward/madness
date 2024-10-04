@@ -41,7 +41,7 @@ RUN /bin/bash -c "source /opt/conda/bin/activate && \
     # pip install pytorch-lightning==1.9.0 && \
     pip install pytorch-lightning==2.1.0 && \
     pip install trimesh && \
-    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy nflows torchinfo wandb && \
+    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy nflows torchinfo wandb jax && \
     conda install -c conda-forge cupy -y && \
     conda clean -ya"
     
