@@ -4,6 +4,7 @@ from dynamics import DynamicsQuadcopter3D
 
 class SDF_Types:
     sphere=0
+    cube=1
 
 class Environment_SDF:
     """
@@ -31,16 +32,33 @@ class Environment_SDF:
         """
         self.sdf_list.append(sdf)
 
-    def characterize_env_with_sphere(
+    def characterize_env_with_spheres_perturbations(
             self,
             start_point_meters:np.ndarray,
             end_point_meters:np.ndarray,
-            path_xyz_smooth: np.ndarray,
+            path_xyz: np.ndarray,
             map_env: Map,
             max_spheres=200,
             randomness_deg=15
     ):
         """
+        Characterize an environment with sphere SDFs. Sphere expansion is performed using a
+        perturbation technique accounting for the direction of collisions, xyzpath, and randomness.
+
+        Parameters
+        ----------
+        start_point_meters: numpy.ndarray
+            The starting position in the environment
+        end_point_meters: numpy.ndarray
+            The goal position in the environment
+        path_xyz: numpy.ndarray
+            The xyz path from the starting to goal position
+        map_env: Map
+            The map resentation of the environment
+        max_spheres: int
+            The maximum number of spheres allowed to characterize the environment. Default 200
+        randomness_deg: int
+            The range of randomness desired in the perturbed direction (degrees)
         """
         # Make collision radius
         collision_radius_metres = self.dynamics.diameter/2
@@ -57,10 +75,6 @@ class Environment_SDF:
         for _i in range(max_spheres-1):
             print(_i)
             print(new_start_point)
-            # Get new center
-            #new_start_point = self.sdf_list[-1].get_next_sdf_center_from_xyzpath(path_xyz_smooth)
-            new_start_point = self.sdf_list[-1].get_next_sdf_center(path_xyz_smooth,randomness_deg)
-
             # Check if new sdf is needed
             search_complete = self.sdf_list[-1].points_within_sphere(end_point_meters)
             if search_complete:
@@ -68,6 +82,9 @@ class Environment_SDF:
                 final_sphere = Sphere_SDF.get_optimal_sdf(end_point_meters,collision_radius_metres,map_env)
                 self.add_sdf(final_sphere)
                 break
+
+            # Get new center
+            new_start_point = self.sdf_list[-1].get_next_sdf_center_perturb(path_xyz,randomness_deg)
             
             # Build next sdf
             building = True
@@ -76,15 +93,97 @@ class Environment_SDF:
                 # Build next sphere
                 next_sphere = Sphere_SDF.get_optimal_sdf(new_start_point,collision_radius_metres,map_env)
 
+                # Try to refine sphere further
+                next_sphere = next_sphere.sphere_refinement(
+                    collision_radius_metres=collision_radius_metres,
+                    mapping=map_env
+                )
+
                 # Check if new sdf has volume
-                if next_sphere.radius_voxels == 0:
+                if next_sphere.radius_voxels <= 1:
                     # Try new point
-                    new_start_point = self.sdf_list[-back_up].get_next_sdf_center(path_xyz_smooth,randomness_deg)
+                    new_start_point = self.sdf_list[-back_up].get_next_sdf_center_perturb(path_xyz,randomness_deg)
                     # If this doesn't work, let's go backward to a previous SDF
-                    back_up += 1
+                    if back_up <= len(self.sdf_list):
+                        back_up += 1
+                    else:
+                        raise Exception("Valid SDF representation not found")
                 else:
+                    # Add sphere to SDF list
                     self.add_sdf(next_sphere)
                     building=False
+    
+    def characterize_env_with_spheres_xyzpath(
+            self,
+            start_point_meters:np.ndarray,
+            end_point_meters:np.ndarray,
+            path_xyz: np.ndarray,
+            map_env: Map,
+            max_spheres=200,
+    ):
+        """
+        Characterize an environment with sphere SDFs. Sphere SDFs will track xyzpath
+        exactly.
+
+        Parameters
+        ----------
+        start_point_meters: numpy.ndarray
+            The starting position in the environment
+        end_point_meters: numpy.ndarray
+            The goal position in the environment
+        path_xyz: numpy.ndarray
+            The xyz path from the starting to goal position
+        map_env: Map
+            The map resentation of the environment
+        max_spheres: int
+            The maximum number of spheres allowed to characterize the environment. Default 200
+        """
+        # Make collision radius
+        collision_radius_metres = self.dynamics.diameter/2
+
+        # Create first SDF about start point
+        self.add_sdf(Sphere_SDF.get_optimal_sdf(
+            center_metres_xyz=start_point_meters, 
+            collision_radius_metres=collision_radius_metres, 
+            mapping=map_env
+        ))
+
+        # Search and add more SDFs
+        new_start_point = np.zeros(3)
+        for _i in range(max_spheres-1):
+            print(_i)
+            print(new_start_point)
+            
+            # Check if new sdf is needed
+            search_complete = self.sdf_list[-1].points_within_sphere(end_point_meters)
+            if search_complete:
+                # If search complete, add one final sphere to end point
+                final_sphere = Sphere_SDF.get_optimal_sdf(end_point_meters,collision_radius_metres,map_env)
+
+                # Attempt to refine final sphere SDF
+                final_sphere = final_sphere.sphere_refinement(
+                        collision_radius_metres=collision_radius_metres,
+                        mapping=map_env
+                    )
+                
+                # Add and end operations
+                self.add_sdf(final_sphere)
+                break
+
+            # Get new center
+            new_start_point = self.sdf_list[-1].get_next_sdf_center_from_xyzpath(path_xyz)
+            
+            # Build next sphere
+            next_sphere = Sphere_SDF.get_optimal_sdf(new_start_point,collision_radius_metres,map_env)
+
+            # Try to refine sphere further TODO Debug stuck loop
+            next_sphere = next_sphere.sphere_refinement(
+                collision_radius_metres=collision_radius_metres,
+                mapping=map_env
+            )
+
+            # Add sphere to SDF list
+            self.add_sdf(next_sphere)
 
 class Sphere_SDF:
     """
@@ -176,7 +275,7 @@ class Sphere_SDF:
         center_metres_xyz:np.ndarray,
         collision_radius_metres:float,
         mapping:Map,
-        maximum_radius_metres=100
+        maximum_radius_metres=100.
     ):
         """
         Build a sphere SDF object given a center point and an environment
@@ -377,6 +476,7 @@ class Sphere_SDF:
 
         # Check what elements of A* path are within the sphere
         astar_in_sphere = self.points_within_sphere(astar)
+        print(astar_in_sphere)
         
         # Get last switch from 1 to 0
         last_in = np.zeros(3)
@@ -391,14 +491,17 @@ class Sphere_SDF:
 
         return new_sdf_center
     
-    def get_next_sdf_center(
+    def get_average_collision_dir(
             self,
-            xyzpath:np.ndarray,
-            randomness_deg:float,
     ):
         """
+        Get the average direction of the nearest collisions
+
+        Returns
+        -------
+        average_direction: numpy.ndarray
+            Unit vector in average direction of collisions
         """
-        ## Collision contribution
         # Turn the collision points into vectors
         vectors = self.nearest_collisions_voxel - self.center_voxel_coords
 
@@ -408,21 +511,52 @@ class Sphere_SDF:
         # Normalize average vector to get direction (unit vector)
         average_direction = average_vector / np.linalg.norm(average_vector)
 
+        return average_direction
+    
+    def get_next_sdf_center_perturb(
+            self,
+            xyzpath:np.ndarray,
+            randomness_deg:float,
+    ):
+        """
+        Get the next recommended sphere SDF center based off of perturbed directions accounting for
+        - Nearest environment collisions
+        - An xyz Path from start to goal points
+        - Randomness
+
+        Parameters
+        ----------
+        path_xyz: numpy.ndarray
+            The xyz path from the starting to goal position
+        randomness_deg: float
+            The range of randomness desired in the perturbed direction (degrees)
+
+        Returns
+        -------
+        new_center_metres: numpy.ndarray
+            The new center point for a sphere SDF to be build (meters)
+        """
+        ## Collision contribution ------------------------------------------------
+        # Get average direction of collision
+        average_direction = self.get_average_collision_dir()
+
         # Get opposite direction
         opposite_direction = -average_direction
 
-        ## Randomness contribution
+        ## Randomness contribution ------------------------------------------------
         # Generate a random perturbation
         random_perturb = np.random.uniform(-randomness_deg,randomness_deg,3)
         random_perturb_rad = np.radians(random_perturb)
 
         # Normalize perturbation vector
-        normalize_perturbation_vect = random_perturb_rad / np.linalg.norm(random_perturb_rad)
+        normalize_perturbation_vect = random_perturb_rad
+        if randomness_deg != 0.:
+            normalize_perturbation_vect /= np.linalg.norm(random_perturb_rad)
 
         # Add the random perturbation to the opposite direction
         perturbed_direction = opposite_direction + normalize_perturbation_vect
 
-        ## xyzpath contribution
+        ## xyzpath contribution ------------------------------------------------
         # Get closest point to sphere center
         distances = np.linalg.norm(xyzpath - self.center_metres_xyz, axis=1)
         closest_index = np.argmin(distances)
@@ -454,3 +588,61 @@ class Sphere_SDF:
         new_center_metres = new_center_voxel * self.voxel_per_x_metres
 
         return new_center_metres
+
+    def sphere_refinement(
+            self,
+            collision_radius_metres:float,
+            mapping:Map,
+            max_refinements=10
+    ):
+        """
+        Improve sphere SDF representation by attempting to locate a larger sphere that encompasses
+        the current SDF
+
+        Parameters
+        ----------
+        collision_radius_metres: float
+            The collision radius of the quadrotor in meters
+        mapping: Map
+            The map resentation of the environment
+        max_refinements: int
+            The maximum allowable improvement iterations. Default to 10
+        """
+        # Initial sdf as current sdf
+        sdf = self
+
+        for _i in range(max_refinements):
+            # Get average direction of collision
+            average_direction = self.get_average_collision_dir()
+
+            # Search for improvement in opposite direction
+            opposite_direction = -average_direction
+
+            # Scale by the radius and calculate the opposite point
+            new_center_voxel_approx = sdf.center_voxel_coords + opposite_direction * sdf.radius_voxels
+
+            # Get the closest point we know to be unoccupied
+            distances = np.linalg.norm(sdf.interior_voxel_coords - new_center_voxel_approx, axis=1)
+            closest_index = np.argmin(distances)
+            new_center_voxel = sdf.interior_voxel_coords[closest_index]
+
+            # Build new SDF
+            new_sdf = sdf.get_optimal_sdf(
+                center_metres_xyz=new_center_voxel * sdf.voxel_per_x_metres,
+                collision_radius_metres=collision_radius_metres,
+                mapping=mapping
+            )
+
+            # New SDF bigger than current?
+            more_volume = np.shape(new_sdf.interior_voxel_coords)[0] > np.shape(sdf.interior_voxel_coords)[0]
+
+            # New SDF contains current SDF?
+            sdf_contained = np.all(np.all(np.isin(sdf.interior_voxel_coords, new_sdf.interior_voxel_coords), axis=1))
+
+            # If not larger or containing original SDF, done
+            if not more_volume or not sdf_contained:
+                break
+            else:
+                sdf = new_sdf
+        
+        return sdf

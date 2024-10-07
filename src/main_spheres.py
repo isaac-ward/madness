@@ -63,14 +63,21 @@ if __name__ == "__main__":
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
-    sdfs.characterize_env_with_sphere(
+    sdfs.characterize_env_with_spheres_perturbations(
         start_point_meters=xyz_initial,
         end_point_meters=xyz_goal,
-        path_xyz_smooth=path_xyz_smooth,
+        path_xyz=path_xyz_smooth,
         map_env=map_,
-        max_spheres=400,
+        max_spheres=500,
         randomness_deg=45
     )
+    """sdfs.characterize_env_with_spheres_xyzpath(
+        start_point_meters=xyz_initial,
+        end_point_meters=xyz_goal,
+        path_xyz=path_xyz_smooth,
+        map_env=map_,
+        max_spheres=50
+    )"""
 
     print(len(sdfs.sdf_list))
 
