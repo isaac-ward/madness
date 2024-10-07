@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-import dynamics_jax as dynamics
+import src.dynamics_jax as dynamics
 import os
 import shutil
 
