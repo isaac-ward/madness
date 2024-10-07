@@ -249,7 +249,7 @@ class Visual:
 
             # Now we go through and plot each sphere (orthogonals as a circle,
             # main as a sphere)
-            for sdf in sdfs:
+            for sdf in sdfs.sdf_list:
                 #print(f"{sdf}")
 
                 # Get the center and radius
@@ -264,9 +264,9 @@ class Visual:
 
                 # Plot using 3d, which we'll do by
                 ax.scatter(
-                    [v[0] for v in sdf.interior_voxel_coords],
-                    [v[1] for v in sdf.interior_voxel_coords],
-                    [v[2] for v in sdf.interior_voxel_coords],
+                    [v[0] for v in sdf.interior_metre_coords],
+                    [v[1] for v in sdf.interior_metre_coords],
+                    [v[2] for v in sdf.interior_metre_coords],
                     color=color,
                     marker='x',
                     alpha=0.5,

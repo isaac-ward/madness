@@ -238,7 +238,7 @@ class Map:
     ):
         # Convert to metres
         batch_metres_xyzs = self.batch_voxel_coords_to_metres(batch_voxel_coords)
-        collision_radius_metres = collision_radius_voxels * (1 / self.voxel_per_x_metres)
+        collision_radius_metres = collision_radius_voxels * self.voxel_per_x_metres
         return self.batch_is_collision_metres_xyz(batch_metres_xyzs, collision_radius_metres)
         
     def batch_is_out_of_bounds_metres_xyz(
