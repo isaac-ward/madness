@@ -191,6 +191,12 @@ class Map:
         ]
         return metres_coords
     
+    def batch_voxel_coords_to_metres(
+        self,
+        batch_voxel_coords,
+    ):
+        return np.array([ self.voxel_coords_to_metres(x) for x in batch_voxel_coords ])
+    
     # ----------------------------------------------------------------
     
     def voxel_coord_in_bounds(
@@ -212,7 +218,7 @@ class Map:
     
     # ----------------------------------------------------------------
     
-    def batch_is_collision(
+    def batch_is_collision_metres_xyz(
         self,
         batch_metres_xyzs,
         collision_radius,
@@ -225,7 +231,17 @@ class Map:
         distances, indices = self.kd_tree.query(batch_metres_xyzs)
         return distances < collision_radius
     
-    def batch_is_out_of_bounds(
+    def batch_is_collision_voxel_coords(
+        self,
+        batch_voxel_coords,
+        collision_radius_voxels,
+    ):
+        # Convert to metres
+        batch_metres_xyzs = self.batch_voxel_coords_to_metres(batch_voxel_coords)
+        collision_radius_metres = collision_radius_voxels * self.voxel_per_x_metres
+        return self.batch_is_collision_metres_xyz(batch_metres_xyzs, collision_radius_metres)
+        
+    def batch_is_out_of_bounds_metres_xyz(
         self,
         batch_metres_xyzs,
     ):
@@ -264,8 +280,8 @@ class Map:
         Given a batch of points in metres, check if they are valid (not colliding and not out of bounds)
         """
         return np.logical_or(
-            self.batch_is_collision(batch_metres_xyzs, collision_radius),
-            self.batch_is_out_of_bounds(batch_metres_xyzs),
+            self.batch_is_collision_metres_xyz(batch_metres_xyzs, collision_radius),
+            self.batch_is_out_of_bounds_metres_xyz(batch_metres_xyzs),
         )
     
     def is_not_valid(
@@ -274,6 +290,28 @@ class Map:
         collision_radius,
     ):
         return self.batch_is_not_valid(np.array([metres_xyz]), collision_radius)[0]
+
+    # ----------------------------------------------------------------
+    
+    def get_voxels_within_radius(
+        self,
+        center_voxel_coords,
+        radius_voxels,
+    ):
+        # Given a center voxel coordinate and a radius in voxels, return all the voxels
+        # within that radius (sphere)
+
+        # Voxels are given as integer values
+        center_voxel_coords_ints = [int(center_voxel_coords[0]),int(center_voxel_coords[1]),int(center_voxel_coords[2])]
+        radius_voxels = int(radius_voxels)
+
+        return np.array([
+            [x, y, z]
+            for x in range(center_voxel_coords_ints[0] - radius_voxels, center_voxel_coords_ints[0] + radius_voxels + 1)
+            for y in range(center_voxel_coords_ints[1] - radius_voxels, center_voxel_coords_ints[1] + radius_voxels + 1)
+            for z in range(center_voxel_coords_ints[2] - radius_voxels, center_voxel_coords_ints[2] + radius_voxels + 1)
+            if np.linalg.norm(np.array([x, y, z]) - np.array(center_voxel_coords_ints)) < radius_voxels
+        ])
 
     # ----------------------------------------------------------------
 
