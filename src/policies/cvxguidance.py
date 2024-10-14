@@ -6,16 +6,14 @@ import jax.numpy as jnp
 
 
 import utils.geometric
-import utils.general
+from utils.general import *
 import policies.costs
 import policies.samplers
 
 from src.dynamics_jax import DynamicsQuadcopter3D
-from src.standard import SDFSphere # CORRECT THIS
+from src.sdf import * # CORRECT THIS
 from src.standard import Astar # CORRECT THIS
 
-# TODO
-# import sdf.sdf write and import sdf class that holds sphere locations and sizes (plus the field?)
 
 class SCPSolver:
     def __init__(
@@ -23,7 +21,7 @@ class SCPSolver:
             K,
             dynamics: DynamicsQuadcopter3D,
             trajInit,
-            sdf:SDFSphere,
+            sdf:Environment_SDF,
             horizon = 1,
             sig = 50
     ):
@@ -40,9 +38,10 @@ class SCPSolver:
 
         self.action = cvx.Variable((self.K,self.nu))
         self.state = cvx.Variable((self.K + 1, self.nx))
-        self.slack = cvx.Variable((self.K*self.sdf.poly_count()))
+        self.slack = cvx.Variable((self.K, len(self.sdf.sdf_list)))
         # self.alpha = cvx.Variable(1)
         self.action.value, self.state.value = trajInit
+        self.slack.value = jnp.zeros((self.K, len(self.sdf.sdf_list)))
         self.sdf = sdf
         self.constraints = []
 
@@ -57,10 +56,25 @@ class SCPSolver:
     def sdf_constraints(
             self
     ):
-        cs,rs = self.sdf
+        
+        G = gradient_log_softmax(self.sig, self.slack.value)
+        g0 = log_softmax(self.slack.value)
 
+        self.constraints += [ G @ (self.slack).T + g0 >= 0 ]
 
-        self.constraints += []
+        for i in range(len(self.sdf.sdf_list)):
+            c = self.sdf.sdf_list[i].center_metres_xyz
+
+            match self.sdf.sdf_list[i].sdf_type:
+                case 0:
+                    r = self.sdf.sdf_list[i].radius_metres
+                    self.constraints += [ self.slack[:,i] <= 1 - (1/r)*cvx.norm(self.state[:,:3] - c) ]
+                case 1:
+                    # NOT FINISHED OR TESTED
+                    s = self.sdf.sdf_list[i].diagonal_metres
+                    self.constraints += [ self.slack[:,i] <= 1 - cvx.norm( (self.state[:,:3] - c)/s )]
+                    
+
 
     def boundary_constraints(
             self,
