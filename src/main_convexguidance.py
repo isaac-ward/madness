@@ -61,9 +61,12 @@ if __name__ == "__main__":
         randomness_deg=45
     )
 
-
+    num_seconds = 16
+    num_steps = int(num_seconds / dyn.dt)
     # initialize SCP solver object
-    scp = SCPSolver()
+    scp = SCPSolver(K = num_steps,
+                    dynamics=copy.deepcopy(dyn),
+                    sdf = sdfs)
 
     # Setup SCP iterations manually until exit condition is implemented
     for ii in range(10):
@@ -77,8 +80,6 @@ if __name__ == "__main__":
     # HOW CAN I PLOT THIS????
 
     # Create the environment
-    num_seconds = 16
-    num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=state_initial,
         state_goal=state_goal,

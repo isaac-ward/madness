@@ -23,7 +23,8 @@ class SCPSolver:
             trajInit,
             sdf:Environment_SDF,
             horizon = 1,
-            sig = 50
+            sig = 50,
+            eps = 1
     ):
         self.K = K
         self.dynamics = dynamics
@@ -32,6 +33,7 @@ class SCPSolver:
         self.dt = dynamics.dt
         self.horizon = horizon
         self.sig = sig
+        self.eps = eps
 
         self.nu = self.dynamics.action_size()
         self.nx = self.dynamics.state_size()
@@ -72,7 +74,7 @@ class SCPSolver:
                 case 1:
                     # NOT FINISHED OR TESTED
                     s = self.sdf.sdf_list[i].diagonal_metres
-                    self.constraints += [ self.slack[:,i] <= 1 - cvx.norm( (self.state[:,:3] - c)/s )]
+                    self.constraints += [ self.slack[:,i] <= 1 - cvx.norm_inf( (self.state[:,:3] - c)/s )]
                     
 
 
@@ -100,7 +102,11 @@ class SCPSolver:
         self,
         state_goal
     ):
-        self.objective = cvx.sum( [ cvx.sum( [ cvx.square(self.action[k,u]) for u in range(self.nu) ] ) for k in range(self.K) ] ) + cvx.sum( [ cvx.square( cvx.norm(state_goal - self.state[k]) ) for k in range(self.K+1) ] )
+        terminal_cost = self.eps*cvx.sum( self.slack )
+        
+        bolza_sum = cvx.sum( [ cvx.sum( [ cvx.square(self.action[k,u]) for u in range(self.nu) ] ) for k in range(self.K) ] ) + cvx.sum( [ cvx.square( cvx.norm(state_goal - self.state[k]) ) for k in range(self.K+1) ] )
+
+        self.objective = terminal_cost + bolza_sum
 
     def solve(
             self,
