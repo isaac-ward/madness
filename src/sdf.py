@@ -185,6 +185,32 @@ class Environment_SDF:
             # Add sphere to SDF list
             self.add_sdf(next_sphere)
 
+    def sdf_values(
+                            self,
+                            r_xyz
+                            ):
+        
+        if len(r_xyz.shape) == 1:
+            r_xyz = r_xyz[np.newaxis, :]
+        
+        d = np.zeros((r_xyz.shape[0], len(self.sdf_list)))
+
+        for i in range(len(self.sdf_list)):
+            c = self.sdf_list[i].center_metres_xyz
+            print("c: ", c)
+
+            match self.sdf_list[i].sdf_type:
+                case 0:
+                    r = self.sdf_list[i].radius_metres
+                    print("r: ", r)
+                    d[:,i] = 1 - (1/r)*np.linalg.norm(r_xyz - c[np.newaxis,:]) 
+                case 1:
+                    # NOT TESTED
+                    s = self.sdf.sdf_list[i].diagonal_metres
+                    d[:,i] = 1 - np.norm_inf( (r_xyz - c)/s )
+        
+        return d
+
 class Sphere_SDF:
     """
     Class to hold a sphere Signed Distance Function (SDF) object

@@ -79,7 +79,8 @@ if __name__ == "__main__":
     scp = SCPSolver(K = K,
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
-                    trajInit=trajInit)
+                    trajInit=trajInit,
+                    sig = 1)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_goal = np.zeros(dyn.state_size())
