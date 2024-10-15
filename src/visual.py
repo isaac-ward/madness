@@ -206,6 +206,22 @@ class Visual:
         for axes_name in ["main", "x", "y", "z"]:
             setup_axes_3d(axs, axes_name)
 
+        # Retrieve the smooth A* path
+        path_smooth_flag = False
+        try:
+            path_xyz_smooth = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "path_xyz_smooth.pkl"))
+            path_smooth_flag = True
+        except:
+            pass
+
+        # Retrieve the cvx path
+        path_cvx_flag = False
+        try:
+            path_xyz_cvx = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "path_xyz_cvx.pkl"))
+            path_cvx_flag = True
+        except:
+            pass
+
         # In 3D, plot the bounding box
         # In 3D, plot the bounding box
         for axes_name in ["main", "x", "y", "z"]:
@@ -269,7 +285,7 @@ class Visual:
                     [v[2] for v in sdf.interior_metre_coords],
                     color=color,
                     marker='x',
-                    alpha=0.5,
+                    alpha=0.01,
                 )
 
                 # else:
@@ -289,6 +305,28 @@ class Visual:
                 #         linewidth=1,
                 #     )
                 #     ax.add_patch(circle)
+        
+            # Plot smooth A* path
+            if path_smooth_flag and axes_name in ["main", "x", "y", "z"]:
+                ax.plot(
+                    path_xyz_smooth[:, 0],
+                    path_xyz_smooth[:, 1],
+                    path_xyz_smooth[:, 2],
+                    color='aqua',
+                    linestyle='-',
+                    alpha=1.0,
+                )
+            
+            # Plot cvx path
+            if path_cvx_flag and axes_name in ["main", "x", "y", "z"]:
+                ax.plot(
+                    path_xyz_cvx[:, 0],
+                    path_xyz_cvx[:, 1],
+                    path_xyz_cvx[:, 2],
+                    color='black',
+                    linestyle='-',
+                    alpha=1.0,
+                )
 
         # Save the figure
         #plt.tight_layout()

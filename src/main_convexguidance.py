@@ -78,6 +78,7 @@ if __name__ == "__main__":
     position_history = state_history[:,:3]
 
     # HOW CAN I PLOT THIS????
+    # I got you @Kris
 
     # Create the environment
     environment = Environment(
@@ -92,6 +93,24 @@ if __name__ == "__main__":
 
     # Log everything of interest
     environment.log(log_folder)
+
+    # Log the cubes
+    utils.logging.pickle_to_filepath(
+        os.path.join(log_folder, "signed_distance_function.pkl"),
+        sdfs,
+    )
+
+    # Log the A* path
+    utils.logging.pickle_to_filepath(
+        os.path.join(os.path.join(log_folder, "environment"), "path_xyz_smooth.pkl"),
+        path_xyz_smooth,
+    )
+
+    # Log the CVX path
+    utils.logging.pickle_to_filepath(
+        os.path.join(os.path.join(log_folder, "environment"), "path_xyz_cvx.pkl"),
+        path_xyz_cvx,
+    )
 
     # Render visuals
     visual = Visual(log_folder)
