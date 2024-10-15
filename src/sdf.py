@@ -1,6 +1,7 @@
 import numpy as np
 from mapping import Map
 from dynamics_jax import DynamicsQuadcopter3D
+from utils.general import Cacher
 
 class SDF_Types:
     sphere=0
@@ -63,55 +64,74 @@ class Environment_SDF:
         # Make collision radius
         collision_radius_metres = self.dynamics.diameter/2
 
-        # Create first SDF about start point
-        self.add_sdf(Sphere_SDF.get_optimal_sdf(
-            center_metres_xyz=start_point_meters, 
-            collision_radius_metres=collision_radius_metres, 
-            mapping=map_env
-        ))
+        # Check if results cached for this
+        computation_inputs = (
+            start_point_meters,
+            end_point_meters,
+            path_xyz,
+            map_env.map_filepath,
+            max_spheres,
+            randomness_deg,
+            collision_radius_metres,
+            "perturb"
+        )
 
-        # Search and add more SDFs
-        new_start_point = np.zeros(3)
-        for _i in range(max_spheres-1):
-            print(_i)
-            print(new_start_point)
-            # Check if new sdf is needed
-            search_complete = self.sdf_list[-1].points_within_sphere(end_point_meters)
-            if search_complete:
-                # If search complete, add one final sphere to end point
-                final_sphere = Sphere_SDF.get_optimal_sdf(end_point_meters,collision_radius_metres,map_env)
-                self.add_sdf(final_sphere)
-                break
+        cacher = Cacher(computation_inputs)
+        if cacher.exists():
+            self.sdf_list = cacher.load()
+        else:
+            # Create first SDF about start point
+            self.add_sdf(Sphere_SDF.get_optimal_sdf(
+                center_metres_xyz=start_point_meters, 
+                collision_radius_metres=collision_radius_metres, 
+                mapping=map_env
+            ))
 
-            # Get new center
-            new_start_point = self.sdf_list[-1].get_next_sdf_center_perturb(path_xyz,randomness_deg)
-            
-            # Build next sdf
-            building = True
-            back_up = 1
-            while(building):
-                # Build next sphere
-                next_sphere = Sphere_SDF.get_optimal_sdf(new_start_point,collision_radius_metres,map_env)
+            # Search and add more SDFs
+            new_start_point = np.zeros(3)
+            for _i in range(max_spheres-1):
+                print(_i)
+                print(new_start_point)
+                # Check if new sdf is needed
+                search_complete = self.sdf_list[-1].points_within_sphere(end_point_meters)
+                if search_complete:
+                    # If search complete, add one final sphere to end point
+                    final_sphere = Sphere_SDF.get_optimal_sdf(end_point_meters,collision_radius_metres,map_env)
+                    self.add_sdf(final_sphere)
+                    break
 
-                # Try to refine sphere further
-                next_sphere = next_sphere.sphere_refinement(
-                    collision_radius_metres=collision_radius_metres,
-                    mapping=map_env
-                )
+                # Get new center
+                new_start_point = self.sdf_list[-1].get_next_sdf_center_perturb(path_xyz,randomness_deg)
+                
+                # Build next sdf
+                building = True
+                back_up = 1
+                while(building):
+                    # Build next sphere
+                    next_sphere = Sphere_SDF.get_optimal_sdf(new_start_point,collision_radius_metres,map_env)
 
-                # Check if new sdf has volume
-                if next_sphere.radius_voxels <= 1:
-                    # Try new point
-                    new_start_point = self.sdf_list[-back_up].get_next_sdf_center_perturb(path_xyz,randomness_deg)
-                    # If this doesn't work, let's go backward to a previous SDF
-                    if back_up <= len(self.sdf_list):
-                        back_up += 1
+                    # Try to refine sphere further
+                    next_sphere = next_sphere.sphere_refinement(
+                        collision_radius_metres=collision_radius_metres,
+                        mapping=map_env
+                    )
+
+                    # Check if new sdf has volume
+                    if next_sphere.radius_voxels <= 1:
+                        # Try new point
+                        new_start_point = self.sdf_list[-back_up].get_next_sdf_center_perturb(path_xyz,randomness_deg)
+                        # If this doesn't work, let's go backward to a previous SDF
+                        if back_up <= len(self.sdf_list):
+                            back_up += 1
+                        else:
+                            raise Exception("Valid SDF representation not found")
                     else:
-                        raise Exception("Valid SDF representation not found")
-                else:
-                    # Add sphere to SDF list
-                    self.add_sdf(next_sphere)
-                    building=False
+                        # Add sphere to SDF list
+                        self.add_sdf(next_sphere)
+                        building=False
+            
+            # Cache results
+            cacher.save(self.sdf_list)
     
     def characterize_env_with_spheres_xyzpath(
             self,
@@ -151,8 +171,6 @@ class Environment_SDF:
         # Search and add more SDFs
         new_start_point = np.zeros(3)
         for _i in range(max_spheres-1):
-            print(_i)
-            print(new_start_point)
             
             # Check if new sdf is needed
             search_complete = self.sdf_list[-1].points_within_sphere(end_point_meters)
