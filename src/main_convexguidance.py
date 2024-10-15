@@ -66,8 +66,6 @@ if __name__ == "__main__":
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
-    import pdb 
-    pdb.set_trace()
     sdfs.characterize_env_with_spheres_perturbations(
         start_point_meters=xyz_initial,
         end_point_meters=xyz_goal,
@@ -84,9 +82,16 @@ if __name__ == "__main__":
                     trajInit=trajInit)
 
     # Setup SCP iterations manually until exit condition is implemented
+    state_goal = np.zeros(dyn.state_size())
+    state_goal[:3] = xyz_goal
+    state_history = np.zeros(dyn.state_size())
+    state_history[:3] = xyz_initial
+    action_history = np.zeros(dyn.action_size())
     for ii in range(10):
         print(ii)
-        scp.solve
+        scp.solve(state_goal=state_goal,
+                  state_history=state_history[np.newaxis,:],
+                  action_history=action_history[np.newaxis,:])
     
     # Extract entire state history from solver
     state_history = scp.state.value
