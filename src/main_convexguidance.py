@@ -21,13 +21,13 @@ from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
 from policies.mppi import PolicyMPPI
 import policies.samplers
 import standard
-from sdf import *
+from sdf import Environment_SDF
 from policies.cvxguidance import SCPSolver, Trajectory
 
 if __name__ == "__main__":
 
     # Seed everything
-    utils.general.random_seed(1)
+    utils.general.random_seed(42)
 
     # Will log everything here
     log_folder = utils.logging.make_log_folder(name="run")

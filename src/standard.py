@@ -1,4 +1,4 @@
-from dynamics import DynamicsQuadcopter3D
+from dynamics_jax import DynamicsQuadcopter3D
 from mapping import Map
 
 def get_standard_dynamics_quadcopter_3d():
