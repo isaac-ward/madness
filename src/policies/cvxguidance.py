@@ -27,9 +27,11 @@ class SCPSolver:
             dynamics: DynamicsQuadcopter3D,
             trajInit: Trajectory,
             sdf:Environment_SDF,
-            horizon = 1,
-            sig = 50,
-            eps = 1
+            cost_tol = 1e-6,
+            maxiter = 50,
+            sig = 5,
+            eps_dyn = 1,
+            eps_sdf = 1,
     ):
         self.K = K
         self.dynamics = dynamics
@@ -37,9 +39,11 @@ class SCPSolver:
         # self.state_goal = state_goal
 
         self.dt = dynamics.dt
-        self.horizon = horizon
+        self.cost_tol = cost_tol
+        self.maxiter = maxiter
         self.sig = sig
-        self.eps = eps
+        self.eps_dyn = eps_dyn
+        self.eps_sdf = eps_sdf
 
         self.nu = self.dynamics.action_size()
         self.nx = self.dynamics.state_size()
@@ -54,8 +58,7 @@ class SCPSolver:
         self.slack_sdf.value = self.sdf.sdf_values(self.state.value[:,:3])
         self.sdf = sdf
         self.constraints = []
-
-        self.step_count = 1
+        self.cost = 0
 
     def dyn_constraints(
             self,
@@ -120,7 +123,7 @@ class SCPSolver:
         self,
         state_goal
     ):
-        terminal_cost = -self.eps*cvx.sum( self.slack_sdf )
+        terminal_cost = -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm1(self.slack_dyn)
 
         action_cost = cvx.sum([ cvx.sum( [ cvx.square(self.action[k,u]) for u in range(self.nu) ] ) for k in range(self.K) ])
 
@@ -135,22 +138,26 @@ class SCPSolver:
             state_goal,
             state_history
     ):
-        print("count: ", self.step_count)
-        print("count mod horizon: ", self.step_count%self.horizon)
-        if self.step_count%self.horizon == 0:
+        # if self.step_count%self.horizon == 0:
+        ii = 0
+        while ii < self.maxiter:
+            print("iteration: ", ii)
             self.update_constraints(state_goal, state_history)
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("attempting to solve the problem")
             prob.solve()
             print("Problem Status: ", prob.status)
-            
-            self.step_count = 1
 
-        optimal_action_history = self.action.value[self.step_count-1:]
-        optimal_state_history = self.state.value[self.step_count-1:]
+            delta_cost = prob.value - self.cost
+            if np.abs(delta_cost) < self.cost_tol:
+                break
 
-        self.step_count += 1
+            ii += 1
+
+
+        optimal_action_history = self.action.value
+        optimal_state_history = self.state.value
 
         return optimal_action_history, optimal_state_history
 
