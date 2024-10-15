@@ -86,6 +86,7 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
+                    maxiter=2,
                     sig = 1)
 
     # Setup SCP iterations manually until exit condition is implemented
