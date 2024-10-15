@@ -1,6 +1,6 @@
 import numpy as np
 from mapping import Map
-from dynamics import DynamicsQuadcopter3D
+from dynamics_jax import DynamicsQuadcopter3D
 
 class SDF_Types:
     sphere=0
