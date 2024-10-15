@@ -197,12 +197,10 @@ class Environment_SDF:
 
         for i in range(len(self.sdf_list)):
             c = self.sdf_list[i].center_metres_xyz
-            print("c: ", c)
 
             match self.sdf_list[i].sdf_type:
                 case 0:
                     r = self.sdf_list[i].radius_metres
-                    print("r: ", r)
                     d[:,i] = 1 - (1/r)*np.linalg.norm(r_xyz - c[np.newaxis,:]) 
                 case 1:
                     # NOT TESTED
