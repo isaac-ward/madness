@@ -90,8 +90,7 @@ if __name__ == "__main__":
     for ii in range(10):
         print(ii)
         scp.solve(state_goal=state_goal,
-                  state_history=state_history[np.newaxis,:],
-                  action_history=action_history[np.newaxis,:])
+                  state_history=state_history[np.newaxis,:])
     
     # Extract entire state history from solver
     state_history = scp.state.value

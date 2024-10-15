@@ -46,11 +46,11 @@ class SCPSolver:
 
         self.action = cvx.Variable((self.K,self.nu))
         self.state = cvx.Variable((self.K + 1, self.nx))
-        self.slack = cvx.Variable((self.K, len(self.sdf.sdf_list)))
+        self.slack = cvx.Variable((self.K + 1, len(self.sdf.sdf_list)))
         # self.alpha = cvx.Variable(1)
         self.action.value = trajInit.action
         self.state.value = trajInit.state
-        self.slack.value = np.zeros((self.K, len(self.sdf.sdf_list)))
+        self.slack.value = np.zeros((self.K+1, len(self.sdf.sdf_list)))
         self.sdf = sdf
         self.constraints = []
 
@@ -68,17 +68,23 @@ class SCPSolver:
     ):
         
         G = gradient_log_softmax(self.sig, self.slack.value)
-        g0 = log_softmax(self.slack.value)
+        g0 = log_softmax(self.sig, self.slack.value)
 
-        self.constraints += [ G @ (self.slack).T + g0 >= 0 ]
+        print("G.shape = ", G.shape)
+        print("g0.shape = ", g0.shape)
+
+        delta_0 = self.slack.value
+        self.constraints += [ cvx.diag( G @ (self.slack - delta_0).T ) + g0 >= 0 ]
 
         for i in range(len(self.sdf.sdf_list)):
             c = self.sdf.sdf_list[i].center_metres_xyz
+            print("c: ", c)
 
             match self.sdf.sdf_list[i].sdf_type:
                 case 0:
                     r = self.sdf.sdf_list[i].radius_metres
-                    self.constraints += [ self.slack[:,i] <= 1 - (1/r)*cvx.norm(self.state[:,:3] - c) ]
+                    print("r: ", r)
+                    self.constraints += [ self.slack[:,i] <= 1 - (1/r)*cvx.norm(self.state[:,:3] - c[np.newaxis,:]) ]
                 case 1:
                     # NOT FINISHED OR TESTED
                     s = self.sdf.sdf_list[i].diagonal_metres
@@ -91,16 +97,19 @@ class SCPSolver:
             state_goal,
             state_history,
     ):
+        
+        action_ranges = np.array(self.dynamics.action_ranges())
+
         self.constraints += [self.state[0] == state_history[-1]]
         self.constraints += [self.state[self.K] == state_goal]
-        self.constraints += [self.state[k] <= self.dynamics.action_ranges[:,1] for k in range(self.K)]
-        self.constraints += [self.state[k] >= self.dynamics.action_ranges[:,0] for k in range(self.K)]
+        self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
+        self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
 
     def update_constraints(
             self,
             state_goal,
-            state_history, 
-            action_history):
+            state_history
+            ):
         
         self.dyn_constraints()
         self.sdf_constraints()
@@ -111,26 +120,29 @@ class SCPSolver:
         state_goal
     ):
         terminal_cost = self.eps*cvx.sum( self.slack )
+
+        action_cost = cvx.sum([ cvx.sum( [ cvx.square(self.action[k,u]) for u in range(self.nu) ] ) for k in range(self.K) ])
+
+        distance_cost = cvx.sum( [ cvx.square( cvx.norm(state_goal - self.state[k]) ) for k in range(self.K+1) ] )
         
-        bolza_sum = cvx.sum( [ cvx.sum( [ cvx.square(self.action[k,u]) for u in range(self.nu) ] ) for k in range(self.K) ] ) + cvx.sum( [ cvx.square( cvx.norm(state_goal - self.state[k]) ) for k in range(self.K+1) ] )
+        bolza_sum = action_cost # + distance_cost
 
         self.objective = terminal_cost + bolza_sum
 
     def solve(
             self,
             state_goal,
-            state_history,
-            action_history
+            state_history
     ):
         print("count: ", self.step_count)
         print("count mod horizon: ", self.step_count%self.horizon)
         if self.step_count%self.horizon == 0:
-            
-            self.update_constraints(state_goal, state_history, action_history)
+            self.update_constraints(state_goal, state_history)
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
+            print("attempting to solve the problem")
             prob.solve()
-            print("Solved the problem!")
+            print("Problem Status: ", prob.status)
             
             self.step_count = 1
 
@@ -141,7 +153,7 @@ class SCPSolver:
 
         return optimal_action_history, optimal_state_history
 
-
+# TODO
 class PolicyConvex:
     def __init__(
             self,

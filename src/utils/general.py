@@ -57,7 +57,8 @@ def log_softmax(s, v):
     return (1/s)*np.log(np.sum(np.exp(s*v), axis=-1))
 
 def gradient_log_softmax(s, v):
-    return (1/np.sum(np.exp(s*v), axis=-1))*np.exp(s*v)
+    scale_factors = (1/np.sum(np.exp(s*v), axis=-1))
+    return scale_factors[:,np.newaxis]*np.exp(s*v)
 
 class Cacher:
     """
