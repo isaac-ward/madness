@@ -60,7 +60,8 @@ class SCPSolver:
             self,
     ):
         A, B, C = self.dynamics.affinize(self.state.value[:-1], self.action.value)
-        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:,:] for k in range(self.K) ]
+        A, B, C = np.array(A),np.array(B),np.array(C)
+        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] for k in range(self.K) ]
 
     def sdf_constraints(
             self

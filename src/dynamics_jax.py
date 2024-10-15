@@ -160,10 +160,10 @@ class DynamicsQuadcopter3D:
         
         return state_delta
     
-    def linearize(self, state, action):
+    def linearize(self, states, actions):
         """
         Linearize the system dynamics (self.discrete_dynamics) about the given state and action.
-        System dynamics must be written in jax.
+        System dynamics must be written in jax. Works with batch inputs
 
         Parameters
         ----------
@@ -179,15 +179,21 @@ class DynamicsQuadcopter3D:
         B: jax.numpy.ndarray
             Jacobian of dynamics function at provided (state, action) with respect to action
         """
-        # Calculate A and B 
-        A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
-
+        def linearize_single(state, action):
+            # Calculate A and B 
+            A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
+            return A, B
+        
+        # Linearize the batch of states and actions
+        linearize_batch = jax.vmap(linearize_single, in_axes=(0, 0))
+        A, B = linearize_batch(states, actions)
+        
         return A, B
     
-    def affinize(self, state, action):
+    def affinize(self, states, actions):
         """
         Affinize the system dynamics (self.discrete_dynamics) about the given state and action.
-        System dynamics must be written in jax.
+        System dynamics must be written in jax. Works with batch inputs
 
         Parameters
         ----------
@@ -202,12 +208,18 @@ class DynamicsQuadcopter3D:
             Jacobian of dynamics function at provided (state, action) with respect to state
         B: jax.numpy.ndarray
             Jacobian of dynamics function at provided (state, action) with respect to action
-        C: jax.numpy.ndarry
+        C: jax.numpy.ndarray
             The offset term in the first-order Taylor expansion of dynamics function at 
             provided (state, action)
         """
-        # Calculate A, B, and C
-        A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
-        C = self.discrete_dynamics(state, action) - A@state - B@action
-
+        def affinize_single(state, action):
+            # Calculate A, B, and C
+            A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
+            C = self.discrete_dynamics(state, action) - A@state - B@action
+            return A, B, C
+        
+        # Affinize the batch of states and actions
+        affinize_batch = jax.vmap(affinize_single, in_axes=(0, 0))
+        A, B, C = affinize_batch(states, actions)
+        
         return A, B, C
