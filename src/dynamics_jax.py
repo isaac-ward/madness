@@ -63,10 +63,11 @@ class DynamicsQuadcopter3D:
     
     def __getstate__(self):
         """
-        Method when pickling
+        Method when pickling. Exclude jit class variables which aren't picklable
         """
         # Get the object's __dict__ and make a copy
         state = self.__dict__.copy()
+        
         # Remove the attribute you don't want to pickle
         if 'continuous_dynamics' in state:
             del state['continuous_dynamics']
@@ -77,12 +78,12 @@ class DynamicsQuadcopter3D:
 
     def __setstate__(self, state):
         """
-        Method when unpickling
+        Method when unpickling. Remake jit class variables which aren't picklable
         """
         # Restore instance attributes
         self.__dict__.update(state)
 
-        # Reinitialize the excluded variable
+        # Reinitialize the excluded variables
         # Define continuous dynamics describing the state derivative
         self.continuous_dynamics = jax.jit(self.state_delta)
 
