@@ -60,6 +60,36 @@ class DynamicsQuadcopter3D:
         # Use Euler method for modeling
         self.discrete_dynamics = jax.jit(
             lambda state, action, dt=self.dt: state + dt * self.continuous_dynamics(state, action))
+    
+    def __getstate__(self):
+        """
+        Method when pickling
+        """
+        # Get the object's __dict__ and make a copy
+        state = self.__dict__.copy()
+        # Remove the attribute you don't want to pickle
+        if 'continuous_dynamics' in state:
+            del state['continuous_dynamics']
+        if 'discrete_dynamics' in state:
+            del state['discrete_dynamics']
+
+        return state
+
+    def __setstate__(self, state):
+        """
+        Method when unpickling
+        """
+        # Restore instance attributes
+        self.__dict__.update(state)
+
+        # Reinitialize the excluded variable
+        # Define continuous dynamics describing the state derivative
+        self.continuous_dynamics = jax.jit(self.state_delta)
+
+        # Define discrete dynamics describing next_state = dynamics(state, action)
+        # Use Euler method for modeling
+        self.discrete_dynamics = jax.jit(
+            lambda state, action, dt=self.dt: state + dt * self.continuous_dynamics(state, action))
 
     def state_size(self):
         return 12
