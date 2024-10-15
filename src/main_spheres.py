@@ -91,6 +91,11 @@ if __name__ == "__main__":
         sdfs,
     )
 
+    utils.logging.pickle_to_filepath(
+        os.path.join(os.path.join(log_folder, "environment"), "path_xyz_smooth.pkl"),
+        path_xyz_smooth,
+    )
+
     # Create the environment
     num_seconds = 16
     num_steps = int(num_seconds / dyn.dt)
