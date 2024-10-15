@@ -1,7 +1,7 @@
 # import numpy as np
 import cvxpy as cvx
 import cupy as cp
-import jax.numpy as jnp
+import numpy as np
 
 
 
@@ -10,17 +10,24 @@ from utils.general import *
 import policies.costs
 import policies.samplers
 
-from src.dynamics_jax import DynamicsQuadcopter3D
-from src.sdf import * # CORRECT THIS
-from src.standard import Astar # CORRECT THIS
+from dynamics_jax import DynamicsQuadcopter3D
+from sdf import * 
 
+class Trajectory:
+    def __init__(
+                self,
+                state=None,
+                action=None
+            ):
+        self.state = state
+        self.action = action
 
 class SCPSolver:
     def __init__(
             self,
             K,
             dynamics: DynamicsQuadcopter3D,
-            trajInit,
+            trajInit: Trajectory,
             sdf:Environment_SDF,
             horizon = 1,
             sig = 50,
@@ -28,6 +35,7 @@ class SCPSolver:
     ):
         self.K = K
         self.dynamics = dynamics
+        self.sdf = sdf
         # self.state_goal = state_goal
 
         self.dt = dynamics.dt
@@ -42,8 +50,9 @@ class SCPSolver:
         self.state = cvx.Variable((self.K + 1, self.nx))
         self.slack = cvx.Variable((self.K, len(self.sdf.sdf_list)))
         # self.alpha = cvx.Variable(1)
-        self.action.value, self.state.value = trajInit
-        self.slack.value = jnp.zeros((self.K, len(self.sdf.sdf_list)))
+        self.action.value = trajInit.action
+        self.state.value = trajInit.state
+        self.slack.value = np.zeros((self.K, len(self.sdf.sdf_list)))
         self.sdf = sdf
         self.constraints = []
 
@@ -179,6 +188,5 @@ class PolicyConvex:
         optimal_action_history, optimal_state_history = self.solver.solve(state_history, action_history)
         return optimal_action_history[0], optimal_state_history[0]
     
-
 
 # -----------------------------------------------------------------------------------------------------------------------

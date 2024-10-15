@@ -22,9 +22,12 @@ from policies.mppi import PolicyMPPI
 import policies.samplers
 import standard
 from sdf import *
-from policies.cvxguidance import SCPSolver
+from policies.cvxguidance import SCPSolver, Trajectory
 
 if __name__ == "__main__":
+
+    # Seed everything
+    utils.general.random_seed(1)
 
     # Will log everything here
     log_folder = utils.logging.make_log_folder(name="run")
@@ -35,13 +38,16 @@ if __name__ == "__main__":
 
     # Create a map representation
     #map_ = standard.get_standard_map()
-    map_ = standard.get_28x28x28_at_111()
-    #map_ = standard.get_28x28x28_at_111_with_obstacles()
+    # map_ = standard.get_28x28x28_at_111()
+    map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
     # If you're using a map with invalid positions then you might need to specify the start and goal states manually
-    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_, min_distance=26)
+    state_initial = np.zeros(12)
+    state_initial[:3] = 5
+    state_goal = np.zeros(12)
+    state_goal[:3] = 25
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -49,9 +55,19 @@ if __name__ == "__main__":
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+    print(path_xyz_smooth.shape)
+    K = path_xyz_smooth.shape[0] - 1
+
+    trajInit = Trajectory()
+
+    trajInit.state = np.zeros((K+1, dyn.state_size()))
+    trajInit.state[:,:3] = path_xyz_smooth
+    trajInit.action = np.zeros((K, dyn.action_size()))
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
+    import pdb 
+    pdb.set_trace()
     sdfs.characterize_env_with_spheres_perturbations(
         start_point_meters=xyz_initial,
         end_point_meters=xyz_goal,
@@ -61,15 +77,15 @@ if __name__ == "__main__":
         randomness_deg=45
     )
 
-    num_seconds = 16
-    num_steps = int(num_seconds / dyn.dt)
     # initialize SCP solver object
-    scp = SCPSolver(K = num_steps,
+    scp = SCPSolver(K = K,
                     dynamics=copy.deepcopy(dyn),
-                    sdf = sdfs)
+                    sdf = sdfs,
+                    trajInit=trajInit)
 
     # Setup SCP iterations manually until exit condition is implemented
     for ii in range(10):
+        print(ii)
         scp.solve
     
     # Extract entire state history from solver
@@ -81,6 +97,8 @@ if __name__ == "__main__":
     # I got you @Kris
 
     # Create the environment
+    num_seconds = 16
+    num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=state_initial,
         state_goal=state_goal,
@@ -109,7 +127,7 @@ if __name__ == "__main__":
     # Log the CVX path
     utils.logging.pickle_to_filepath(
         os.path.join(os.path.join(log_folder, "environment"), "path_xyz_cvx.pkl"),
-        path_xyz_cvx,
+        position_history,
     )
 
     # Render visuals
