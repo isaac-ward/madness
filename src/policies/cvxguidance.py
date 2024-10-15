@@ -50,7 +50,7 @@ class SCPSolver:
         # self.alpha = cvx.Variable(1)
         self.action.value = trajInit.action
         self.state.value = trajInit.state
-        self.slack.value = np.zeros((self.K+1, len(self.sdf.sdf_list)))
+        self.slack.value = self.sdf.sdf_values(self.state.value[:,:3])
         self.sdf = sdf
         self.constraints = []
 
@@ -67,26 +67,26 @@ class SCPSolver:
             self
     ):
         
+        delta_0 = self.slack.value
         G = gradient_log_softmax(self.sig, self.slack.value)
-        g0 = log_softmax(self.sig, self.slack.value)
+        g0 = log_softmax(self.sig, delta_0)
 
         print("G.shape = ", G.shape)
         print("g0.shape = ", g0.shape)
 
-        delta_0 = self.slack.value
         self.constraints += [ cvx.diag( G @ (self.slack - delta_0).T ) + g0 >= 0 ]
 
         for i in range(len(self.sdf.sdf_list)):
             c = self.sdf.sdf_list[i].center_metres_xyz
-            print("c: ", c)
+            # print("c: ", c)
 
             match self.sdf.sdf_list[i].sdf_type:
                 case 0:
                     r = self.sdf.sdf_list[i].radius_metres
-                    print("r: ", r)
+                    # print("r: ", r)
                     self.constraints += [ self.slack[:,i] <= 1 - (1/r)*cvx.norm(self.state[:,:3] - c[np.newaxis,:]) ]
                 case 1:
-                    # NOT FINISHED OR TESTED
+                    # NOT TESTED
                     s = self.sdf.sdf_list[i].diagonal_metres
                     self.constraints += [ self.slack[:,i] <= 1 - cvx.norm_inf( (self.state[:,:3] - c)/s )]
                     
@@ -101,9 +101,9 @@ class SCPSolver:
         action_ranges = np.array(self.dynamics.action_ranges())
 
         self.constraints += [self.state[0] == state_history[-1]]
-        self.constraints += [self.state[self.K] == state_goal]
-        self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
-        self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
+        self.constraints += [self.state[-1] == state_goal]
+        # self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
+        # self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
 
     def update_constraints(
             self,
@@ -119,7 +119,7 @@ class SCPSolver:
         self,
         state_goal
     ):
-        terminal_cost = self.eps*cvx.sum( self.slack )
+        terminal_cost = -self.eps*cvx.sum( self.slack )
 
         action_cost = cvx.sum([ cvx.sum( [ cvx.square(self.action[k,u]) for u in range(self.nu) ] ) for k in range(self.K) ])
 
