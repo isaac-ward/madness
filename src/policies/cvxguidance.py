@@ -3,15 +3,13 @@ import cvxpy as cvx
 import cupy as cp
 import numpy as np
 
-
-
 import utils.geometric
-from utils.general import *
+from utils.general import log_softmax, gradient_log_softmax
 import policies.costs
 import policies.samplers
 
 from dynamics_jax import DynamicsQuadcopter3D
-from sdf import * 
+from sdf import Environment_SDF, SDF_Types
 
 class Trajectory:
     def __init__(
@@ -103,7 +101,7 @@ class SCPSolver:
             state_history, 
             action_history):
         
-        self.dyn_constraints(state_history, action_history)
+        self.dyn_constraints()
         self.sdf_constraints()
         self.boundary_constraints(state_goal, state_history)
 
