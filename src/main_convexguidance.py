@@ -60,9 +60,15 @@ if __name__ == "__main__":
 
     trajInit = Trajectory()
 
+    k = dyn.thrust_coef
+    m = dyn.mass
+    g = dyn.g
+    w_trim = np.sqrt(m*g/(4*k))
+
     trajInit.state = np.zeros((K+1, dyn.state_size()))
     trajInit.state[:,:3] = path_xyz_smooth
-    trajInit.action = np.zeros((K, dyn.action_size()))
+    trajInit.action = w_trim * np.ones((K, dyn.action_size()))
+    # trajInit.action = np.zeros((K, dyn.action_size()))
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
@@ -88,7 +94,7 @@ if __name__ == "__main__":
     state_history = np.zeros(dyn.state_size())
     state_history[:3] = xyz_initial
     action_history = np.zeros(dyn.action_size())
-    for ii in range(10):
+    for ii in range(2):
         print(ii)
         scp.solve(state_goal=state_goal,
                   state_history=state_history[np.newaxis,:])
