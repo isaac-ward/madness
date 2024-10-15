@@ -123,12 +123,15 @@ class SCPSolver:
             state_history,
             action_history
     ):
+        print("count: ", self.step_count)
+        print("count mod horizon: ", self.step_count%self.horizon)
         if self.step_count%self.horizon == 0:
             
             self.update_constraints(state_goal, state_history, action_history)
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             prob.solve()
+            print("Solved the problem!")
             
             self.step_count = 1
 
