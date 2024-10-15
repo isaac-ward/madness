@@ -139,24 +139,24 @@ class DynamicsQuadcopter3D:
         state_delta = jnp.zeros_like(state)
 
         # Positions change according to velocity
-        state_delta[0] = xd
-        state_delta[1] = yd
-        state_delta[2] = zd
+        state_delta = state_delta.at[0].set(xd)
+        state_delta = state_delta.at[1].set(yd)
+        state_delta = state_delta.at[2].set(zd)
 
         # Euler angles change according to body rates
-        state_delta[3] = q * s_φ / c_θ + r * c_φ / c_θ
-        state_delta[4] = q * c_φ - r * s_φ
-        state_delta[5] = p + q * s_φ * t_θ + r * c_φ * t_θ
+        state_delta = state_delta.at[3].set(q * s_φ / c_θ + r * c_φ / c_θ)
+        state_delta = state_delta.at[4].set(q * c_φ - r * s_φ)
+        state_delta = state_delta.at[5].set(p + q * s_φ * t_θ + r * c_φ * t_θ)
 
         # Velocities change according to forces and moments
-        state_delta[6] =   - (ft / self.mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ)
-        state_delta[7] =   - (ft / self.mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ)
-        state_delta[8] = self.g - (ft / self.mass) * (c_θ * c_φ)
+        state_delta = state_delta.at[6].set(-(ft / self.mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ))
+        state_delta = state_delta.at[7].set(-(ft / self.mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ))
+        state_delta = state_delta.at[8].set(self.g - (ft / self.mass) * (c_θ * c_φ))
 
         # Body rates change according to moments of inertia and torques
-        state_delta[9]  = ((self.Iy - self.Iz) * q * r + tx) / self.Ix
-        state_delta[10] = ((self.Iz - self.Ix) * p * r + ty) / self.Iy
-        state_delta[11] = ((self.Ix - self.Iy) * p * q + tz) / self.Iz
+        state_delta = state_delta.at[9].set(((self.Iy - self.Iz) * q * r + tx) / self.Ix)
+        state_delta = state_delta.at[10].set(((self.Iz - self.Ix) * p * r + ty) / self.Iy)
+        state_delta = state_delta.at[11].set(((self.Ix - self.Iy) * p * q + tz) / self.Iz)
         
         return state_delta
     
