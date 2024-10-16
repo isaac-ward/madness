@@ -27,12 +27,12 @@ class SCPSolver:
             dynamics: DynamicsQuadcopter3D,
             trajInit: Trajectory,
             sdf:Environment_SDF,
-            cost_tol = 1e-6,
+            cost_tol = 1e-3,
             maxiter = 50.,
             sig = 5.,
             eps_dyn = 1.,
             eps_sdf = 1.,
-            rho = 1.
+            rho = 5.
     ):
         self.K = K
         self.dynamics = dynamics
@@ -52,15 +52,14 @@ class SCPSolver:
 
         self.action = cvx.Variable((self.K,self.nu))
         self.state = cvx.Variable((self.K + 1, self.nx))
-        # self.slack_sdf = cvx.Variable((self.K + 1, len(self.sdf.sdf_list)))
+        self.slack_sdf = cvx.Variable((self.K + 1, len(self.sdf.sdf_list)))
         self.slack_dyn = cvx.Variable((self.K, self.nx))
-        # self.alpha = cvx.Variable(1)
         self.action_prev = trajInit.action
         self.state_prev = trajInit.state
-        # self.slack_sdf.value = self.sdf.sdf_values(self.state.value[:,:3])
+        self.slack_sdf.value = self.sdf.sdf_values(self.state.value[:,:3])
         self.sdf = sdf
         self.constraints = []
-        self.cost = 0
+        self.cost = np.inf
         self.rho_inc = 0
 
     def dyn_constraints(
@@ -68,14 +67,11 @@ class SCPSolver:
     ):
         A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
-        print("A_0 = ", A[0,:,:])
-        print("B_0  =", B[50,:,:])
-        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] for k in range(self.K) ]
+        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
         self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho + self.rho_inc for k in range(self.K+1)]
         self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho + self.rho_inc for k in range(self.K)]
 
-        # trust_radius = 0.5
-        # self.constraints += [ cvx.norm2(self.slack_dyn, axis=1) <= trust_radius ]
+        # self.constraints += [ cvx.norm_inf(self.slack_dyn, axis=1) <= self.rho + self.rho_inc ]
 
     def sdf_constraints(
             self
@@ -123,8 +119,10 @@ class SCPSolver:
             state_history
             ):
         
+        self.constraints = []
+
         self.dyn_constraints()
-        # self.sdf_constraints()
+        self.sdf_constraints()
         self.boundary_constraints(state_goal, state_history)
 
     def update_objective(
@@ -138,7 +136,7 @@ class SCPSolver:
         
         bolza_sum = action_cost + distance_cost
 
-        self.objective = bolza_sum #+ terminal_cost
+        self.objective = bolza_sum + terminal_cost
 
     def solve(
             self,
@@ -154,17 +152,17 @@ class SCPSolver:
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("attempting to solve the problem")
-            prob.solve(solver=cvx.ECOS)
+            prob.solve(solver=cvx.SCS)
             print("Problem Status: ", prob.status)
 
             delta_cost = prob.value - self.cost
             if np.abs(delta_cost) < self.cost_tol:
                 break
-            
+
             if prob.status == cvx.INFEASIBLE:
                 self.state.value = np.copy(self.state_prev)
                 self.action.value =  np.copy(self.action_prev)
-                self.rho_inc += 1
+                self.rho_inc += 2
                 continue
 
             self.cost = np.copy(prob.value)

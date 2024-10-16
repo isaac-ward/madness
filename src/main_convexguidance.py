@@ -38,8 +38,11 @@ if __name__ == "__main__":
 
     # Create a map representation
     #map_ = standard.get_standard_map()
-    map_ = standard.get_28x28x28_at_111()
-    # map_ = standard.get_28x28x28_at_111_with_obstacles()
+    # map_ = standard.get_28x28x28_at_111()
+
+    print("let's get that map boys")
+    map_ = standard.get_28x28x28_at_111_with_obstacles()
+    print("got it!")
 
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
@@ -54,7 +57,9 @@ if __name__ == "__main__":
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
+    print("we absolutely need this path")
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+    print("good thing we got it")
     print(path_xyz_smooth.shape)
     K = path_xyz_smooth.shape[0] - 1
 
@@ -66,29 +71,28 @@ if __name__ == "__main__":
     w_trim = np.sqrt(m*g/(4*k))
 
     trajInit.state = np.zeros((K+1, dyn.state_size()))
-    # trajInit.state[:,:3].fill = path_xyz_smooth
-    trajInit.state[:,:3] = xyz_initial
+    trajInit.state[:,:3] = path_xyz_smooth
     trajInit.action = w_trim * np.ones((K, dyn.action_size()))
-    # trajInit.action = np.zeros((K, dyn.action_size()))
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
-    # sdfs.characterize_env_with_spheres_perturbations(
-    #     start_point_meters=xyz_initial,
-    #     end_point_meters=xyz_goal,
-    #     path_xyz=path_xyz_smooth,
-    #     map_env=map_,
-    #     max_spheres=500,
-    #     randomness_deg=45
-    # )
+    print("we are here. we are alive. and we are loving it.")
+    sdfs.characterize_env_with_spheres_perturbations(
+        start_point_meters=xyz_initial,
+        end_point_meters=xyz_goal,
+        path_xyz=path_xyz_smooth,
+        map_env=map_,
+        max_spheres=500,
+        randomness_deg=45
+    )
 
     # initialize SCP solver object
     scp = SCPSolver(K = K,
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 2,
-                    eps_dyn=10,
+                    maxiter = 50,
+                    eps_dyn=50,
                     sig = 1)
 
     # Setup SCP iterations manually until exit condition is implemented
@@ -103,9 +107,6 @@ if __name__ == "__main__":
     state_history = scp.state.value
     # Extract euclidean coordinates of drone path from state history
     position_history = state_history[:,:3]
-
-    # HOW CAN I PLOT THIS????
-    # I got you @Kris
 
     # Create the environment
     num_seconds = 16
