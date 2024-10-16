@@ -38,8 +38,8 @@ if __name__ == "__main__":
 
     # Create a map representation
     #map_ = standard.get_standard_map()
-    # map_ = standard.get_28x28x28_at_111()
-    map_ = standard.get_28x28x28_at_111_with_obstacles()
+    map_ = standard.get_28x28x28_at_111()
+    # map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
@@ -66,27 +66,29 @@ if __name__ == "__main__":
     w_trim = np.sqrt(m*g/(4*k))
 
     trajInit.state = np.zeros((K+1, dyn.state_size()))
-    trajInit.state[:,:3] = path_xyz_smooth
+    # trajInit.state[:,:3].fill = path_xyz_smooth
+    trajInit.state[:,:3] = xyz_initial
     trajInit.action = w_trim * np.ones((K, dyn.action_size()))
     # trajInit.action = np.zeros((K, dyn.action_size()))
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
-    sdfs.characterize_env_with_spheres_perturbations(
-        start_point_meters=xyz_initial,
-        end_point_meters=xyz_goal,
-        path_xyz=path_xyz_smooth,
-        map_env=map_,
-        max_spheres=500,
-        randomness_deg=45
-    )
+    # sdfs.characterize_env_with_spheres_perturbations(
+    #     start_point_meters=xyz_initial,
+    #     end_point_meters=xyz_goal,
+    #     path_xyz=path_xyz_smooth,
+    #     map_env=map_,
+    #     max_spheres=500,
+    #     randomness_deg=45
+    # )
 
     # initialize SCP solver object
     scp = SCPSolver(K = K,
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter=2,
+                    maxiter = 2,
+                    eps_dyn=10,
                     sig = 1)
 
     # Setup SCP iterations manually until exit condition is implemented
@@ -95,10 +97,8 @@ if __name__ == "__main__":
     state_history = np.zeros(dyn.state_size())
     state_history[:3] = xyz_initial
     action_history = np.zeros(dyn.action_size())
-    for ii in range(2):
-        print(ii)
-        scp.solve(state_goal=state_goal,
-                  state_history=state_history[np.newaxis,:])
+    scp.solve(state_goal=state_goal,
+                state_history=state_history[np.newaxis,:])
     
     # Extract entire state history from solver
     state_history = scp.state.value

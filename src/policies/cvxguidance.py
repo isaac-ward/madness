@@ -28,10 +28,11 @@ class SCPSolver:
             trajInit: Trajectory,
             sdf:Environment_SDF,
             cost_tol = 1e-6,
-            maxiter = 50,
-            sig = 5,
-            eps_dyn = 1,
-            eps_sdf = 1,
+            maxiter = 50.,
+            sig = 5.,
+            eps_dyn = 1.,
+            eps_sdf = 1.,
+            rho = 1.
     ):
         self.K = K
         self.dynamics = dynamics
@@ -44,30 +45,37 @@ class SCPSolver:
         self.sig = sig
         self.eps_dyn = eps_dyn
         self.eps_sdf = eps_sdf
+        self.rho = rho
 
         self.nu = self.dynamics.action_size()
         self.nx = self.dynamics.state_size()
 
         self.action = cvx.Variable((self.K,self.nu))
         self.state = cvx.Variable((self.K + 1, self.nx))
-        self.slack_sdf = cvx.Variable((self.K + 1, len(self.sdf.sdf_list)))
-        self.slack_dyn = cvx.Variable((self.K+1, self.nx))
+        # self.slack_sdf = cvx.Variable((self.K + 1, len(self.sdf.sdf_list)))
+        self.slack_dyn = cvx.Variable((self.K, self.nx))
         # self.alpha = cvx.Variable(1)
-        self.action.value = trajInit.action
-        self.state.value = trajInit.state
-        self.slack_sdf.value = self.sdf.sdf_values(self.state.value[:,:3])
+        self.action_prev = trajInit.action
+        self.state_prev = trajInit.state
+        # self.slack_sdf.value = self.sdf.sdf_values(self.state.value[:,:3])
         self.sdf = sdf
         self.constraints = []
         self.cost = 0
+        self.rho_inc = 0
 
     def dyn_constraints(
             self,
     ):
-        A, B, C = self.dynamics.affinize(self.state.value[:-1], self.action.value)
+        A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
         print("A_0 = ", A[0,:,:])
         print("B_0  =", B[50,:,:])
-        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.slack_dyn[k,:] for k in range(self.K) ]
+        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] for k in range(self.K) ]
+        self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho + self.rho_inc for k in range(self.K+1)]
+        self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho + self.rho_inc for k in range(self.K)]
+
+        # trust_radius = 0.5
+        # self.constraints += [ cvx.norm2(self.slack_dyn, axis=1) <= trust_radius ]
 
     def sdf_constraints(
             self
@@ -106,8 +114,8 @@ class SCPSolver:
 
         self.constraints += [self.state[0] == state_history[-1]]
         self.constraints += [self.state[-1] == state_goal]
-        # self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
-        # self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
+        self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
+        self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
 
     def update_constraints(
             self,
@@ -123,15 +131,14 @@ class SCPSolver:
         self,
         state_goal
     ):
-        terminal_cost = -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm1(self.slack_dyn)
+        terminal_cost = self.eps_dyn*cvx.norm(self.slack_dyn, p='fro') # - self.eps_sdf*cvx.sum( self.slack_sdf )
 
-        action_cost = cvx.sum([ cvx.sum( [ cvx.square(self.action[k,u]) for u in range(self.nu) ] ) for k in range(self.K) ])
-
-        distance_cost = cvx.sum( [ cvx.square( cvx.norm(state_goal - self.state[k]) ) for k in range(self.K+1) ] )
+        action_cost = cvx.square( cvx.norm(self.action, p='fro') )
+        distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:] - self.state, p='fro') )
         
-        bolza_sum = action_cost # + distance_cost
+        bolza_sum = action_cost + distance_cost
 
-        self.objective = 0 # bolza_sum # + terminal_cost
+        self.objective = bolza_sum + terminal_cost
 
     def solve(
             self,
@@ -142,18 +149,28 @@ class SCPSolver:
         ii = 0
         while ii < self.maxiter:
             print("iteration: ", ii)
+            ii += 1
             self.update_constraints(state_goal, state_history)
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("attempting to solve the problem")
-            prob.solve()
+            prob.solve(solver=cvx.ECOS)
             print("Problem Status: ", prob.status)
 
             delta_cost = prob.value - self.cost
             if np.abs(delta_cost) < self.cost_tol:
                 break
+            
+            if prob.status == cvx.INFEASIBLE:
+                self.state.value = self.state_prev
+                self.action.value = self.action_prev
+                self.rho_inc += 1
+                continue
 
-            ii += 1
+            self.cost = prob.value
+            self.state_prev = self.state.value
+            self.action_prev = self.action.value
+            self.rho_inc = 0
 
 
         optimal_action_history = self.action.value
