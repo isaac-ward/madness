@@ -134,11 +134,11 @@ class SCPSolver:
         terminal_cost = self.eps_dyn*cvx.norm(self.slack_dyn, p='fro') # - self.eps_sdf*cvx.sum( self.slack_sdf )
 
         action_cost = cvx.square( cvx.norm(self.action, p='fro') )
-        distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:] - self.state, p='fro') )
+        distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
         
         bolza_sum = action_cost + distance_cost
 
-        self.objective = bolza_sum + terminal_cost
+        self.objective = bolza_sum #+ terminal_cost
 
     def solve(
             self,
@@ -162,19 +162,19 @@ class SCPSolver:
                 break
             
             if prob.status == cvx.INFEASIBLE:
-                self.state.value = self.state_prev
-                self.action.value = self.action_prev
+                self.state.value = np.copy(self.state_prev)
+                self.action.value =  np.copy(self.action_prev)
                 self.rho_inc += 1
                 continue
 
-            self.cost = prob.value
-            self.state_prev = self.state.value
-            self.action_prev = self.action.value
+            self.cost = np.copy(prob.value)
+            self.state_prev = np.copy(self.state.value)
+            self.action_prev = np.copy(self.action.value)
             self.rho_inc = 0
 
 
-        optimal_action_history = self.action.value
-        optimal_state_history = self.state.value
+        optimal_action_history = np.copy(self.action.value)
+        optimal_state_history = np.copy(self.state.value)
 
         return optimal_action_history, optimal_state_history
 
