@@ -96,7 +96,6 @@ if __name__ == "__main__":
     state_goal[:3] = xyz_goal
     state_history = np.zeros(dyn.state_size())
     state_history[:3] = xyz_initial
-    action_history = np.zeros(dyn.action_size())
     scp.solve(state_goal=state_goal,
                 state_history=state_history[np.newaxis,:])
     

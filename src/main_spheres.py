@@ -42,8 +42,8 @@ if __name__ == "__main__":
 
     # Create a map representation
     #map_ = standard.get_standard_map()
-    #map_ = standard.get_28x28x28_at_111() # TODO Still having issues with spheres breaking out of cube
-    map_ = standard.get_28x28x28_at_111_with_obstacles()
+    map_ = standard.get_28x28x28_at_111() 
+    #map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
