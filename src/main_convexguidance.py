@@ -57,9 +57,7 @@ if __name__ == "__main__":
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
-    print("we absolutely need this path")
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
-    print("good thing we got it")
     print(path_xyz_smooth.shape)
     K = path_xyz_smooth.shape[0] - 1
 
@@ -91,9 +89,10 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 50,
+                    maxiter = 5,
                     eps_dyn=50,
-                    sig = 1)
+                    sig = 5,
+                    rho=5.)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_goal = np.zeros(dyn.state_size())
