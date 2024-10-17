@@ -12,6 +12,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import math
 
+import warnings
 import os
 from tqdm import tqdm
 import pickle
@@ -124,7 +125,7 @@ class Visual:
         # - map.pkl
 
         # Create a figure
-        fig = plt.figure(figsize=(12, 12))
+        fig = plt.figure(figsize=(24, 24))
         # 1 row, two columns
         gs = gridspec.GridSpec(2, 2) #, height_ratios=[1, 1, 0.15, 0.15, 0.15, 0.15])
         axs = {
@@ -143,6 +144,23 @@ class Visual:
 
         # shape is (3,2) and is the lower and upper bounds for each axis
         extents = map_.extents_metres_xyz
+
+        # We also want the a* (not policy) path, if it exists
+        path_flag = False
+        fp_path = os.path.join(self.run_folder, "a_star", "start_to_goal.npz")
+        try:
+            path_xyz = utils.logging.load_from_npz(fp_path)
+            path_flag = True
+        except:
+            warnings.warn(f"No path found for A* at {fp_path}")
+
+        path_smooth_flag = False
+        fp_path_smooth = os.path.join(self.run_folder, "a_star", "start_to_goal_smooth.npz")
+        try:
+            path_xyz_smooth = utils.logging.load_from_npz(fp_path_smooth)
+            path_smooth_flag = True
+        except:
+            warnings.warn(f"No (smoothed) path found for A* at {fp_path_smooth}")
 
         # Now get the voxel grid info for rendering
         print("Precomputing voxel information...", end="")
@@ -247,48 +265,71 @@ class Visual:
                 alpha=0.1,
             )
 
-            # Now we go through and plot each sphere (orthogonals as a circle,
-            # main as a sphere)
+            # This is for plotting spherical sdfs
+            def plot_sphere(ax, center, radius):
+                """
+                Plots a 3D sphere on the provided axis.
+
+                Parameters:
+                ax (matplotlib.axes._subplots.Axes3DSubplot): The 3D axis to plot the sphere on.
+                center (array-like): The center of the sphere (x, y, z).
+                radius (float): The radius of the sphere.
+                """
+                # Create data for the sphere
+                u = np.linspace(0, 2 * np.pi, 100)
+                v = np.linspace(0, np.pi, 100)
+                
+                x = radius * np.outer(np.cos(u), np.sin(v)) + center[0]
+                y = radius * np.outer(np.sin(u), np.sin(v)) + center[1]
+                z = radius * np.outer(np.ones(np.size(u)), np.cos(v)) + center[2]
+
+                # Plot the surface
+                ax.plot_surface(x, y, z, color='purple', alpha=0.15)
+
+            # In 3D, plot the SDFs
             for sdf in sdfs.sdf_list:
-                #print(f"{sdf}")
+                # Plot the sphere
+                plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
 
-                # Get the center and radius
-                center = sdf.center_metres_xyz
-                radius = sdf.radius_metres
-                
-                # We'll make the spheres
-                color = 'purple'
-                
-                # Behavior changes depending on axis
-                #if axes_name == "main":
 
-                # Plot using 3d, which we'll do by
-                ax.scatter(
-                    [v[0] for v in sdf.interior_metre_coords],
-                    [v[1] for v in sdf.interior_metre_coords],
-                    [v[2] for v in sdf.interior_metre_coords],
-                    color=color,
-                    marker='x',
-                    alpha=0.5,
+            # # Assemble the coordinates that are encapuslated by the SDFs
+            # in_sdfs = np.array([v for sdf in sdfs.sdf_list for v in sdf.interior_metre_coords])
+            # # Only the unique ones please
+            # in_sdfs = np.unique(in_sdfs, axis=0)
+
+            # # Now we only want the ones that are 
+
+            # # Plot using 3d, which we'll do by
+            # ax.scatter(
+            #     in_sdfs[:, 0],
+            #     in_sdfs[:, 1],
+            #     in_sdfs[:, 2],
+            #     color='purple',
+            #     marker='.',
+            #     alpha=0.1,
+            # )
+
+            # In 3D, plot the path and smooth paths in 
+            if path_flag:
+                ax.plot(
+                    path_xyz[:, 0],
+                    path_xyz[:, 1],
+                    path_xyz[:, 2],
+                    color='grey',
+                    linestyle=':',
+                    alpha=1,
+                    linewidth=2,
                 )
-
-                # else:
-                #     if axes_name == "x":
-                #         c1, c2 = 1, 2
-                #     elif axes_name == "y":
-                #         c1, c2 = 0, 2
-                #     elif axes_name == "z":
-                #         c1, c2 = 0, 1
-                #     # Plot using circle patches
-                #     circle = patches.Circle(
-                #         (center[c1], center[c2]),
-                #         radius,
-                #         color=color,
-                #         # no fill
-                #         fill=False,
-                #         linewidth=1,
-                #     )
-                #     ax.add_patch(circle)
+            if path_smooth_flag:
+                ax.plot(
+                    path_xyz_smooth[:, 0],
+                    path_xyz_smooth[:, 1],
+                    path_xyz_smooth[:, 2],
+                    color='orange',
+                    linestyle='-',
+                    alpha=1,
+                    linewidth=2,
+                )
 
         # Save the figure
         #plt.tight_layout()
