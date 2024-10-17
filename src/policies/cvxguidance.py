@@ -37,7 +37,6 @@ class SCPSolver:
         self.K = K
         self.dynamics = dynamics
         self.sdf = sdf
-        # self.state_goal = state_goal
 
         self.dt = dynamics.dt
         self.cost_tol = cost_tol
@@ -79,7 +78,7 @@ class SCPSolver:
         G = gradient_log_softmax(self.sig, self.slack_sdf_prev)
         g0 = log_softmax(self.sig, self.slack_sdf_prev)
 
-        self.constraints += [ cvx.sum( cvx.multiply(G, (self.slack_sdf - self.slack_sdf_prev)), axis=1 ) + g0 >= 0 ]
+        # self.constraints += [ cvx.sum( cvx.multiply(G, (self.slack_sdf - self.slack_sdf_prev)), axis=1 ) + g0 >= 0 ]
         self.constraints += [ cvx.diag( G @ (self.slack_sdf - self.slack_sdf_prev).T) + g0 >= 0 ]
 
 
@@ -107,8 +106,8 @@ class SCPSolver:
 
         self.constraints += [self.state[0] == state_history[-1]]
         self.constraints += [self.state[-1] == state_goal]
-        self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
-        self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
+        # self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
+        # self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
 
     def update_constraints(
             self,
@@ -126,7 +125,7 @@ class SCPSolver:
         self,
         state_goal
     ):
-        terminal_cost = self.eps_dyn*cvx.norm(self.slack_dyn, p='fro') # - self.eps_sdf*cvx.sum( self.slack_sdf )
+        terminal_cost = self.eps_dyn*cvx.norm(self.slack_dyn, p='fro') - self.eps_sdf*cvx.sum( self.slack_sdf )
 
         action_cost = cvx.square( cvx.norm(self.action, p='fro') )
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
@@ -156,7 +155,7 @@ class SCPSolver:
             if np.abs(delta_cost) < self.cost_tol:
                 break
 
-            if prob.status != cvx.OPTIMAL or prob.status != cvx.OPTIMAL_INACCURATE:
+            if not(prob.status == cvx.OPTIMAL or prob.status == cvx.OPTIMAL_INACCURATE):
                 print("look. we tried and now we are here. what can we do?")
                 self.state.value = np.copy(self.state_prev)
                 self.action.value =  np.copy(self.action_prev)
@@ -168,6 +167,7 @@ class SCPSolver:
             self.cost = np.copy(prob.value)
             self.state_prev = np.copy(self.state.value)
             self.action_prev = np.copy(self.action.value)
+            self.slack_sdf_prev = np.copy(self.slack_sdf.value)
             self.rho_inc = 1
 
 
