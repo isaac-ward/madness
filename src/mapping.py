@@ -307,9 +307,9 @@ class Map:
 
         return np.array([
             [x, y, z]
-            for x in range(center_voxel_coords_ints[0] - radius_voxels, center_voxel_coords_ints[0] + radius_voxels + 1)
-            for y in range(center_voxel_coords_ints[1] - radius_voxels, center_voxel_coords_ints[1] + radius_voxels + 1)
-            for z in range(center_voxel_coords_ints[2] - radius_voxels, center_voxel_coords_ints[2] + radius_voxels + 1)
+            for x in range(center_voxel_coords_ints[0] - radius_voxels, center_voxel_coords_ints[0] + radius_voxels + 1,1)
+            for y in range(center_voxel_coords_ints[1] - radius_voxels, center_voxel_coords_ints[1] + radius_voxels + 1,1)
+            for z in range(center_voxel_coords_ints[2] - radius_voxels, center_voxel_coords_ints[2] + radius_voxels + 1,1)
             if np.linalg.norm(np.array([x, y, z]) - np.array(center_voxel_coords_ints)) < radius_voxels
         ])
 
@@ -345,7 +345,7 @@ class Map:
         # This can be a computationally expensive operation, so we'll cache the results
         # and only recompute if the inputs change
         computation_inputs = (
-            self.voxel_grid,
+            self.map_filepath,
             a_coord_metres,
             b_coord_metres,
             avoid_radius,

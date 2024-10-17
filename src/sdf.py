@@ -90,8 +90,7 @@ class Environment_SDF:
             # Search and add more SDFs
             new_start_point = np.zeros(3)
             for _i in range(max_spheres-1):
-                print(_i)
-                print(new_start_point)
+                print("Iteration: " + str(_i))
                 # Check if new sdf is needed
                 search_complete = self.sdf_list[-1].points_within_sphere(end_point_meters)
                 if search_complete:
@@ -109,12 +108,16 @@ class Environment_SDF:
                 while(building):
                     # Build next sphere
                     next_sphere = Sphere_SDF.get_optimal_sdf(new_start_point,collision_radius_metres,map_env)
+                    print("Next Sphere: " + str(next_sphere.center_metres_xyz))
+                    print(next_sphere.interior_metre_coords)
 
                     # Try to refine sphere further
                     next_sphere = next_sphere.sphere_refinement(
                         collision_radius_metres=collision_radius_metres,
                         mapping=map_env
                     )
+                    print("Refined Sphere: " + str(next_sphere.center_metres_xyz))
+                    print(next_sphere.interior_metre_coords)
 
                     # Check if new sdf has volume
                     if next_sphere.radius_voxels <= 1:
@@ -296,6 +299,7 @@ class Sphere_SDF:
 
             # Get all voxels within the current radius
             voxels_to_check = mapping.get_voxels_within_radius(center_voxel_xyz,radius_voxels)
+            # TODO create a list of checked voxels so we don't keep checking the same ones over and over
 
             # Check if any of the voxels are occupied
             collision_bools = mapping.batch_is_collision_voxel_coords(voxels_to_check,collision_radius_metres)
@@ -407,16 +411,26 @@ class Sphere_SDF:
         try:
             # Calculate squared distance from center for each vector
             distances_squared = np.sum((points - self.center_metres_xyz) ** 2, axis=1)
+            print(points)
+            print(self.center_metres_xyz)
+            print(distances_squared)
             
             # Compare distances to the squared radius
-            within_sphere = (distances_squared <= self.radius_metres ** 2).astype(int)
+            within_sphere = (distances_squared <= (self.radius_metres ** 2)).astype(int)
+            print(self.radius_metres ** 2)
+            print(within_sphere)
         
         except:
             # Calculate squared distance from center for each vector
             distances_squared = np.sum((points - self.center_metres_xyz) ** 2)
+            print(points)
+            print(self.center_metres_xyz)
+            print(distances_squared)
             
             # Compare distances to the squared radius
-            within_sphere = (distances_squared <= self.radius_metres ** 2).astype(int)
+            within_sphere = (distances_squared <= (self.radius_metres ** 2)).astype(int)
+            print(self.radius_metres ** 2)
+            print(within_sphere)
         
         return within_sphere
 
@@ -596,7 +610,7 @@ class Sphere_SDF:
             normalize_perturbation_vect /= np.linalg.norm(random_perturb_rad)
 
         # Add the random perturbation to the opposite direction
-        perturbed_direction = opposite_direction + normalize_perturbation_vect
+        perturbed_direction = (0.2)*opposite_direction + (0.1)*normalize_perturbation_vect
 
         ## xyzpath contribution ------------------------------------------------
         # Get closest point to sphere center
@@ -613,7 +627,7 @@ class Sphere_SDF:
             normalize_xyzdir = xyzdir / np.linalg.norm(xyzdir)
         
         # Add xyzpath perturbation to perturbed direction
-        perturbed_direction += normalize_xyzdir
+        perturbed_direction += (0.8)*normalize_xyzdir
 
         # Normalize the final vector to ensure it points in the correct direction
         perturbed_direction /= np.linalg.norm(perturbed_direction)
