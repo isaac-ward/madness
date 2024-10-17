@@ -91,7 +91,7 @@ class SCPSolver:
             match self.sdf.sdf_list[i].sdf_type:
                 case 0:
                     r = self.sdf.sdf_list[i].radius_metres
-                    self.constraints += [ self.slack_sdf[k,i] <= 1 - (1/r)*cvx.norm(self.state[k,:3] - c) for k in range(self.K + 1)]
+                    self.constraints += [ self.slack_sdf[k,i] <= 1 - (1/r)*cvx.norm2(self.state[k,:3] - c) for k in range(self.K + 1)]
                 case 1:
                     # NOT TESTED
                     s = self.sdf.sdf_list[i].diagonal_metres
@@ -151,7 +151,7 @@ class SCPSolver:
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("attempting to solve the problem")
-            prob.solve(solver=cvx.SCS)
+            prob.solve(solver=cvx.SCS,verbose=True)
             print("Problem Status: ", prob.status)
 
             delta_cost = prob.value - self.cost

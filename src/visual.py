@@ -161,6 +161,14 @@ class Visual:
             path_smooth_flag = True
         except:
             warnings.warn(f"No (smoothed) path found for A* at {fp_path_smooth}")
+        
+        path_cvx_flag = False
+        fp_path_cvx = os.path.join(self.run_folder, "cvx", "path_xyz_cvx.npz")
+        try:
+            path_xyz_cvx = utils.logging.load_from_npz(fp_path_cvx)
+            path_cvx_flag = True
+        except:
+            warnings.warn(f"No cvx path found at {fp_path_cvx}")
 
         # Now get the voxel grid info for rendering
         print("Precomputing voxel information...", end="")
@@ -223,22 +231,6 @@ class Visual:
 
         for axes_name in ["main", "x", "y", "z"]:
             setup_axes_3d(axs, axes_name)
-
-        # Retrieve the smooth A* path
-        path_smooth_flag = False
-        try:
-            path_xyz_smooth = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "path_xyz_smooth.pkl"))
-            path_smooth_flag = True
-        except:
-            pass
-
-        # Retrieve the cvx path
-        path_cvx_flag = False
-        try:
-            path_xyz_cvx = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "path_xyz_cvx.pkl"))
-            path_cvx_flag = True
-        except:
-            pass
 
         # In 3D, plot the bounding box
         # In 3D, plot the bounding box
@@ -308,26 +300,20 @@ class Visual:
                 plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
 
             # In 3D, plot the path and smooth paths in 
-            if path_flag:
+            def plot_path(path, color, style):
                 ax.plot(
-                    path_xyz[:, 0],
-                    path_xyz[:, 1],
-                    path_xyz[:, 2],
-                    color='grey',
-                    linestyle=':',
+                    path[:, 0],
+                    path[:, 1],
+                    path[:, 2],
+                    color=color,
+                    linestyle=style,
                     alpha=1,
                     linewidth=2,
                 )
-            if path_smooth_flag:
-                ax.plot(
-                    path_xyz_smooth[:, 0],
-                    path_xyz_smooth[:, 1],
-                    path_xyz_smooth[:, 2],
-                    color='orange',
-                    linestyle='-',
-                    alpha=1,
-                    linewidth=2,
-                )
+
+            if path_flag: plot_path(path_xyz, 'grey', ':')
+            if path_smooth_flag: plot_path(path_xyz_smooth, 'orange', '-')
+            if path_cvx_flag: plot_path(path_xyz_cvx, 'cyan', '-')
 
         # Save the figure
         #plt.tight_layout()

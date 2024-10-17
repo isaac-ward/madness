@@ -50,14 +50,16 @@ if __name__ == "__main__":
     state_initial = np.zeros(12)
     state_initial[:3] = 5
     state_goal = np.zeros(12)
-    state_goal[:3] = 25
+    #state_goal[:3] = 25
+    state_goal[:3] = [5,5,20]
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
-    path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+    path_xyz_smooth = path_xyz # TODO
+    #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
     print(path_xyz_smooth.shape)
     K = path_xyz_smooth.shape[0] - 1
 
@@ -68,9 +70,11 @@ if __name__ == "__main__":
     g = dyn.g
     w_trim = np.sqrt(m*g/(4*k))
 
-    trajInit.state = np.zeros((K+1, dyn.state_size()))
-    trajInit.state[:,:3] = path_xyz_smooth
     trajInit.action = w_trim * np.ones((K, dyn.action_size()))
+    trajInit.state = np.zeros((K+1, dyn.state_size()))
+    trajInit.state[:,:3] = path_xyz_smooth[0]
+    for i in range(1,K):
+        trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
@@ -83,13 +87,14 @@ if __name__ == "__main__":
         max_spheres=500,
         randomness_deg=45
     )
+    print("Sphere Count: " + str(len(sdfs.sdf_list)))
 
     # initialize SCP solver object
     scp = SCPSolver(K = K,
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 50,
+                    maxiter = 1,
                     eps_dyn=50,
                     eps_sdf=10,
                     sig = 1.,
@@ -131,14 +136,18 @@ if __name__ == "__main__":
     )
 
     # Log the A* path
-    utils.logging.pickle_to_filepath(
-        os.path.join(os.path.join(log_folder, "environment"), "path_xyz_smooth.pkl"),
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "a_star", "start_to_goal.npz"),
+        path_xyz,
+    )
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
         path_xyz_smooth,
     )
 
     # Log the CVX path
-    utils.logging.pickle_to_filepath(
-        os.path.join(os.path.join(log_folder, "environment"), "path_xyz_cvx.pkl"),
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "cvx", "path_xyz_cvx.npz"),
         position_history,
     )
 

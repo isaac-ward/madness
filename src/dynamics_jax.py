@@ -117,6 +117,9 @@ class DynamicsQuadcopter3D:
             [-magnitude_lo, +magnitude_hi],
         ]) 
     
+    def step(self, state, action):
+        return state + self.state_delta(state, action)
+    
     def state_delta(self, state, action):
         """
         Function to calculate the continuous nonlinear state derivative given a particular
