@@ -89,10 +89,11 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 5,
+                    maxiter = 50,
                     eps_dyn=50,
-                    sig = 5,
-                    rho=5.)
+                    eps_sdf=10,
+                    sig = 1.,
+                    rho=1.)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_goal = np.zeros(dyn.state_size())
