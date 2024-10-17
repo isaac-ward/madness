@@ -224,6 +224,22 @@ class Visual:
         for axes_name in ["main", "x", "y", "z"]:
             setup_axes_3d(axs, axes_name)
 
+        # Retrieve the smooth A* path
+        path_smooth_flag = False
+        try:
+            path_xyz_smooth = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "path_xyz_smooth.pkl"))
+            path_smooth_flag = True
+        except:
+            pass
+
+        # Retrieve the cvx path
+        path_cvx_flag = False
+        try:
+            path_xyz_cvx = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "path_xyz_cvx.pkl"))
+            path_cvx_flag = True
+        except:
+            pass
+
         # In 3D, plot the bounding box
         # In 3D, plot the bounding box
         for axes_name in ["main", "x", "y", "z"]:
@@ -290,24 +306,6 @@ class Visual:
             for sdf in sdfs.sdf_list:
                 # Plot the sphere
                 plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
-
-
-            # # Assemble the coordinates that are encapuslated by the SDFs
-            # in_sdfs = np.array([v for sdf in sdfs.sdf_list for v in sdf.interior_metre_coords])
-            # # Only the unique ones please
-            # in_sdfs = np.unique(in_sdfs, axis=0)
-
-            # # Now we only want the ones that are 
-
-            # # Plot using 3d, which we'll do by
-            # ax.scatter(
-            #     in_sdfs[:, 0],
-            #     in_sdfs[:, 1],
-            #     in_sdfs[:, 2],
-            #     color='purple',
-            #     marker='.',
-            #     alpha=0.1,
-            # )
 
             # In 3D, plot the path and smooth paths in 
             if path_flag:

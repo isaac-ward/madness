@@ -53,6 +53,13 @@ def compute_hash(*args):
         hash_obj.update(repr(arg).encode())
     return hash_obj.hexdigest()
 
+def log_softmax(s, v):
+    return (1/s)*np.log(np.sum(np.exp(s*v), axis=-1))
+
+def gradient_log_softmax(s, v):
+    scale_factors = (1/np.sum(np.exp(s*v), axis=-1))
+    return scale_factors[:,np.newaxis]*np.exp(s*v)
+
 class Cacher:
     """
     This class is a time saver. It caches the results of a computation to disk

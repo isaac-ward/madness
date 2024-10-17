@@ -42,8 +42,8 @@ if __name__ == "__main__":
 
     # Create a map representation
     #map_ = standard.get_standard_map()
-    #map_ = standard.get_28x28x28_at_111() # TODO Still having issues with spheres breaking out of cube
-    map_ = standard.get_28x28x28_at_111_with_obstacles()
+    map_ = standard.get_28x28x28_at_111() 
+    #map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
@@ -57,26 +57,27 @@ if __name__ == "__main__":
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*16) # Ultra safe
+    path_xyz = np.array([xyz_initial, xyz_goal])
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
-    # sdfs.characterize_env_with_spheres_perturbations(
-    #     start_point_meters=xyz_initial,
-    #     end_point_meters=xyz_goal,
-    #     path_xyz=path_xyz_smooth,
-    #     map_env=map_,
-    #     max_spheres=500,
-    #     randomness_deg=45
-    # )
-    sdfs.characterize_env_with_spheres_xyzpath(
+    sdfs.characterize_env_with_spheres_perturbations(
+        start_point_meters=xyz_initial,
+        end_point_meters=xyz_goal,
+        path_xyz=path_xyz_smooth,
+        map_env=map_,
+        max_spheres=500,
+        randomness_deg=45
+    )
+    """sdfs.characterize_env_with_spheres_xyzpath(
         start_point_meters=xyz_initial,
         end_point_meters=xyz_goal,
         path_xyz=path_xyz_smooth,
         map_env=map_,
         max_spheres=50
-    )
+    )"""
 
     print(len(sdfs.sdf_list))
 
@@ -90,6 +91,11 @@ if __name__ == "__main__":
         sdfs,
     )
 
+    utils.logging.pickle_to_filepath(
+        os.path.join(os.path.join(log_folder, "environment"), "path_xyz_smooth.pkl"),
+        path_xyz_smooth,
+    )
+
     # Create the environment
     num_seconds = 16
     num_steps = int(num_seconds / dyn.dt)
@@ -99,16 +105,6 @@ if __name__ == "__main__":
         dynamics=dyn,
         map_=map_,
         episode_length=num_steps,
-    )
-
-    # Save the a* path
-    utils.logging.save_to_npz(
-        os.path.join(log_folder, "a_star", "start_to_goal.npz"),
-        path_xyz,
-    )
-    utils.logging.save_to_npz(
-        os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        path_xyz_smooth,
     )
 
     # ----------------------------------------------------------------

@@ -60,6 +60,37 @@ class DynamicsQuadcopter3D:
         # Use Euler method for modeling
         self.discrete_dynamics = jax.jit(
             lambda state, action, dt=self.dt: state + dt * self.continuous_dynamics(state, action))
+    
+    def __getstate__(self):
+        """
+        Method when pickling. Exclude jit class variables which aren't picklable
+        """
+        # Get the object's __dict__ and make a copy
+        state = self.__dict__.copy()
+        
+        # Remove the attribute you don't want to pickle
+        if 'continuous_dynamics' in state:
+            del state['continuous_dynamics']
+        if 'discrete_dynamics' in state:
+            del state['discrete_dynamics']
+
+        return state
+
+    def __setstate__(self, state):
+        """
+        Method when unpickling. Remake jit class variables which aren't picklable
+        """
+        # Restore instance attributes
+        self.__dict__.update(state)
+
+        # Reinitialize the excluded variables
+        # Define continuous dynamics describing the state derivative
+        self.continuous_dynamics = jax.jit(self.state_delta)
+
+        # Define discrete dynamics describing next_state = dynamics(state, action)
+        # Use Euler method for modeling
+        self.discrete_dynamics = jax.jit(
+            lambda state, action, dt=self.dt: state + dt * self.continuous_dynamics(state, action))
 
     def state_size(self):
         return 12
@@ -139,31 +170,31 @@ class DynamicsQuadcopter3D:
         state_delta = jnp.zeros_like(state)
 
         # Positions change according to velocity
-        state_delta[0] = xd
-        state_delta[1] = yd
-        state_delta[2] = zd
+        state_delta = state_delta.at[0].set(xd)
+        state_delta = state_delta.at[1].set(yd)
+        state_delta = state_delta.at[2].set(zd)
 
         # Euler angles change according to body rates
-        state_delta[3] = q * s_φ / c_θ + r * c_φ / c_θ
-        state_delta[4] = q * c_φ - r * s_φ
-        state_delta[5] = p + q * s_φ * t_θ + r * c_φ * t_θ
+        state_delta = state_delta.at[3].set(q * s_φ / c_θ + r * c_φ / c_θ)
+        state_delta = state_delta.at[4].set(q * c_φ - r * s_φ)
+        state_delta = state_delta.at[5].set(p + q * s_φ * t_θ + r * c_φ * t_θ)
 
         # Velocities change according to forces and moments
-        state_delta[6] =   - (ft / self.mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ)
-        state_delta[7] =   - (ft / self.mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ)
-        state_delta[8] = self.g - (ft / self.mass) * (c_θ * c_φ)
+        state_delta = state_delta.at[6].set(-(ft / self.mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ))
+        state_delta = state_delta.at[7].set(-(ft / self.mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ))
+        state_delta = state_delta.at[8].set(self.g - (ft / self.mass) * (c_θ * c_φ))
 
         # Body rates change according to moments of inertia and torques
-        state_delta[9]  = ((self.Iy - self.Iz) * q * r + tx) / self.Ix
-        state_delta[10] = ((self.Iz - self.Ix) * p * r + ty) / self.Iy
-        state_delta[11] = ((self.Ix - self.Iy) * p * q + tz) / self.Iz
+        state_delta = state_delta.at[9].set(((self.Iy - self.Iz) * q * r + tx) / self.Ix)
+        state_delta = state_delta.at[10].set(((self.Iz - self.Ix) * p * r + ty) / self.Iy)
+        state_delta = state_delta.at[11].set(((self.Ix - self.Iy) * p * q + tz) / self.Iz)
         
         return state_delta
     
-    def linearize(self, state, action):
+    def linearize(self, states, actions):
         """
         Linearize the system dynamics (self.discrete_dynamics) about the given state and action.
-        System dynamics must be written in jax.
+        System dynamics must be written in jax. Works with batch inputs
 
         Parameters
         ----------
@@ -179,15 +210,21 @@ class DynamicsQuadcopter3D:
         B: jax.numpy.ndarray
             Jacobian of dynamics function at provided (state, action) with respect to action
         """
-        # Calculate A and B 
-        A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
-
+        def linearize_single(state, action):
+            # Calculate A and B 
+            A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
+            return A, B
+        
+        # Linearize the batch of states and actions
+        linearize_batch = jax.vmap(linearize_single, in_axes=(0, 0))
+        A, B = linearize_batch(states, actions)
+        
         return A, B
     
-    def affinize(self, state, action):
+    def affinize(self, states, actions):
         """
         Affinize the system dynamics (self.discrete_dynamics) about the given state and action.
-        System dynamics must be written in jax.
+        System dynamics must be written in jax. Works with batch inputs
 
         Parameters
         ----------
@@ -202,12 +239,18 @@ class DynamicsQuadcopter3D:
             Jacobian of dynamics function at provided (state, action) with respect to state
         B: jax.numpy.ndarray
             Jacobian of dynamics function at provided (state, action) with respect to action
-        C: jax.numpy.ndarry
+        C: jax.numpy.ndarray
             The offset term in the first-order Taylor expansion of dynamics function at 
             provided (state, action)
         """
-        # Calculate A, B, and C
-        A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
-        C = self.discrete_dynamics(state, action) - A@state - B@action
-
+        def affinize_single(state, action):
+            # Calculate A, B, and C
+            A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
+            C = self.discrete_dynamics(state, action) - A@state - B@action
+            return A, B, C
+        
+        # Affinize the batch of states and actions
+        affinize_batch = jax.vmap(affinize_single, in_axes=(0, 0))
+        A, B, C = affinize_batch(states, actions)
+        
         return A, B, C
