@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     # The environment follows some true dynamics, and the agent
     # has an internal model of the environment
-    dyn = standard.get_standard_dynamics_quadcopter_3d()
+    dyn = standard.get_standard_dynamics_jax_quadcopter_3d()
 
     # Create a map representation
     #map_ = standard.get_standard_map()
