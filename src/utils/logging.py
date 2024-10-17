@@ -38,6 +38,26 @@ def pickle_to_filepath(filepath, object, verbose=False):
     with open(filepath, "wb") as f:
         pickle.dump(object, f)
 
+def save_to_npz(filepath, array, verbose=False):
+    """
+    Save an array to a npz file
+    """
+
+    # Ensure the folderpath exists
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    # Warn if the file already exists
+    if os.path.exists(filepath) and verbose:
+        warnings.warn(f"File already exists at {filepath}. Overwriting.")
+
+    np.savez(filepath, array)
+
+def load_from_npz(filepath):
+    """
+    Load an array from a npz file
+    """
+    return np.load(filepath, allow_pickle=True)["arr_0"]
+
 def unpickle_from_filepath(filepath):
     """
     Unpickle an object from a filepath

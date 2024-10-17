@@ -160,11 +160,11 @@ class Environment_SDF:
                 # If search complete, add one final sphere to end point
                 final_sphere = Sphere_SDF.get_optimal_sdf(end_point_meters,collision_radius_metres,map_env)
 
-                # Attempt to refine final sphere SDF
-                final_sphere = final_sphere.sphere_refinement(
-                        collision_radius_metres=collision_radius_metres,
-                        mapping=map_env
-                    )
+                # # Attempt to refine final sphere SDF
+                # final_sphere = final_sphere.sphere_refinement(
+                #         collision_radius_metres=collision_radius_metres,
+                #         mapping=map_env
+                #     )
                 
                 # Add and end operations
                 self.add_sdf(final_sphere)
@@ -176,11 +176,11 @@ class Environment_SDF:
             # Build next sphere
             next_sphere = Sphere_SDF.get_optimal_sdf(new_start_point,collision_radius_metres,map_env)
 
-            # Try to refine sphere further TODO Debug stuck loop
-            next_sphere = next_sphere.sphere_refinement(
-                collision_radius_metres=collision_radius_metres,
-                mapping=map_env
-            )
+            # # Try to refine sphere further TODO Debug stuck loop
+            # next_sphere = next_sphere.sphere_refinement(
+            #     collision_radius_metres=collision_radius_metres,
+            #     mapping=map_env
+            # )
 
             # Add sphere to SDF list
             self.add_sdf(next_sphere)
