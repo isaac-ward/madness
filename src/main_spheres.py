@@ -85,6 +85,16 @@ if __name__ == "__main__":
     # Logging from here on
     # ----------------------------------------------------------------
 
+    # Save the a* path
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "a_star", "start_to_goal.npz"),
+        path_xyz,
+    )
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
+        path_xyz_smooth,
+    )
+
     # Save the cubes
     utils.logging.pickle_to_filepath(
         os.path.join(log_folder, "signed_distance_function.pkl"),
