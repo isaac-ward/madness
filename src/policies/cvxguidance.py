@@ -75,7 +75,10 @@ class SCPSolver:
             self
     ):
         
+        # slack sdf prev is going to be a matrix (num_timesteps, num_sdfs)
+        # G's shape is the same
         G = gradient_log_softmax(self.sig, self.slack_sdf_prev)
+        # affine part of the assembled matrix form of the constraints
         g0 = log_softmax(self.sig, self.slack_sdf_prev)
 
         # self.constraints += [ cvx.sum( cvx.multiply(G, (self.slack_sdf - self.slack_sdf_prev)), axis=1 ) + g0 >= 0 ]
