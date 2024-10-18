@@ -56,6 +56,7 @@ class SCPSolver:
         self.action_prev = trajInit.action
         self.state_prev = trajInit.state
         self.slack_sdf_prev = self.sdf.sdf_values(self.state_prev[:,:3])
+        print("current slack initial guess: \n", self.slack_sdf_prev[0])
         self.sdf = sdf
         self.constraints = []
         self.cost = np.inf
@@ -69,7 +70,7 @@ class SCPSolver:
         A, B, C = np.array(A),np.array(B),np.array(C)
         self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
         self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
-        self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+        # self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
     
     def sdf_constraints(
             self
@@ -78,8 +79,15 @@ class SCPSolver:
         # slack sdf prev is going to be a matrix (num_timesteps, num_sdfs)
         # G's shape is the same
         G = gradient_log_softmax(self.sig, self.slack_sdf_prev)
-        # affine part of the assembled matrix form of the constraints
+        # # affine part of the assembled matrix form of the constraints
         g0 = log_softmax(self.sig, self.slack_sdf_prev)
+
+        # for k in range(self.K+1):
+        #     G = gradient_log_softmax(self.sig, self.slack_sdf_prev[k])
+        #     # print("G.shape: ", np.shape(G))
+        #     r = log_softmax(self.sig, self.slack_sdf_prev[k])
+        #     # print("r: ", r)
+        #     self.constraints += [ cvx.sum( cvx.multiply(G , (self.slack_sdf[k] - self.slack_sdf_prev[k]) ) ) + r >= 0 ]
 
         # self.constraints += [ cvx.sum( cvx.multiply(G, (self.slack_sdf - self.slack_sdf_prev)), axis=1 ) + g0 >= 0 ]
         self.constraints += [ cvx.diag( G @ (self.slack_sdf - self.slack_sdf_prev).T) + g0 >= 0 ]
@@ -109,8 +117,8 @@ class SCPSolver:
 
         self.constraints += [self.state[0] == state_history[-1]]
         self.constraints += [self.state[-1] == state_goal]
-        # self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
-        # self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
+        self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
+        self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
 
     def update_constraints(
             self,
@@ -151,7 +159,7 @@ class SCPSolver:
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("attempting to solve the problem")
-            prob.solve(solver=cvx.SCS,verbose=True)
+            prob.solve(solver=cvx.SCS)
             print("Problem Status: ", prob.status)
 
             delta_cost = prob.value - self.cost

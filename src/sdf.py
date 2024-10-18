@@ -216,13 +216,17 @@ class Environment_SDF:
         
         d = np.zeros((r_xyz.shape[0], len(self.sdf_list)))
 
+        # print("position: ", r_xyz)
+
         for i in range(len(self.sdf_list)):
             c = self.sdf_list[i].center_metres_xyz
 
             match self.sdf_list[i].sdf_type:
                 case 0:
                     r = self.sdf_list[i].radius_metres
-                    d[:,i] = 1 - (1/r)*np.linalg.norm(r_xyz - c[np.newaxis,:]) 
+                    # print("center: ", c)
+                    # print("relative vectors: ", r_xyz - c[np.newaxis, :])
+                    d[:,i] = 1 - (1/r)*np.linalg.norm(r_xyz - c[np.newaxis,:], axis=-1) 
                 case 1:
                     # NOT TESTED
                     s = self.sdf.sdf_list[i].diagonal_metres
