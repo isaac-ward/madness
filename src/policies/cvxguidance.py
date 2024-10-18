@@ -76,7 +76,7 @@ class SCPSolver:
         self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
 
         # print(self.slack_region/self.slack_inc)
-        self.constraints += [ self.slack_dyn <= self.slack_region/self.slack_inc ]
+        self.constraints += [ cvx.norm( self.slack_dyn, p='fro' ) <= self.slack_region/self.slack_inc ]
     
     def sdf_constraints(
             self
