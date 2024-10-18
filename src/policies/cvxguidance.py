@@ -32,7 +32,8 @@ class SCPSolver:
             sig = 10.,
             eps_dyn = 1.,
             eps_sdf = 1.,
-            rho = 1.
+            rho = 1.,
+            slack_region = 1.
     ):
         self.K = K
         self.dynamics = dynamics
@@ -45,22 +46,24 @@ class SCPSolver:
         self.eps_dyn = eps_dyn
         self.eps_sdf = eps_sdf
         self.rho = rho
+        self.slack_region = slack_region
 
         self.nu = self.dynamics.action_size()
         self.nx = self.dynamics.state_size()
+        self.nss = len(self.sdf.sdf_list)
 
         self.action = cvx.Variable((self.K,self.nu))
         self.state = cvx.Variable((self.K + 1, self.nx))
-        self.slack_sdf = cvx.Variable((self.K + 1, len(self.sdf.sdf_list)))
+        self.slack_sdf = cvx.Variable((self.K + 1, self.nss))
         self.slack_dyn = cvx.Variable((self.K, self.nx))
         self.action_prev = trajInit.action
         self.state_prev = trajInit.state
         self.slack_sdf_prev = self.sdf.sdf_values(self.state_prev[:,:3])
-        print("current slack initial guess: \n", self.slack_sdf_prev[0])
         self.sdf = sdf
         self.constraints = []
         self.cost = np.inf
         self.rho_inc = 1
+        self.slack_inc = 2
 
     def dyn_constraints(
             self,
@@ -70,7 +73,10 @@ class SCPSolver:
         A, B, C = np.array(A),np.array(B),np.array(C)
         self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
         self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
-        # self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+        self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+
+        # print(self.slack_region/self.slack_inc)
+        self.constraints += [ self.slack_dyn <= self.slack_region/self.slack_inc ]
     
     def sdf_constraints(
             self
@@ -80,30 +86,22 @@ class SCPSolver:
         # G's shape is the same
         G = gradient_log_softmax(self.sig, self.slack_sdf_prev)
         # # affine part of the assembled matrix form of the constraints
-        g0 = log_softmax(self.sig, self.slack_sdf_prev)
+        L0 = log_softmax(self.sig, self.slack_sdf_prev)
 
-        # for k in range(self.K+1):
-        #     G = gradient_log_softmax(self.sig, self.slack_sdf_prev[k])
-        #     # print("G.shape: ", np.shape(G))
-        #     r = log_softmax(self.sig, self.slack_sdf_prev[k])
-        #     # print("r: ", r)
-        #     self.constraints += [ cvx.sum( cvx.multiply(G , (self.slack_sdf[k] - self.slack_sdf_prev[k]) ) ) + r >= 0 ]
-
-        # self.constraints += [ cvx.sum( cvx.multiply(G, (self.slack_sdf - self.slack_sdf_prev)), axis=1 ) + g0 >= 0 ]
-        self.constraints += [ cvx.diag( G @ (self.slack_sdf - self.slack_sdf_prev).T) + g0 >= 0 ]
+        self.constraints += [ cvx.diag( G @ (self.slack_sdf - self.slack_sdf_prev).T) + L0 >= 0 ]
 
 
-        for i in range(len(self.sdf.sdf_list)):
+        for i in range(self.nss):
             c = self.sdf.sdf_list[i].center_metres_xyz
 
             match self.sdf.sdf_list[i].sdf_type:
                 case 0:
                     r = self.sdf.sdf_list[i].radius_metres
-                    self.constraints += [ self.slack_sdf[k,i] <= 1 - (1/r)*cvx.norm2(self.state[k,:3] - c) for k in range(self.K + 1)]
+                    self.constraints += [ self.slack_sdf[k,i] <= 1 - (1/r)*cvx.norm2(self.state[k,:3] - c) for k in range(self.K + 1) ]
                 case 1:
                     # NOT TESTED
                     s = self.sdf.sdf_list[i].diagonal_metres
-                    self.constraints += [ self.slack_sdf[k,i] <= 1 - cvx.norm_inf( (self.state[k,:3] - c)/s ) for k in range(self.K + 1)]
+                    self.constraints += [ self.slack_sdf[k,i] <= 1 - cvx.norm_inf( (self.state[k,:3] - c)/s ) for k in range(self.K + 1) ]
                     
 
 
@@ -136,7 +134,7 @@ class SCPSolver:
         self,
         state_goal
     ):
-        terminal_cost = self.eps_dyn*cvx.norm(self.slack_dyn, p='fro') - self.eps_sdf*cvx.sum( self.slack_sdf )
+        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.square( cvx.norm(self.slack_dyn, p='fro') )
 
         action_cost = cvx.square( cvx.norm(self.action, p='fro') )
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
@@ -153,12 +151,12 @@ class SCPSolver:
         # if self.step_count%self.horizon == 0:
         ii = 0
         while ii < self.maxiter:
-            print("iteration: ", ii)
+            print("SCP Iteration: ", ii)
             ii += 1
             self.update_constraints(state_goal, state_history)
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
-            print("attempting to solve the problem")
+            print("Attempting to solve the problem")
             prob.solve(solver=cvx.SCS)
             print("Problem Status: ", prob.status)
 
@@ -167,19 +165,23 @@ class SCPSolver:
                 break
 
             if not(prob.status == cvx.OPTIMAL or prob.status == cvx.OPTIMAL_INACCURATE):
-                print("look. we tried and now we are here. what can we do?")
+                # print("look. we tried and now we are here. what can we do?")
                 self.state.value = np.copy(self.state_prev)
                 self.action.value =  np.copy(self.action_prev)
                 self.slack_sdf.value = np.copy(self.slack_sdf_prev)
                 self.rho_inc += 1
+                self.slack_inc /= 2
                 continue
             
-            print("we made it this far boys. let's pass it on")
+            # print("we made it this far boys. let's pass it on")
+            norm_check = np.linalg.norm(self.slack_dyn.value, ord='fro')
+            print("Norm of slack_dyn: ", norm_check)
             self.cost = np.copy(prob.value)
             self.state_prev = np.copy(self.state.value)
             self.action_prev = np.copy(self.action.value)
             self.slack_sdf_prev = np.copy(self.slack_sdf.value)
             self.rho_inc = 1
+            self.slack_inc *= 2
 
 
         optimal_action_history = np.copy(self.action.value)

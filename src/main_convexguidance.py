@@ -40,9 +40,7 @@ if __name__ == "__main__":
     #map_ = standard.get_standard_map()
     # map_ = standard.get_28x28x28_at_111()
 
-    print("let's get that map boys")
     map_ = standard.get_28x28x28_at_111_with_obstacles()
-    print("got it!")
 
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
@@ -58,8 +56,8 @@ if __name__ == "__main__":
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
-    path_xyz_smooth = path_xyz # TODO
-    #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+    # path_xyz_smooth = path_xyz # TODO
+    path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
     print(path_xyz_smooth.shape)
     K = path_xyz_smooth.shape[0] - 1
 
@@ -78,7 +76,6 @@ if __name__ == "__main__":
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
-    print("we are here. we are alive. and we are loving it.")
     sdfs.characterize_env_with_spheres_perturbations(
         start_point_meters=xyz_initial,
         end_point_meters=xyz_goal,
@@ -94,9 +91,9 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 50,
-                    eps_dyn=100,
-                    eps_sdf=10,
+                    maxiter = 10,
+                    eps_dyn=50.,
+                    eps_sdf=1.,
                     sig = 50.,
                     rho=1.)
 
