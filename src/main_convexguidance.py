@@ -63,17 +63,59 @@ if __name__ == "__main__":
     print(path_xyz_smooth.shape)
     K = path_xyz_smooth.shape[0] - 1
 
+
+    # Create initial trajectory guess for SCP
     trajInit = Trajectory()
 
+    # Extract dynamics constants and coeffs
     k = dyn.thrust_coef
     m = dyn.mass
     g = dyn.g
-    w_trim = np.sqrt(m*g/(4*k))
+    # w_trim = np.sqrt(m*g/(4*k))
 
-    trajInit.action = w_trim * np.ones((K, dyn.action_size()))
+    # Initialize position state guess with smooth Astar results
     trajInit.state = np.zeros((K+1, dyn.state_size()))
     trajInit.state[:,:3] = path_xyz_smooth
-    trajInit.state[:,3] = 1
+
+    # Use finite difference to back out velocities at each step (assume final velocity of zero)
+    vel = np.zeros(np.shape(path_xyz_smooth))
+    vel[:-1] = (path_xyz_smooth[1:] - path_xyz_smooth[:-1])/dyn.dt
+    trajInit.state[:,7:10] = vel
+    print(vel)
+
+    # Use finite difference to back out accelerations -> actions (acceleration at first step is assumed to be from zero velocity to starting velocity)
+    accel = np.zeros((K+1,3))
+    accel[1:] = (vel[1:] - vel[:-1])/dyn.dt
+    accel[0] = (vel[0] - np.zeros(3))/dyn.dt
+    accel -= np.array([[0,0,g]])
+    w = np.sqrt(m*np.linalg.norm(accel[:-1], axis=-1))/(4*k)
+    trajInit.action = w[:,np.newaxis]*np.ones((K,4))
+
+    # Use acceleration vector to determine attitude assuming thrust vector corresponds to -z body axis
+    v1 = -accel / np.linalg.norm(accel, axis=-1)[:,np.newaxis]
+    v2 = np.zeros((K+1,3))
+    v2[:,2] = 1
+    q_v = np.cross(v2, v1, axis=-1) / np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis]
+    q_0 = np.sqrt(2 * (1 + np.sum(v1*v2,axis=-1)))[:,np.newaxis] / 2
+    print("q_v.shape = ", q_v.shape)
+    print("q_0.shape = ", q_0.shape)
+    q = np.concat([q_0, q_v],axis=-1)
+    trajInit.state[:,3:7] = q
+
+    # Compute the angular velocity
+    qf = q[1:]
+    qb = q[:-1]
+    om = np.zeros((K+1, 3))
+    om[:-1] = 2/dyn.dt * np.stack([
+        qb[:,0]*qf[:,1] - qb[:,1]*qf[:,0] - qb[:,2]*qf[:,3] + qb[:,3]*qf[:,2],
+        qb[:,0]*qf[:,2] + qb[:,1]*qf[:,3] - qb[:,2]*qf[:,0] - qb[:,3]*qf[:,1],
+        qb[:,0]*qf[:,3] - qb[:,1]*qf[:,2] + qb[:,2]*qf[:,1] - qb[:,3]*qf[:,0]
+    ], axis=-1)
+    trajInit.state[:,10:] = om
+
+    print("Initial Traj Shape: ", trajInit.state.shape)
+    print("Initial Action Shape: ", trajInit.action.shape)
+
     # for i in range(1,K):
     #     trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
 
