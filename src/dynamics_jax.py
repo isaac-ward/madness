@@ -93,16 +93,16 @@ class DynamicsQuadcopter3D:
             lambda state, action, dt=self.dt: state + dt * self.continuous_dynamics(state, action))
 
     def state_size(self):
-        return 12
+        return 13
     def action_size(self):
         return 4
     def state_plot_groups(self):
-        return [3, 3, 3, 3]
+        return [3, 4, 3, 3]
     def action_plot_groups(self):
         return [4]
     def state_labels(self):
-        # x, y, z, φ, θ, ψ, xd, yd, zd, wx, wy, wz
-        return ["x", "y", "z", "rz", "ry", "rx", "xd", "yd", "zd", "wx", "wy", "wz"]
+        # x, y, z, q0, q1, q2, q3, xd, yd, zd, wx, wy, wz
+        return ["x", "y", "z", "q0", "q1", "q2", "q3" "xd", "yd", "zd", "wx", "wy", "wz"]
     def action_labels(self):
         return ["w1 (left, CW)", "w4 (forward, CCW)", "w3 (right, CW)", "w2 (rear, CCW)"]
     def action_ranges(self):
@@ -128,7 +128,7 @@ class DynamicsQuadcopter3D:
         Parameters
         ----------
         state: numpy.ndarray
-            State vector shaped (12,)
+            State vector shaped (13,)
         action: numpy.ndarray
             Control vector shaped (4,)
         
@@ -143,19 +143,19 @@ class DynamicsQuadcopter3D:
         kd = self.drag_force_coef # TODO Why is this here? - Mark
 
         # Unwrap the state and action 
-        # position, euler angles (xyz=>φθψ), velocity, body rates (eq2.23)
+        # position, quaternions, velocity, body rates (eq2.23)
         x, y, z        = state[0],  state[1],  state[2]
-        rz, ry, rx     = state[3],  state[4],  state[5]
-        xd, yd, zd     = state[6],  state[7],  state[8]
-        p, q, r        = state[9],  state[10], state[11]
+        q0, q1, q2, q3 = state[3],  state[4],  state[5], state[6]
+        xd, yd, zd     = state[7], state[8], state[9]
+        # p, q, r        = state[9],  state[10], state[11]
+        omx,omy,omz    = state[10],  state[11], state[12]
         w1, w2, w3, w4 = action[0], action[1], action[2], action[3]
-        # For convenience and to match with the KTH paper
-        ψ, θ, φ = rz, ry, rx
-
-        # Compute sin, cos, and tan (xyz order is φ θ ψ)
-        s_ψ, c_ψ      = jnp.sin(ψ), jnp.cos(ψ)
-        s_θ, c_θ, t_θ = jnp.sin(θ), jnp.cos(θ), jnp.tan(θ)
-        s_φ, c_φ      = jnp.sin(φ), jnp.cos(φ)
+        # Normalize the quaternion
+        qmag = jnp.linalg.norm(jnp.array([q0, q1, q2, q3]))
+        q0 /= qmag
+        q1 /= qmag
+        q2 /= qmag
+        q3 /= qmag
 
         # Compute the control vector (control force, control torques), eq2.16
         w1_sq = w1 ** 2
@@ -177,20 +177,22 @@ class DynamicsQuadcopter3D:
         state_delta = state_delta.at[1].set(yd)
         state_delta = state_delta.at[2].set(zd)
 
-        # Euler angles change according to body rates
-        state_delta = state_delta.at[3].set(q * s_φ / c_θ + r * c_φ / c_θ)
-        state_delta = state_delta.at[4].set(q * c_φ - r * s_φ)
-        state_delta = state_delta.at[5].set(p + q * s_φ * t_θ + r * c_φ * t_θ)
+        # Quaternion change according to body rates
+        qdot = 0.5 * geometric.q_mul(jnp.array([q0, q1, q2, q3]), jnp.array([0, omx, omy, omz]))
+        state_delta = state_delta.at[3].set(qdot[0])
+        state_delta = state_delta.at[4].set(qdot[1])
+        state_delta = state_delta.at[5].set(qdot[2])
+        state_delta = state_delta.at[6].set(qdot[3])
 
         # Velocities change according to forces and moments
-        state_delta = state_delta.at[6].set(-(ft / self.mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ))
-        state_delta = state_delta.at[7].set(-(ft / self.mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ))
-        state_delta = state_delta.at[8].set(self.g - (ft / self.mass) * (c_θ * c_φ))
+        state_delta = state_delta.at[7].set(-(ft / self.mass) * (2*(q1*q3 + q0*q2)))
+        state_delta = state_delta.at[8].set(-(ft / self.mass) * (2*(q2*q3 - q0*q1)))
+        state_delta = state_delta.at[9].set(self.g - (ft / self.mass) * (q0**2 - q1**2 - q2**2 + q3**2))
 
         # Body rates change according to moments of inertia and torques
-        state_delta = state_delta.at[9].set(((self.Iy - self.Iz) * q * r + tx) / self.Ix)
-        state_delta = state_delta.at[10].set(((self.Iz - self.Ix) * p * r + ty) / self.Iy)
-        state_delta = state_delta.at[11].set(((self.Ix - self.Iy) * p * q + tz) / self.Iz)
+        state_delta = state_delta.at[10].set(((self.Iy - self.Iz) * omy * omz + tx) / self.Ix)
+        state_delta = state_delta.at[11].set(((self.Iz - self.Ix) * omx * omz + ty) / self.Iy)
+        state_delta = state_delta.at[12].set(((self.Ix - self.Iy) * omx * omy + tz) / self.Iz)
         
         return state_delta
     

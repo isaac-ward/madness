@@ -124,7 +124,7 @@ class ItemHistoryTracker:
     def get_history(self):
         return np.array(self.history)
 
-    def get_item(index):
+    def get_item(self, index):
         return self.history[index]
 
     def get_first_item(self):
