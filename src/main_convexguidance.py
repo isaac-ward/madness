@@ -45,10 +45,12 @@ if __name__ == "__main__":
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
     # If you're using a map with invalid positions then you might need to specify the start and goal states manually
-    state_initial = np.zeros(12)
+    state_initial = np.zeros(dyn.state_size())
     state_initial[:3] = 5
-    state_goal = np.zeros(12)
+    state_initial[3] = 1
+    state_goal = np.zeros(dyn.state_size())
     state_goal[:3] = 25
+    state_goal[3] = 1
     # state_goal[:3] = [5,5,8]
 
     # # Generate a path from the initial state to the goal state
@@ -71,6 +73,7 @@ if __name__ == "__main__":
     trajInit.action = w_trim * np.ones((K, dyn.action_size()))
     trajInit.state = np.zeros((K+1, dyn.state_size()))
     trajInit.state[:,:3] = path_xyz_smooth
+    trajInit.state[:,3] = 1
     # for i in range(1,K):
     #     trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
 
@@ -91,17 +94,14 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 50,
-                    eps_dyn=50.,
+                    maxiter = 15,
+                    eps_dyn=200.,
                     eps_sdf=1.,
-                    sig = 50.,
+                    sig = 10.,
                     rho=1.)
 
     # Setup SCP iterations manually until exit condition is implemented
-    state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = xyz_goal
-    state_history = np.zeros(dyn.state_size())
-    state_history[:3] = xyz_initial
+    state_history = state_initial
     scp.solve(state_goal=state_goal,
                 state_history=state_history[np.newaxis,:])
     
