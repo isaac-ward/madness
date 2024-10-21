@@ -71,8 +71,8 @@ if __name__ == "__main__":
     trajInit.action = w_trim * np.ones((K, dyn.action_size()))
     trajInit.state = np.zeros((K+1, dyn.state_size()))
     trajInit.state[:,:3] = path_xyz_smooth
-    # for i in range(1,K):
-    #     trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
+    #for i in range(1,K):
+    #    trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 50,
+                    maxiter = 10,
                     eps_dyn=50.,
                     eps_sdf=1.,
                     sig = 50.,

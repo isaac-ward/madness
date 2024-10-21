@@ -72,8 +72,8 @@ class SCPSolver:
         A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
         self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
-        self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
-        self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+        #self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
+        #self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
 
         slack_bound = self.slack_region/self.slack_inc
 
@@ -163,8 +163,10 @@ class SCPSolver:
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("Attempting to solve the problem")
-            prob.solve(solver=cvx.SCS)
+            prob.solve(solver=cvx.CLARABEL)
+            print("Solver: " + str(prob.solver_stats.solver_name))
             print("Problem Status: ", prob.status)
+            print("Cost: " + str(prob.value))
 
             delta_cost = prob.value - self.cost
             if np.abs(delta_cost) < self.cost_tol:
