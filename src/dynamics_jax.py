@@ -178,7 +178,7 @@ class DynamicsQuadcopter3D:
         state_delta = state_delta.at[2].set(zd)
 
         # Quaternion change according to body rates
-        qdot = 0.5 * geometric.q_mul(jnp.array([q0, q1, q2, q3]), jnp.array([0, omx, omy, omz]))
+        qdot = 0.5 * geometric.q_mul(jnp.array([0, omx, omy, omz]), jnp.array([q0, q1, q2, q3]))
         state_delta = state_delta.at[3].set(qdot[0])
         state_delta = state_delta.at[4].set(qdot[1])
         state_delta = state_delta.at[5].set(qdot[2])
