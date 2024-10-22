@@ -163,7 +163,7 @@ class SCPSolver:
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("Attempting to solve the problem")
-            prob.solve(solver=cvx.CLARABEL, eps=1e-6)
+            prob.solve(solver=cvx.CLARABEL)
             print("Problem Status: ", prob.status)
 
             delta_cost = prob.value - self.cost
