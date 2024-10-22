@@ -160,8 +160,13 @@ class SCPSolver:
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("Attempting to solve the problem")
-            prob.solve(solver=cvx.CLARABEL)
+            try:
+                prob.solve(solver=cvx.CLARABEL)
+            except:
+                prob.solve(solver=cvx.SCS)
+            print("Solver: " + str(prob.solver_stats.solver_name))
             print("Problem Status: ", prob.status)
+            print("Cost: " + str(prob.value))
  
             delta_cost = prob.value - self.cost
             if np.abs(delta_cost) < self.cost_tol:
