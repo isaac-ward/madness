@@ -1,4 +1,5 @@
 import numpy as np
+import jax.numpy as jnp
 import cvxpy as cp
 from scipy.spatial.transform import Rotation as R
 
@@ -40,6 +41,14 @@ def quaternion_multiply(q1, q2):
     r3 = r1 * r2
     r3 = r3.as_quat()
     return r3
+
+def q_mul(q1, q2):
+    return jnp.array([
+        q1[0] * q2[0] - q1[1] * q2[1] - q1[2] * q2[2] - q1[3] * q2[3],
+        q1[0] * q2[1] + q1[1] * q2[0] + q1[2] * q2[3] - q1[3] * q2[2],
+        q1[0] * q2[2] - q1[1] * q2[3] + q1[2] * q2[0] + q1[3] * q2[1],
+        q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1] + q1[3] * q2[0]
+    ])
 
 def shortest_distance_between_path_and_point(path, point):
     """
