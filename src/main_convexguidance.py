@@ -8,6 +8,7 @@ import time
 import copy
 import matplotlib.pyplot as plt
 import cupy as cp
+from scipy.signal import savgol_filter
 
 import utils.general
 import utils.logging
@@ -77,88 +78,19 @@ if __name__ == "__main__":
     trajInit.state = np.zeros((K+1, dyn.state_size()))
     trajInit.state[:,:3] = path_xyz_smooth
 
-    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-
-    # Plot each component
-    axs[0].plot(range(K+1), path_xyz_smooth[:, 0], label='X Component', color='r')
-    axs[0].set_ylabel('Position (X)')
-    axs[0].legend()
-    axs[0].grid()
-
-    axs[1].plot(range(K+1), path_xyz_smooth[:, 1], label='Y Component', color='g')
-    axs[1].set_ylabel('Position (Y)')
-    axs[1].legend()
-    axs[1].grid()
-
-    axs[2].plot(range(K+1), path_xyz_smooth[:, 2], label='Z Component', color='b')
-    axs[2].set_xlabel('K (Data Points)')
-    axs[2].set_ylabel('Position (Z)')
-    axs[2].legend()
-    axs[2].grid()
-
-    plt.tight_layout()
-
     # Use finite difference to back out velocities at each step (assume final velocity of zero)
     vel = np.zeros(np.shape(path_xyz_smooth))
     vel[:-1] = (path_xyz_smooth[1:] - path_xyz_smooth[:-1])/dyn.dt
     vel[-1] = vel[-2]
-
-    def moving_average(data, window_size):
-        """Apply a moving average filter to the input data."""
-        return np.convolve(data, np.ones(window_size) / window_size, mode='same')
-    
-    def weighted_moving_average(data, window_size):
-        """Apply a weighted moving average filter to the input data."""
-        weights = np.arange(1, window_size + 1)  # Increasing weights
-        weighted_avg = np.convolve(data, weights / weights.sum(), mode='same')
-        return weighted_avg
-    
-    from scipy.signal import savgol_filter
 
     # Smooth the velocity components using Savitzky-Golay filter
     smoothed_vel_x = savgol_filter(vel[:, 0], window_length=5, polyorder=1)
     smoothed_vel_y = savgol_filter(vel[:, 1], window_length=5, polyorder=1)
     smoothed_vel_z = savgol_filter(vel[:, 2], window_length=5, polyorder=1)
 
-    # # Specify the window size for smoothing
-    # window_size = 10  # Adjust as needed
-
-    # # Smooth the velocity components using weighted moving average
-    # smoothed_vel_x = weighted_moving_average(vel[:, 0], window_size)
-    # smoothed_vel_y = weighted_moving_average(vel[:, 1], window_size)
-    # smoothed_vel_z = weighted_moving_average(vel[:, 2], window_size)
     smoothed_vel = np.stack([smoothed_vel_x, smoothed_vel_y, smoothed_vel_z], axis=-1)
     trajInit.state[:,7:10] = vel
     print("shape of smoothed vel: ", smoothed_vel.shape)
-
-    # Plot the original and smoothed data
-    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-
-    # Original and smoothed X component
-    axs[0].plot(range(K + 1), vel[:, 0], label='Original X', color='r', alpha=0.5)
-    axs[0].plot(range(K + 1), smoothed_vel_x, label='Smoothed X', color='r')
-    axs[0].set_ylabel('Velocity (X)')
-    axs[0].legend()
-    axs[0].grid()
-
-    # Original and smoothed Y component
-    axs[1].plot(range(K + 1), vel[:, 1], label='Original Y', color='g', alpha=0.5)
-    axs[1].plot(range(K + 1), smoothed_vel_y, label='Smoothed Y', color='g')
-    axs[1].set_ylabel('Velocity (Y)')
-    axs[1].legend()
-    axs[1].grid()
-
-    # Original and smoothed Z component
-    axs[2].plot(range(K + 1), vel[:, 2], label='Original Z', color='b', alpha=0.5)
-    axs[2].plot(range(K + 1), smoothed_vel_z, label='Smoothed Z', color='b')
-    axs[2].set_xlabel('K (Data Points)')
-    axs[2].set_ylabel('Velocity (Z)')
-    axs[2].legend()
-    axs[2].grid()
-
-    # Adjust layout for better spacing
-    plt.tight_layout()
-    # print(vel)
 
     # Use finite difference to back out accelerations -> actions (acceleration at first step is assumed to be from zero velocity to starting velocity)
     accel = np.zeros((K+1,3))
@@ -175,40 +107,10 @@ if __name__ == "__main__":
     smoothed_accel_z = savgol_filter(accel[:, 2], window_length=5, polyorder=1)
     smoothed_accel = np.stack([smoothed_accel_x, smoothed_accel_y, smoothed_accel_z], axis=-1)
 
-    # Plot the original and smoothed data
-    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-
-    # Original and smoothed X component
-    axs[0].plot(range(K+1), accel[:, 0], label='Original X', color='r', alpha=0.5)
-    axs[0].plot(range(K+1), smoothed_accel_x, label='Smoothed X', color='r')
-    axs[0].set_ylabel('Acceleration (X)')
-    axs[0].legend()
-    axs[0].grid()
-
-    # Original and smoothed Y component
-    axs[1].plot(range(K+1), accel[:, 1], label='Original Y', color='g', alpha=0.5)
-    axs[1].plot(range(K+1), smoothed_accel_y, label='Smoothed Y', color='g')
-    axs[1].set_ylabel('Acceleration (Y)')
-    axs[1].legend()
-    axs[1].grid()
-
-    # Original and smoothed Z component
-    axs[2].plot(range(K+1), accel[:, 2], label='Original Z', color='b', alpha=0.5)
-    axs[2].plot(range(K+1), smoothed_accel_z, label='Smoothed Z', color='b')
-    axs[2].set_xlabel('K (Data Points)')
-    axs[2].set_ylabel('Acceleration (Z)')
-    axs[2].legend()
-    axs[2].grid()
-
-    # Adjust layout for better spacing
-    plt.tight_layout()
-    plt.show()
-
     w = np.sqrt( m*np.linalg.norm(smoothed_accel[:-1], axis=-1)/(4*k) )
     w_bounds = dyn.action_ranges()
     w = np.where( w > w_bounds[0,1], w_bounds[0,1], w)
     w = np.where( w < w_bounds[0,0], w_bounds[0,0], w)
-    # print(w)
     trajInit.action = w[:,np.newaxis]*np.ones((K,4))
     # trajInit.action = w_trim*np.ones((K,4))
 
