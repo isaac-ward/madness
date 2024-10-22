@@ -102,7 +102,6 @@ if __name__ == "__main__":
     vel = np.zeros(np.shape(path_xyz_smooth))
     vel[:-1] = (path_xyz_smooth[1:] - path_xyz_smooth[:-1])/dyn.dt
     vel[-1] = vel[-2]
-    trajInit.state[:,7:10] = vel
 
     def moving_average(data, window_size):
         """Apply a moving average filter to the input data."""
@@ -113,15 +112,23 @@ if __name__ == "__main__":
         weights = np.arange(1, window_size + 1)  # Increasing weights
         weighted_avg = np.convolve(data, weights / weights.sum(), mode='same')
         return weighted_avg
+    
+    from scipy.signal import savgol_filter
 
-    # Specify the window size for smoothing
-    window_size = 10  # Adjust as needed
+    # Smooth the velocity components using Savitzky-Golay filter
+    smoothed_vel_x = savgol_filter(vel[:, 0], window_length=5, polyorder=1)
+    smoothed_vel_y = savgol_filter(vel[:, 1], window_length=5, polyorder=1)
+    smoothed_vel_z = savgol_filter(vel[:, 2], window_length=5, polyorder=1)
 
-    # Smooth the velocity components using weighted moving average
-    smoothed_vel_x = weighted_moving_average(vel[:, 0], window_size)
-    smoothed_vel_y = weighted_moving_average(vel[:, 1], window_size)
-    smoothed_vel_z = weighted_moving_average(vel[:, 2], window_size)
+    # # Specify the window size for smoothing
+    # window_size = 10  # Adjust as needed
+
+    # # Smooth the velocity components using weighted moving average
+    # smoothed_vel_x = weighted_moving_average(vel[:, 0], window_size)
+    # smoothed_vel_y = weighted_moving_average(vel[:, 1], window_size)
+    # smoothed_vel_z = weighted_moving_average(vel[:, 2], window_size)
     smoothed_vel = np.stack([smoothed_vel_x, smoothed_vel_y, smoothed_vel_z], axis=-1)
+    trajInit.state[:,7:10] = vel
     print("shape of smoothed vel: ", smoothed_vel.shape)
 
     # Plot the original and smoothed data
@@ -163,9 +170,10 @@ if __name__ == "__main__":
     window_size = 5  # Adjust as needed
 
     # Smooth the acceleration components using weighted moving average
-    smoothed_accel_x = weighted_moving_average(accel[:, 0], window_size)
-    smoothed_accel_y = weighted_moving_average(accel[:, 1], window_size)
-    smoothed_accel_z = weighted_moving_average(accel[:, 2], window_size)
+    smoothed_accel_x = savgol_filter(accel[:, 0], window_length=5, polyorder=1)
+    smoothed_accel_y = savgol_filter(accel[:, 1], window_length=5, polyorder=1)
+    smoothed_accel_z = savgol_filter(accel[:, 2], window_length=5, polyorder=1)
+    smoothed_accel = np.stack([smoothed_accel_x, smoothed_accel_y, smoothed_accel_z], axis=-1)
 
     # Plot the original and smoothed data
     fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
@@ -196,7 +204,7 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    w = np.sqrt( m*np.linalg.norm(accel[:-1], axis=-1)/(4*k) )
+    w = np.sqrt( m*np.linalg.norm(smoothed_accel[:-1], axis=-1)/(4*k) )
     w_bounds = dyn.action_ranges()
     w = np.where( w > w_bounds[0,1], w_bounds[0,1], w)
     w = np.where( w < w_bounds[0,0], w_bounds[0,0], w)
@@ -207,7 +215,7 @@ if __name__ == "__main__":
     # Use acceleration vector to determine attitude assuming thrust vector corresponds to -z body axis
     
     # thrust direction in global frame
-    v1 = -accel / np.linalg.norm(accel, axis=-1)[:,np.newaxis] 
+    v1 = -smoothed_accel / np.linalg.norm(smoothed_accel, axis=-1)[:,np.newaxis] 
 
     # thrust direction in body frame
     v2 = np.zeros((K+1,3))
@@ -261,7 +269,7 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 8,
+                    maxiter = 50,
                     eps_dyn=1e5,
                     eps_sdf=10.,
                     sig = 30.,
