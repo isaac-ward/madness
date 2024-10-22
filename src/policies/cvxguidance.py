@@ -63,7 +63,7 @@ class SCPSolver:
         self.constraints = []
         self.cost = np.inf
         self.rho_inc = 1
-        self.slack_inc = 2
+        self.slack_inc = 1
 
     def dyn_constraints(
             self,
@@ -72,13 +72,10 @@ class SCPSolver:
         A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
         self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
-        #self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
-        #self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+        self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
+        self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
 
-        slack_bound = self.slack_region/self.slack_inc
-
-        if slack_bound <= 0.5:
-            slack_bound = 0.5
+        slack_bound = self.slack_region*self.slack_inc
         
         print(slack_bound)
 
@@ -163,14 +160,9 @@ class SCPSolver:
             self.update_objective(state_goal)
             prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
             print("Attempting to solve the problem")
-            try:
-                prob.solve(solver=cvx.CLARABEL)
-            except:
-                prob.solve(solver=cvx.SCS)
-            print("Solver: " + str(prob.solver_stats.solver_name))
+            prob.solve(solver=cvx.CLARABEL)
             print("Problem Status: ", prob.status)
-            print("Cost: " + str(prob.value))
-
+ 
             delta_cost = prob.value - self.cost
             if np.abs(delta_cost) < self.cost_tol:
                 break
@@ -181,18 +173,18 @@ class SCPSolver:
                 self.action.value =  np.copy(self.action_prev)
                 self.slack_sdf.value = np.copy(self.slack_sdf_prev)
                 self.rho_inc += 1
-                self.slack_inc /= 2
+                self.slack_inc *= 2
                 continue
             
             # print("we made it this far boys. let's pass it on")
-            norm_check = np.linalg.norm(self.slack_dyn.value, ord='fro')
-            print("Norm of slack_dyn: ", norm_check)
+            self.slack_region = np.linalg.norm(self.slack_dyn.value, ord='fro')
+            print("Norm of slack_dyn: ", self.slack_region)
             self.cost = np.copy(prob.value)
             self.state_prev = np.copy(self.state.value)
             self.action_prev = np.copy(self.action.value)
             self.slack_sdf_prev = np.copy(self.slack_sdf.value)
             self.rho_inc = 1
-            self.slack_inc *= 2
+            self.slack_inc = 1
 
 
         optimal_action_history = np.copy(self.action.value)
