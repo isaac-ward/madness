@@ -18,6 +18,7 @@ class Environment_SDF:
         # Class variables
         self.sdf_list = []          # List of SDF objects
         self.dynamics = dynamics    # Quadrotor dynamics class
+        self.computation_inputs = None
     
     def add_sdf(
             self,
@@ -65,7 +66,7 @@ class Environment_SDF:
         collision_radius_metres = self.dynamics.diameter/2
 
         # Check if results cached for this
-        computation_inputs = (
+        self.computation_inputs = (
             start_point_meters,
             end_point_meters,
             path_xyz,
@@ -76,7 +77,7 @@ class Environment_SDF:
             "perturb"
         )
 
-        cacher = Cacher(computation_inputs)
+        cacher = Cacher(self.computation_inputs)
         if cacher.exists():
             self.sdf_list = cacher.load()
         else:
