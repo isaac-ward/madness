@@ -171,21 +171,20 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 50,
+                    maxiter = 10,
                     eps_dyn=1e5,
                     eps_sdf=10.,
                     sig = 30.,
-                    rho=2.)
+                    rho=2.,
+                    pull_from_cache=True)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_history = state_initial
-    scp.solve(state_goal=state_goal,
+    optimal_action_history, optimal_state_history = scp.solve(state_goal=state_goal,
                 state_history=state_history[np.newaxis,:])
     
-    # Extract entire state history from solver
-    state_history = scp.state.value
     # Extract euclidean coordinates of drone path from state history
-    position_history = state_history[:,:3]
+    position_history = optimal_state_history[:,:3]
 
     # Create the environment
     num_seconds = 16

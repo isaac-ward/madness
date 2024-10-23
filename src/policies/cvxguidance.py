@@ -4,7 +4,7 @@ import cupy as cp
 import numpy as np
 
 import utils.geometric
-from utils.general import log_softmax, gradient_log_softmax
+from utils.general import log_softmax, gradient_log_softmax, Cacher
 import policies.costs
 import policies.samplers
 
@@ -33,7 +33,8 @@ class SCPSolver:
             eps_dyn = 1.,
             eps_sdf = 1.,
             rho = 1.,
-            slack_region = 1.
+            slack_region = 1.,
+            pull_from_cache=False
     ):
         self.K = K
         self.dynamics = dynamics
@@ -64,6 +65,8 @@ class SCPSolver:
         self.cost = np.inf
         self.rho_inc = 1
         self.slack_inc = 1
+
+        self.pull_from_cache = pull_from_cache
 
     def dyn_constraints(
             self,
@@ -151,49 +154,95 @@ class SCPSolver:
             state_goal,
             state_history
     ):
-        # if self.step_count%self.horizon == 0:
-        ii = 0
-        while ii < self.maxiter:
-            print("SCP Iteration: ", ii)
-            ii += 1
-            self.update_constraints(state_goal, state_history)
-            self.update_objective(state_goal)
-            prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
-            print("Attempting to solve the problem")
-            try:
-                prob.solve(solver=cvx.CLARABEL)
-            except:
-                prob.solve(solver=cvx.SCS)
-            print("Solver: " + str(prob.solver_stats.solver_name))
-            print("Problem Status: ", prob.status)
-            print("Cost: " + str(prob.value))
- 
-            delta_cost = prob.value - self.cost
-            if np.abs(delta_cost) < self.cost_tol:
-                break
+        
+        # Check if results cached for this
+        computation_inputs_state = (
+            state_goal,
+            state_history,
+            self.K,
+            self.action_prev,
+            self.state_prev,
+            self.sdf.computation_inputs,
+            self.cost_tol,
+            self.maxiter,
+            self.sig,
+            self.eps_dyn,
+            self.eps_sdf,
+            self.rho,
+            self.slack_region,
+            "state"
+        )
+        computation_inputs_action = (
+            state_goal,
+            state_history,
+            self.K,
+            self.action_prev,
+            self.state_prev,
+            self.sdf.computation_inputs,
+            self.cost_tol,
+            self.maxiter,
+            self.sig,
+            self.eps_dyn,
+            self.eps_sdf,
+            self.rho,
+            self.slack_region,
+            "action"
+        )
 
-            if not(prob.status == cvx.OPTIMAL or prob.status == cvx.OPTIMAL_INACCURATE):
-                # print("look. we tried and now we are here. what can we do?")
-                self.state.value = np.copy(self.state_prev)
-                self.action.value =  np.copy(self.action_prev)
-                self.slack_sdf.value = np.copy(self.slack_sdf_prev)
-                self.rho_inc += 1
-                self.slack_inc *= 2
-                continue
-            
-            # print("we made it this far boys. let's pass it on")
-            self.slack_region = np.linalg.norm(self.slack_dyn.value, ord='fro')
-            print("Norm of slack_dyn: ", self.slack_region)
-            self.cost = np.copy(prob.value)
-            self.state_prev = np.copy(self.state.value)
-            self.action_prev = np.copy(self.action.value)
-            self.slack_sdf_prev = np.copy(self.slack_sdf.value)
-            self.rho_inc = 1
-            self.slack_inc = 1
+        cacher_state = Cacher(computation_inputs_state)
+        cacher_action = Cacher(computation_inputs_action)
+        optimal_action_history = None
+        optimal_state_history = None
+
+        if self.pull_from_cache and cacher_state.exists() and cacher_action.exists():
+            optimal_action_history = cacher_action.load()
+            optimal_state_history = cacher_state.load()
+        else:
+            ii = 0
+            while ii < self.maxiter:
+                print("SCP Iteration: ", ii)
+                ii += 1
+                self.update_constraints(state_goal, state_history)
+                self.update_objective(state_goal)
+                prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
+                print("Attempting to solve the problem")
+                try:
+                    prob.solve(solver=cvx.CLARABEL)
+                except:
+                    prob.solve(solver=cvx.SCS)
+                print("Solver: " + str(prob.solver_stats.solver_name))
+                print("Problem Status: ", prob.status)
+                print("Cost: " + str(prob.value))
+    
+                delta_cost = prob.value - self.cost
+                if np.abs(delta_cost) < self.cost_tol:
+                    break
+
+                if not(prob.status == cvx.OPTIMAL or prob.status == cvx.OPTIMAL_INACCURATE):
+                    # print("look. we tried and now we are here. what can we do?")
+                    self.state.value = np.copy(self.state_prev)
+                    self.action.value =  np.copy(self.action_prev)
+                    self.slack_sdf.value = np.copy(self.slack_sdf_prev)
+                    self.rho_inc += 1
+                    self.slack_inc *= 2
+                    continue
+                
+                # print("we made it this far boys. let's pass it on")
+                self.slack_region = np.linalg.norm(self.slack_dyn.value, ord='fro')
+                print("Norm of slack_dyn: ", self.slack_region)
+                self.cost = np.copy(prob.value)
+                self.state_prev = np.copy(self.state.value)
+                self.action_prev = np.copy(self.action.value)
+                self.slack_sdf_prev = np.copy(self.slack_sdf.value)
+                self.rho_inc = 1
+                self.slack_inc = 1
 
 
-        optimal_action_history = np.copy(self.action.value)
-        optimal_state_history = np.copy(self.state.value)
+            optimal_action_history = np.copy(self.action.value)
+            optimal_state_history = np.copy(self.state.value)
+
+            cacher_action.save(optimal_action_history)
+            cacher_state.save(optimal_state_history)
 
         return optimal_action_history, optimal_state_history
 
