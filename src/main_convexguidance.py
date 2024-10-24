@@ -171,7 +171,7 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 10,
+                    maxiter = 15,
                     eps_dyn=1e5,
                     eps_sdf=10.,
                     sig = 30.,

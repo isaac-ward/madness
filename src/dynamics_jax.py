@@ -217,14 +217,14 @@ class DynamicsQuadcopter3D:
         """
         def linearize_single(state, action):
             # Calculate A and B 
-            A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
-            return A, B
+            A, B, F = jax.jacfwd(self.discrete_dynamics, (0, 1, 2))(state, action, self.dt)
+            return A, B, F
         
         # Linearize the batch of states and actions
         linearize_batch = jax.vmap(linearize_single, in_axes=(0, 0))
-        A, B = linearize_batch(states, actions)
+        A, B, F= linearize_batch(states, actions)
         
-        return A, B
+        return A, B, F
     
     def affinize(self, states, actions):
         """
@@ -250,12 +250,12 @@ class DynamicsQuadcopter3D:
         """
         def affinize_single(state, action):
             # Calculate A, B, and C
-            A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
-            C = self.discrete_dynamics(state, action) - A@state - B@action
-            return A, B, C
+            A, B, F = jax.jacfwd(self.discrete_dynamics, (0, 1, 2))(state, action, self.dt)
+            C = self.discrete_dynamics(state, action) - A@state - B@action - F*self.dt
+            return A, B, F, C
         
         # Affinize the batch of states and actions
         affinize_batch = jax.vmap(affinize_single, in_axes=(0, 0))
-        A, B, C = affinize_batch(states, actions)
+        A, B, F, C = affinize_batch(states, actions)
         
-        return A, B, C
+        return A, B, F, C

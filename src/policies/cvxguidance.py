@@ -40,7 +40,6 @@ class SCPSolver:
         self.dynamics = dynamics
         self.sdf = sdf
 
-        self.dt = dynamics.dt
         self.cost_tol = cost_tol
         self.maxiter = maxiter
         self.sig = sig
@@ -57,6 +56,7 @@ class SCPSolver:
         self.state = cvx.Variable((self.K + 1, self.nx))
         self.slack_sdf = cvx.Variable((self.K + 1, self.nss))
         self.slack_dyn = cvx.Variable((self.K, self.nx))
+        self.dt = cvx.Variable(1)
         self.action_prev = trajInit.action
         self.state_prev = trajInit.state
         self.slack_sdf_prev = self.sdf.sdf_values(self.state_prev[:,:3])
@@ -72,9 +72,10 @@ class SCPSolver:
             self,
     ):
         
-        A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
-        A, B, C = np.array(A),np.array(B),np.array(C)
-        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
+        A, B, F, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
+        A, B, F, C = np.array(A),np.array(B),np.array(C),np.array(F)
+        print("F.shape = ", F.shape)
+        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + self.dt*F[k,:] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
         self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
         self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
 
@@ -234,6 +235,7 @@ class SCPSolver:
                 self.state_prev = np.copy(self.state.value)
                 self.action_prev = np.copy(self.action.value)
                 self.slack_sdf_prev = np.copy(self.slack_sdf.value)
+                self.dynamics.dt = np.copy(self.dt.value)
                 self.rho_inc = 1
                 self.slack_inc = 1
 
