@@ -361,7 +361,7 @@ class Visual:
 
         # Load the environment data (they were saved with savez)
         state_history, action_history = utils.logging.load_state_and_action_trajectories(os.path.join(self.run_folder, "environment"))
-        desired_state_shape = (state_history.shape[0], 12)
+        desired_state_shape = (state_history.shape[0], 13)
         assert state_history.shape == desired_state_shape, f"State history shape {state_history.shape} != {desired_state_shape}"
         desired_action_shape = (action_history.shape[0], 4)
         assert action_history.shape == desired_action_shape, f"Action history shape {action_history.shape} != {desired_action_shape}"
@@ -554,7 +554,7 @@ class Visual:
             frame = sim_frame_index
 
             state = state_history[frame]
-            x, y, z, rz, ry, rx, vx, vy, vz, wx, wy, wz = state
+            x, y, z, q0, q1, q2, q3, vx, vy, vz, wx, wy, wz = state
 
             # For visualization it helps to render the moving average of the action
             # history to now and then the current action will be the smoothed version
@@ -618,7 +618,8 @@ class Visual:
             # Everything will now be rotated and translated into place
             translation = np.array([x, y, z])
             # Why -ve x? God only knows
-            rotation = R.from_euler('zyx', [rz, ry, -rx], degrees=False)
+            # rotation = R.from_euler('zyx', [rz, ry, -rx], degrees=False)
+            rotation = R.from_quat([q0, q1, q2, q3], scalar_first=True)
 
             # Transform from local frame into world frame
             rotor_locations = rotation.apply(rotor_locations) + translation
