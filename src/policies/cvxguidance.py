@@ -2,6 +2,7 @@
 import cvxpy as cvx
 import cupy as cp
 import numpy as np
+import copy
 
 import utils.geometric
 from utils.general import log_softmax, gradient_log_softmax, Cacher
@@ -32,6 +33,7 @@ class SCPSolver:
             sig = 10.,
             eps_dyn = 1.,
             eps_sdf = 1.,
+            eps_dt = 10.,
             rho = 1.,
             slack_region = 1.,
             pull_from_cache=False
@@ -45,6 +47,7 @@ class SCPSolver:
         self.sig = sig
         self.eps_dyn = eps_dyn
         self.eps_sdf = eps_sdf
+        self.eps_dt = eps_dt
         self.rho = rho
         self.slack_region = slack_region
 
@@ -56,7 +59,8 @@ class SCPSolver:
         self.state = cvx.Variable((self.K + 1, self.nx))
         self.slack_sdf = cvx.Variable((self.K + 1, self.nss))
         self.slack_dyn = cvx.Variable((self.K, self.nx))
-        self.dt = cvx.Variable(1)
+        self.dt = cvx.Variable()
+        self.dt0 = self.dynamics.dt
         self.action_prev = trajInit.action
         self.state_prev = trajInit.state
         self.slack_sdf_prev = self.sdf.sdf_values(self.state_prev[:,:3])
@@ -73,7 +77,7 @@ class SCPSolver:
     ):
         
         A, B, F, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
-        A, B, F, C = np.array(A),np.array(B),np.array(C),np.array(F)
+        A, B, F, C = np.array(A),np.array(B),np.array(F),np.array(C)
         print("F.shape = ", F.shape)
         self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + self.dt*F[k,:] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
         self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
@@ -125,6 +129,9 @@ class SCPSolver:
         self.constraints += [self.action[k] <= action_ranges[:,1] for k in range(self.K)]
         self.constraints += [self.action[k] >= action_ranges[:,0] for k in range(self.K)]
 
+        self.constraints += [self.dt <= 1.]
+        self.constraints += [self.dt >= 0.05]
+
     def update_constraints(
             self,
             state_goal,
@@ -141,7 +148,7 @@ class SCPSolver:
         self,
         state_goal
     ):
-        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.square( cvx.norm(self.slack_dyn, p='fro') )
+        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.square( cvx.norm(self.slack_dyn, p='fro') ) + self.eps_dt*cvx.square( self.dt - self.dt0 )
 
         action_cost = cvx.square( cvx.norm(self.action, p='fro') )
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
@@ -235,7 +242,8 @@ class SCPSolver:
                 self.state_prev = np.copy(self.state.value)
                 self.action_prev = np.copy(self.action.value)
                 self.slack_sdf_prev = np.copy(self.slack_sdf.value)
-                self.dynamics.dt = np.copy(self.dt.value)
+                self.dynamics.dt = copy.copy(self.dt.value)
+                print("dt: ", self.dynamics.dt)
                 self.rho_inc = 1
                 self.slack_inc = 1
 

@@ -171,11 +171,12 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 15,
+                    maxiter = 10,
                     eps_dyn=1e5,
                     eps_sdf=10.,
+                    eps_dt = 10.,
                     sig = 30.,
-                    rho=2.,
+                    rho=3.,
                     pull_from_cache=True)
 
     # Setup SCP iterations manually until exit condition is implemented
