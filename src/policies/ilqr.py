@@ -1,65 +1,45 @@
 import jax.numpy as jnp
-import src.dynamics_jax as dynamics
+import numpy as np
+from dynamics_jax import DynamicsQuadcopter3D
 import os
 import shutil
 
 class PolicyiLQR:
     def __init__(
         self,
-        state_size,
-        action_size,
         dynamics,
-        K,
-        H,
-        action_ranges,
-        lambda_,
-        map_,
-        use_gpu_if_available=False,
+        Q,
+        R,
+        QN,
+        x_track,
+        u_track,
+        eps=1e-3,
+        max_iters=1000
     ):
         """
         Roll out a bunch of random actions and select the best one
         """
-        self.state_size = state_size
-        self.action_size = action_size
         self.dynamics = dynamics
-        self.K = K
-        self.H = H
-        self.action_ranges = action_ranges
-
-        # Lambda is the temperature of the softmax
-        # infinity selects the best action plan, 0 selects uniformly
-        self.lambda_ = lambda_
-
-        # We need a map to plan paths against (e.g. collision checking)
-        self.map_ = map_
-
-        # Typically we'll sample about the previous best action plan
-        self._previous_optimal_action_plan = jnp.zeros((H, action_size))
-
-        # Will need a path to follow, but we want it to be
-        # updated separately (changeable)
-        self.path_xyz = None
-
-        # Are we going to have logging? Defaultly no
+        self.x_track = x_track
+        self.u_track = u_track
+        self.Q = Q
+        self.R = R
+        self.QN = QN
         self.log_folder = None
+        self.eps = eps
+        self.max_iters = max_iters
 
-        # If we're using a GPU, we'll need to move some things over
-        self.use_gpu_if_available = use_gpu_if_available
-
-        # Defaultly no logging
-        self.log_folder = None
-
-        # Defaultly no goal
-        self.state_goal = None
-    
-    def update_state_goal(
-        self,
-        state_goal,
-    ):
-        """
-        Update the path to follow
-        """
-        self.state_goal = state_goal
+        # Solve iLQR
+        self.x_bar,self.u_bar,self.Y,self.y = self.ilqr(
+            x_track=self.x_track,
+            u_track=self.u_track,
+            quadrotor=self.dynamics,
+            Q=self.Q,
+            R=self.R,
+            QN=self.QN,
+            eps=self.eps,
+            max_iters=self.max_iters
+        )
 
     def enable_logging(
         self,
@@ -68,7 +48,7 @@ class PolicyiLQR:
         """
         Enable logging to a folder
         """
-        self.log_folder = os.path.join(run_folder, "policy", "mppi")
+        self.log_folder = os.path.join(run_folder, "policy", "ilqr")
 
     def delete_logs(self):
         """
@@ -76,10 +56,33 @@ class PolicyiLQR:
         """
         if self.log_folder is not None:
             shutil.rmtree(self.log_folder)
+    
+    def act(
+        self,
+        state_history,
+        action_history,
+        timestep,
+    ):
+        """
+        """
+        # Get the optimal action and other logging information
+        x = state_history[-1]
+        optimal_action = self.u_bar[timestep] + self.y[timestep] + self.Y[timestep] @ (x - self.x_bar[timestep])
+
+        # ----------------------------------------------------------------
+        # Logging from here on
+        # ----------------------------------------------------------------
+
+        # Log the state and action plans alongside the costs, 
+        # if we're logging
+        if self.log_folder is not None:
+            pass
+
+        return optimal_action
 
     # ----------------------------------------------------------------
     
-    def ilqr(self,x_track,u_track,quadrotor:dynamics.DynamicsQuadcopter3D,Q,R,QN,eps=1e-3,max_iters=1000):
+    def ilqr(self,x_track,u_track,quadrotor:DynamicsQuadcopter3D,Q,R,QN,eps=1e-3,max_iters=1000):
         """
         Compute controls to track a given trajectory with iLQR. The iLQR tracking control law is described by
         the formula: u = u_bar + y + Y * (x - x_bar).
@@ -89,10 +92,10 @@ class PolicyiLQR:
         Parameters
         ----------
         x_track: numpy.ndarray
-            Discrete state trajectory to track (dimensions Nxn)
+            Discrete state trajectory to track (dimensions N x n)
         u_track: numpy.ndarray
-            Discrete initial control inputs to track trajectory (dimensions Nxm)
-        quadrotor: dynamics.DynamicsQuadcopter3D
+            Discrete initial control inputs to track trajectory (dimensions N x m)
+        quadrotor: DynamicsQuadcopter3D
             Quadrotor dynamics object
         Q: numpy.ndarray
             The state cost matrix
@@ -121,32 +124,28 @@ class PolicyiLQR:
             raise ValueError("Argument `max_iters` must be at least 1.")
 
         # Get state and control dimensions
-        n = jnp.shape(x_track)[1]  # state dimension
-        m = jnp.shape(u_track)[1]  # control dimension
+        n = quadrotor.state_size()  # state dimension
+        m = quadrotor.action_size()  # control dimension
 
         # Get total number of discrete control points on trajectory
-        N = jnp.shape(u_track)[0]
+        N = np.shape(u_track)[0]
 
         # Initialize control gains Y and offsets y
-        Y = jnp.zeros((N, m, n))
-        y = jnp.zeros((N, m))
+        Y = np.zeros((N, m, n))
+        y = np.zeros((N, m))
 
         # Initialize the nominal trajectory x_bar and u_bar
-        x_bar = jnp.zeros(jnp.shape(x_track))
-        x_bar[0] = jnp.copy(x_track[0])
-        u_bar = jnp.copy(u_track)
+        x_bar = np.zeros(np.shape(x_track))
+        x_bar[0] = np.copy(x_track[0])
+        u_bar = np.zeros(np.shape(u_track))#np.copy(u_track)
 
         # Initialize the nominal trajectory deviations dx and du
-        dx = jnp.zeros((N + 1, n))
-        du = jnp.zeros((N, m))
-
-        # Initialize the time steps
-        dt = jnp.zeros(u_track.shape[0])
+        dx = np.zeros((N + 1, n))
+        du = np.zeros((N, m))
 
         # Step through each discrete point and create a dynamically feasible trajectory
         for _k in range(N):
-            dt[_k] = jnp.linalg.norm(x_track[_k+1,[0,2]]-x_track[_k,[0,2]])/jnp.linalg.norm(x_track[_k,[1,3]])
-            x_bar[_k + 1] = quadrotor.dynamics_true_no_disturbances(x_bar[_k], u_bar[_k], dt=dt[_k])
+            x_bar[_k+1] = np.array(quadrotor.discrete_dynamics(x_bar[_k], u_bar[_k])) # Assert x_bar[k+1] = x_track[k+1]
 
         ## iLQR loop
         # Create variable to exit loop given convergence achieved
@@ -158,12 +157,13 @@ class PolicyiLQR:
 
             # Backwards Pass: 
             qN = QN@(x_bar[N]-x_track[-1])
-            V = jnp.copy(QN)
-            vbar = jnp.copy(qN)
+            V = np.copy(QN)
+            vbar = np.copy(qN)
 
             for _k in range(N-1,-1,-1):
                 # Get Ak, Bk, and dk
-                Ak,Bk = quadrotor.linearize(x_bar[_k],u_bar[_k],dt[_k])
+                Ak,Bk = quadrotor.linearize(x_bar[_k],u_bar[_k])
+                Ak,Bk = np.array(Ak),np.array(Bk)
 
                 # Define cost functions
                 qk = Q@(x_bar[_k]-x_track[_k])
@@ -172,33 +172,38 @@ class PolicyiLQR:
                 # Define S
                 reg = 1e-9 # term to help avoid singularities
                 Su = rk + vbar.T@Bk
-                Suu = R + Bk.T@V@Bk + reg*jnp.eye(m)
+                Suu = R + Bk.T@V@Bk + reg*np.eye(m)
                 Sux = Bk.T@V@Ak
 
                 # Define Y, y
-                Y[_k] = -jnp.linalg.pinv(Suu)@Sux
-                y[_k] = -jnp.linalg.pinv(Suu)@Su
+                #print(Suu)
+                Y[_k] = -np.linalg.pinv(Suu)@Sux
+                y[_k] = -np.linalg.pinv(Suu)@Su
 
                 # Update V, vbar
                 V = Q + Ak.T@V@Ak - Y[_k].T@Suu@Y[_k]
                 vbar = qk + Ak.T@vbar + Sux.T@y[_k]
 
             # Forwards Pass
-            u = jnp.zeros((N, m))
-            x = jnp.zeros((N + 1, n))
-            x[0] = jnp.copy(x_track[0])
+            u = np.zeros((N, m))
+            x = np.zeros((N + 1, n))
+            x[0] = np.copy(x_track[0])
             for _k in range(N):
+                print("x: " + str(x[_k]))
+                print("x_bar: " + str(x_bar[_k]))
                 dx[_k] = x[_k] - x_bar[_k]
+                print("y: " + str(y[_k]))
+                print("Y: " + str(Y[_k]))
+                print("dx: " + str(dx[_k]))
                 du[_k] = y[_k] + Y[_k]@dx[_k]
                 u[_k] = u_bar[_k] + du[_k]
-                dt[_k] = jnp.linalg.norm(x_bar[_k+1,[0,2]]-x_bar[_k,[0,2]])/jnp.linalg.norm(x_bar[_k,[1,3]])
-                x[_k + 1] = quadrotor.dynamics_true_no_disturbances(x[_k], u[_k], dt=dt[_k])
-            x_bar = jnp.copy(x)
-            u_bar = jnp.copy(u)
+                x[_k + 1] = np.array(quadrotor.discrete_dynamics(x[_k],u[_k]))
+            x_bar = np.copy(x)
+            u_bar = np.copy(u)
 
-            print("iLQR iteration: " + str(_i) + "\ndu: " + str(jnp.max(jnp.abs(du))) + "\n")
+            print("iLQR iteration: " + str(_i) + "\ndu: " + str(np.max(np.abs(du))) + "\n")
 
-            if jnp.max(jnp.abs(du)) < eps:
+            if np.max(np.abs(du)) < eps:
                 converged = True
                 break
 

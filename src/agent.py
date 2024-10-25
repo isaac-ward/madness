@@ -54,6 +54,7 @@ class Agent:
         action = self.policy.act(
             state_history,
             action_history,
+            len(self.state_history_tracker)
         )
 
         # Clip the action to the action ranges

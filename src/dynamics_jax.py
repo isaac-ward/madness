@@ -52,14 +52,7 @@ class DynamicsQuadcopter3D:
         self.drag_yaw_coef = drag_yaw_coef
         self.drag_force_coef = drag_force_coef
         self.dt = dt
-
-        # Define continuous dynamics describing the state derivative
-        self.continuous_dynamics = jax.jit(self.state_delta)
-
-        # Define discrete dynamics describing next_state = dynamics(state, action)
-        # Use Euler method for modeling
-        self.discrete_dynamics = jax.jit(
-            lambda state, action, dt=self.dt: state + dt * self.continuous_dynamics(state, action))
+        self._reload_dynamics()
     
     def __getstate__(self):
         """
@@ -75,6 +68,14 @@ class DynamicsQuadcopter3D:
             del state['discrete_dynamics']
 
         return state
+    
+    def _reload_dynamics(self):
+
+        # Reinitialize the excluded variables
+        # Define continuous dynamics describing the state derivative
+        self.continuous_dynamics = jax.jit(self.state_delta)
+        #self.discrete_dynamics = jax.jit(self._discrete_dynamics)
+        self.discrete_dynamics = self._discrete_dynamics
 
     def __setstate__(self, state):
         """
@@ -82,15 +83,47 @@ class DynamicsQuadcopter3D:
         """
         # Restore instance attributes
         self.__dict__.update(state)
+        self._reload_dynamics()
 
-        # Reinitialize the excluded variables
-        # Define continuous dynamics describing the state derivative
-        self.continuous_dynamics = jax.jit(self.state_delta)
+    def _discrete_dynamics(self, state, action):
+        change_in_state = self.dt * self.state_delta(state, action)
 
-        # Define discrete dynamics describing next_state = dynamics(state, action)
-        # Use Euler method for modeling
-        self.discrete_dynamics = jax.jit(
-            lambda state, action, dt=self.dt: state + dt * self.continuous_dynamics(state, action))
+        def _print_helper(label, tracer):
+            if False:
+                tracer = jax.block_until_ready(tracer)
+                jax.debug.print(f"{label}: {tracer}")
+
+        _print_helper("change_in_state", change_in_state)
+
+        # Quaternion is the 4th element through the 8th
+        # and it must be treated differently because its
+        # a special little princess
+        original_quaternion = state[3:7]
+        change_in_quaternion = change_in_state[3:7]
+        #new_quaternion = geometric.q_mul(original_quaternion, change_in_quaternion)
+        new_quaternion = original_quaternion + change_in_quaternion # TODO choose method to propagate
+
+        _print_helper("original_quaternion", original_quaternion)
+        _print_helper("change_in_quaternion", change_in_quaternion)
+        _print_helper("new_quaternion", new_quaternion)
+
+        # Now, they BOTH should be valud quaternions but let's
+        # normalize for safety
+        new_quaternion = new_quaternion / jnp.linalg.norm(new_quaternion)
+
+        _print_helper("new_quaternion", new_quaternion)
+
+        # Now we can assemble
+        new_state = state + change_in_state
+        # Overwrite the special little princess
+        new_state = new_state.at[3:7].set(new_quaternion)
+
+        _print_helper("new_state", new_state)
+
+        return new_state
+    
+    def step(self, state, action):
+        return self.discrete_dynamics(state, action)
 
     def state_size(self):
         return 13
@@ -116,9 +149,6 @@ class DynamicsQuadcopter3D:
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
         ]) 
-    
-    def step(self, state, action):
-        return state + self.state_delta(state, action)
     
     def state_delta(self, state, action):
         """
@@ -222,7 +252,10 @@ class DynamicsQuadcopter3D:
         
         # Linearize the batch of states and actions
         linearize_batch = jax.vmap(linearize_single, in_axes=(0, 0))
-        A, B = linearize_batch(states, actions)
+        if states.ndim == 1:
+            A,B = linearize_single(states,actions)
+        else:
+            A, B = linearize_batch(states, actions)
         
         return A, B
     
@@ -256,6 +289,9 @@ class DynamicsQuadcopter3D:
         
         # Affinize the batch of states and actions
         affinize_batch = jax.vmap(affinize_single, in_axes=(0, 0))
-        A, B, C = affinize_batch(states, actions)
+        if states.ndim == 1:
+            A, B, C = affinize_single(states,actions)
+        else:
+            A, B, C = affinize_batch(states, actions)
         
         return A, B, C

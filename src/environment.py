@@ -90,7 +90,7 @@ class Environment:
             rng.uniform(low=extents[0][0], high=extents[0][1]),
             rng.uniform(low=extents[1][0], high=extents[1][1]),
             rng.uniform(low=extents[2][0], high=extents[2][1]),
-            0, 0, 0,
+            1, 0, 0, 0,
             0, 0, 0,
             0, 0, 0,
         ])
@@ -103,7 +103,7 @@ class Environment:
                 rng.uniform(low=extents[0][0], high=extents[0][1]),
                 rng.uniform(low=extents[1][0], high=extents[1][1]),
                 rng.uniform(low=extents[2][0], high=extents[2][1]),
-                0, 0, 0,
+                1, 0, 0, 0,
                 0, 0, 0,
                 0, 0, 0,
             ])
