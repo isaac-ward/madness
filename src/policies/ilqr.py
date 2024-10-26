@@ -134,18 +134,18 @@ class PolicyiLQR:
         Y = np.zeros((N, m, n))
         y = np.zeros((N, m))
 
-        # Initialize the nominal trajectory x_bar and u_bar
-        x_bar = np.zeros(np.shape(x_track))
-        x_bar[0] = np.copy(x_track[0])
-        u_bar = np.zeros(np.shape(u_track))#np.copy(u_track)
-
         # Initialize the nominal trajectory deviations dx and du
         dx = np.zeros((N + 1, n))
         du = np.zeros((N, m))
 
+        # Initialize the nominal trajectory x_bar and u_bar
+        x_bar = np.zeros(np.shape(x_track))
+        x_bar[0] = np.copy(x_track[0])
+        u_bar = np.copy(u_track)
+
         # Step through each discrete point and create a dynamically feasible trajectory
         for _k in range(N):
-            x_bar[_k+1] = np.array(quadrotor.discrete_dynamics(x_bar[_k], u_bar[_k])) # Assert x_bar[k+1] = x_track[k+1]
+            x_bar[_k+1] = np.array(quadrotor.step(x_bar[_k], u_bar[_k])) # Assert x_bar[k+1] = x_track[k+1]
 
         ## iLQR loop
         # Create variable to exit loop given convergence achieved
@@ -164,40 +164,52 @@ class PolicyiLQR:
                 # Get Ak, Bk, and dk
                 Ak,Bk = quadrotor.linearize(x_bar[_k],u_bar[_k])
                 Ak,Bk = np.array(Ak),np.array(Bk)
+                print("Ak: " + str(Ak))
+                print("Bk: " + str(Bk))
 
                 # Define cost functions
+                print("x_bar: " + str(x_bar[_k]))
+                print("x_track: " + str(x_track[_k]))
                 qk = Q@(x_bar[_k]-x_track[_k])
+                print("x_bar-x_track: " + str(x_bar[_k]-x_track[_k]))
+                print("qk: " + str(qk))
                 rk = R@u_bar[_k]
+                print("rk: " + str(rk))
                 
                 # Define S
                 reg = 1e-9 # term to help avoid singularities
                 Su = rk + vbar.T@Bk
+                print("Su: " +str(Su))
                 Suu = R + Bk.T@V@Bk + reg*np.eye(m)
+                print("Suu " + str(Suu))
                 Sux = Bk.T@V@Ak
+                print("Sux: " + str(Sux))
 
                 # Define Y, y
-                #print(Suu)
                 Y[_k] = -np.linalg.pinv(Suu)@Sux
+                print("Y[k]: " + str(Y[_k]))
                 y[_k] = -np.linalg.pinv(Suu)@Su
+                print("y[k]: " + str(y[_k]))
 
                 # Update V, vbar
                 V = Q + Ak.T@V@Ak - Y[_k].T@Suu@Y[_k]
+                print("V: " + str(V))
                 vbar = qk + Ak.T@vbar + Sux.T@y[_k]
+                print("vbar: " + str(vbar))
 
             # Forwards Pass
             u = np.zeros((N, m))
             x = np.zeros((N + 1, n))
             x[0] = np.copy(x_track[0])
             for _k in range(N):
-                print("x: " + str(x[_k]))
-                print("x_bar: " + str(x_bar[_k]))
                 dx[_k] = x[_k] - x_bar[_k]
-                print("y: " + str(y[_k]))
-                print("Y: " + str(Y[_k]))
                 print("dx: " + str(dx[_k]))
                 du[_k] = y[_k] + Y[_k]@dx[_k]
+                print("du: " + str(du[_k]))
                 u[_k] = u_bar[_k] + du[_k]
-                x[_k + 1] = np.array(quadrotor.discrete_dynamics(x[_k],u[_k]))
+                print("u: " + str(u[_k]))
+                x[_k + 1] = np.array(quadrotor.step(x[_k],u[_k]))
+                print("x: " + str(x[_k]))
             x_bar = np.copy(x)
             u_bar = np.copy(u)
 

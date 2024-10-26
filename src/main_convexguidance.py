@@ -186,6 +186,14 @@ if __name__ == "__main__":
     # Extract euclidean coordinates of drone path from state history
     position_history = optimal_state_history[:,:3]
 
+    # Propagated path real dynamics
+    propagated_traj = np.copy(optimal_state_history)
+    for i in range(1,K):
+        propagated_traj[i,:] = dyn.step(propagated_traj[i-1,:], optimal_action_history[i-1,:])
+    propagated_traj_path = propagated_traj[:,:3]
+    print(propagated_traj_path)
+    print(position_history)
+
     # Create the environment
     num_seconds = 16
     num_steps = int(num_seconds / dyn.dt)
@@ -215,7 +223,7 @@ if __name__ == "__main__":
     )
     utils.logging.save_to_npz(
         os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        path_xyz_smooth,
+        propagated_traj_path#path_xyz_smooth,
     )
 
     # Log the CVX path
