@@ -190,9 +190,10 @@ if __name__ == "__main__":
     # iLQR ----------------------------------------------------------
     # Create iLQR policy
     n,m = dyn.state_size(),dyn.action_size()
-    Q = np.eye(n)
+    Q = np.eye(n) * 100
     R = np.eye(m)
     QN = np.eye(n) * 10
+    QN[:3] = QN[:3] * 100
     policy = PolicyiLQR(
         dynamics=copy.deepcopy(dyn),
         Q=Q,
