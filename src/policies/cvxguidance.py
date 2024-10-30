@@ -31,7 +31,7 @@ class SCPSolver:
             maxiter = 50.,
             sig = 10.,
             eps_dyn = 1.,
-            eps_sdf = 1.,
+            eps_sdf = 1e-4,
             rho = 1.,
             slack_region = 1.,
             pull_from_cache=False
@@ -74,7 +74,8 @@ class SCPSolver:
         
         A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
-        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.slack_dyn[k] for k in range(self.K) ]
+        E = np.eye(self.dynamics.state_size())
+        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + E@self.slack_dyn[k] for k in range(self.K) ]
         self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
         self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
 
@@ -140,9 +141,14 @@ class SCPSolver:
         self,
         state_goal
     ):
-        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.square( cvx.norm(self.slack_dyn, p='fro') )
+        
+        ranges = self.dynamics.action_ranges()
+        upper = ranges[:,1]
+        norm_fac = np.square( np.linalg.norm(upper) )
 
-        action_cost = cvx.square( cvx.norm(self.action, p='fro') )
+        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 )
+
+        action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
         
         bolza_sum = action_cost + distance_cost
@@ -228,7 +234,7 @@ class SCPSolver:
                     continue
                 
                 # print("we made it this far boys. let's pass it on")
-                self.slack_region = np.linalg.norm(self.slack_dyn.value, ord='fro')
+                self.slack_region = np.linalg.norm(self.slack_dyn.value, ord=1)
                 print("Norm of slack_dyn: ", self.slack_region)
                 self.cost = np.copy(prob.value)
                 self.state_prev = np.copy(self.state.value)

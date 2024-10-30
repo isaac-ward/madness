@@ -51,9 +51,8 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = 25
+    state_goal[:3] = np.array([5,6,15])
     state_goal[3] = 1
-    # state_goal[:3] = [5,5,8]
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -73,7 +72,7 @@ if __name__ == "__main__":
     k = dyn.thrust_coef
     m = dyn.mass
     g = dyn.g
-    # w_trim = np.sqrt(m*g/(4*k))
+    w_trim = np.sqrt(m*g/(4*k))
 
     # Initialize position state guess with smooth Astar results
     trajInit.state = np.zeros((K+1, dyn.state_size()))
