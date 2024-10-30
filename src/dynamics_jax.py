@@ -4,6 +4,7 @@ import pickle
 import os
 import jax.numpy as jnp
 import jax
+from math import sqrt
 
 import utils.general as general
 import utils.geometric as geometric
@@ -141,8 +142,15 @@ class DynamicsQuadcopter3D:
     def action_ranges(self):
         # If you're finding that state space isn't adequately explored,
         # consider increasing the size of the action space
+
+        k = self.thrust_coef
+        m = self.mass
+        g = self.g
+        w_trim = sqrt(m*g/(4*k))
         magnitude_lo = 0
+        # magnitude_lo = -w_trim*0.95
         magnitude_hi = 4
+        # magnitude_hi = w_trim*1.05
         return jnp.array([
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],

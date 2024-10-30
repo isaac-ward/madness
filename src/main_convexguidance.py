@@ -51,8 +51,8 @@ if __name__ == "__main__":
     state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
     state_goal[:3] = 25
+    # state_goal[:3] = np.array([5,6,25])
     state_goal[3] = 1
-    # state_goal[:3] = [5,5,8]
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -72,7 +72,9 @@ if __name__ == "__main__":
     k = dyn.thrust_coef
     m = dyn.mass
     g = dyn.g
-    # w_trim = np.sqrt(m*g/(4*k))
+    w_trim = np.sqrt(m*g/(4*k))
+
+    # dyn.dt = 0.05
 
     # Initialize position state guess with smooth Astar results
     trajInit.state = np.zeros((K+1, dyn.state_size()))
@@ -171,12 +173,12 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 10,
+                    maxiter = 20,
                     eps_dyn=1e5,
-                    eps_sdf=10.,
+                    eps_sdf=1e-4,
                     sig = 30.,
                     rho=2.,
-                    pull_from_cache=True)
+                    pull_from_cache=False)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_history = state_initial
@@ -188,11 +190,14 @@ if __name__ == "__main__":
 
     # Propagated path real dynamics
     propagated_traj = np.copy(optimal_state_history)
-    for i in range(1,K):
+    for i in range(1,K+1):
         propagated_traj[i,:] = dyn.step(propagated_traj[i-1,:], optimal_action_history[i-1,:])
     propagated_traj_path = propagated_traj[:,:3]
-    print(propagated_traj_path)
-    print(position_history)
+
+    print("trimmed rotor speed: ", w_trim)
+    print("rotor speed history", optimal_action_history)
+    # print(propagated_traj_path)
+    # print(position_history)
 
     # Create the environment
     num_seconds = 16
