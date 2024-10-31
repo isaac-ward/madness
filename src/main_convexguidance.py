@@ -176,15 +176,17 @@ if __name__ == "__main__":
                     maxiter = 20,
                     eps_dyn=1e5,
                     eps_sdf=1e-4,
+                    eps_quat=10,
                     sig = 30.,
                     rho=2.,
-                    pull_from_cache=False)
+                    pull_from_cache=True)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_history = state_initial
     optimal_action_history, optimal_state_history = scp.solve(state_goal=state_goal,
                 state_history=state_history[np.newaxis,:])
     
+    print( "norm of scp quat: ", np.linalg.norm( optimal_state_history[:,3:7] , axis=-1) )
     # Extract euclidean coordinates of drone path from state history
     position_history = optimal_state_history[:,:3]
 
@@ -194,8 +196,8 @@ if __name__ == "__main__":
         propagated_traj[i,:] = dyn.step(propagated_traj[i-1,:], optimal_action_history[i-1,:])
     propagated_traj_path = propagated_traj[:,:3]
 
-    print("trimmed rotor speed: ", w_trim)
-    print("rotor speed history", optimal_action_history)
+    # print("trimmed rotor speed: ", w_trim)
+    # print("rotor speed history", optimal_action_history)
     # print(propagated_traj_path)
     # print(position_history)
 
