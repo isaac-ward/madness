@@ -51,7 +51,8 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = np.array([5,6,15])
+    state_goal[:3] = np.array([10,5,2])
+    #state_goal[:3] = 25
     state_goal[3] = 1
 
     # # Generate a path from the initial state to the goal state
@@ -182,6 +183,7 @@ if __name__ == "__main__":
     state_history = state_initial
     optimal_action_history, optimal_state_history = scp.solve(state_goal=state_goal,
                 state_history=state_history[np.newaxis,:])
+    print(optimal_action_history)
     
     # Extract euclidean coordinates of drone path from state history
     position_history = optimal_state_history[:,:3]
@@ -200,9 +202,11 @@ if __name__ == "__main__":
         QN=QN,
         x_track=optimal_state_history,
         u_track=optimal_action_history,
-        eps=1e-3,
-        max_iters=1000
+        eps=1e-2,
+        max_iters=1000,
+        verbose=True
     )
+    ilqr_traj = np.copy(position_history)
 
     # Can now create an agent
     agent = Agent(
@@ -213,8 +217,8 @@ if __name__ == "__main__":
     ) 
 
     # Create the environment
-    num_seconds = 16
-    num_steps = int(num_seconds / dyn.dt)
+    num_steps = np.shape(path_xyz)[0]
+    num_seconds = dyn.dt * num_steps
     environment = Environment(
         state_initial=state_initial,
         state_goal=state_goal,
@@ -231,6 +235,7 @@ if __name__ == "__main__":
         # Take an action (this is based on previous observations)
         action = agent.act()
         state, done_flag, done_message = environment.step(action)
+        ilqr_traj[i+1] = state[:3]
         # print(action)
         # print(state)
         pbar.update(1)
@@ -272,7 +277,7 @@ if __name__ == "__main__":
     )
     utils.logging.save_to_npz(
         os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        path_xyz_smooth,
+        ilqr_traj#path_xyz_smooth, TODO Replace
     )
 
     # Log the CVX path
@@ -284,5 +289,5 @@ if __name__ == "__main__":
     # Render visuals
     visual = Visual(log_folder)
     visual.render_video(desired_fps=25)
-    visual.plot_histories()
+    #visual.plot_histories()
     visual.plot_environment()
