@@ -136,6 +136,16 @@ if __name__ == "__main__":
     trajInit.state[:,3:7] = q
     # trajInit.state[:,3] = 1
 
+    """
+
+    For converting quaternions to Euler angles
+
+    R = utils.geometric.q2R(q.T)
+    u = utils.geometric.R2Euler123(R)
+    trajInit.state[:,3:6] = u.T
+
+    """
+
     # Compute the angular velocity
     qf = q[1:] # advanced time-step history
     qb = q[:-1] # prior time-step history

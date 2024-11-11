@@ -50,6 +50,24 @@ def q_mul(q1, q2):
         q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1] + q1[3] * q2[0]
     ])
 
+def q2R(q):
+    """
+    returns rotation matrix that would transform a vector in the global frame into the body frame
+    """
+    return jnp.array([
+        [q[0]**2 + q[1]**2 - q[2]**2 - q[3]**2, 2*(q[1]*q[2] + q[0]*q[3]), 2*(q[1]*q[3] - q[0]*q[2])],
+        [2*(q[1]*q[2] - q[0]*q[3]), q[0]**2 - q[1]**2 + q[2]**2 - q[3]**2, 2*(q[2]*q[3] + q[0]*q[1])],
+        [2*(q[1]*q[3] + q[0]*q[2]), 2*(q[2]*q[3] - q[0]*q[1]), q[0]**2 - q[1]**2 - q[2]**2 + q[3]**2]
+    ])
+
+def R2Euler123(R):
+
+    return jnp.array([
+        jnp.atan2(R[2,3],R[3,3]),
+        -jnp.asin(R[3,1]),
+        jnp.atan2(R[1,2],R[1,1])
+    ])
+
 def shortest_distance_between_path_and_point(path, point):
     """
     Given a path and a point, return the shortest distance between the path and the point
