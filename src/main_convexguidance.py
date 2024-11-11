@@ -50,7 +50,7 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = 25
+    state_goal[:3] = np.array([25,25,5])#25
     # state_goal[:3] = np.array([5,6,25])
     state_goal[3] = 1
 
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     g = dyn.g
     w_trim = np.sqrt(m*g/(4*k))
 
-    # dyn.dt = 0.05
+    dyn.dt = 0.25
 
     # Initialize position state guess with smooth Astar results
     trajInit.state = np.zeros((K+1, dyn.state_size()))
@@ -173,7 +173,7 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 20,
+                    maxiter = 50,
                     eps_dyn=1e5,
                     eps_sdf=1e-4,
                     eps_quat=10,
@@ -187,6 +187,7 @@ if __name__ == "__main__":
                 state_history=state_history[np.newaxis,:])
     
     print( "norm of scp quat: ", np.linalg.norm( optimal_state_history[:,3:7] , axis=-1) )
+    print("Optimal Control: " + str(optimal_action_history))
     # Extract euclidean coordinates of drone path from state history
     position_history = optimal_state_history[:,:3]
 
