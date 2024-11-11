@@ -217,7 +217,11 @@ class SCPSolver:
                 prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
                 print("Attempting to solve the problem")
                 try:
-                    prob.solve(solver=cvx.CLARABEL)
+                    clarabel_options = {
+                        "tol_rel_gap": 1e-6,
+                        "tol_abs_gap": 1e-6
+                    }
+                    prob.solve(solver=cvx.CLARABEL)#,**clarabel_options)
                 except:
                     prob.solve(solver=cvx.SCS)
                 print("Solver: " + str(prob.solver_stats.solver_name))

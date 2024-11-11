@@ -32,19 +32,20 @@ class PolicyiLQR:
         self.verbose = verbose
 
         # Solve iLQR
-        self.x_bar,self.u_bar,self.Y,self.y = self.ilqr(
-            x_track=self.x_track,
-            u_track=self.u_track,
-            quadrotor=self.dynamics,
-            Q=self.Q,
-            R=self.R,
-            QN=self.QN,
-            eps=self.eps,
-            max_iters=self.max_iters
-        )
+        # self.x_bar,self.u_bar,self.Y,self.y = self.ilqr(
+        #     x_track=self.x_track,
+        #     u_track=self.u_track,
+        #     quadrotor=self.dynamics,
+        #     Q=self.Q,
+        #     R=self.R,
+        #     QN=self.QN,
+        #     eps=self.eps,
+        #     max_iters=self.max_iters
+        # )
 
         # Solve AL-iLQR
-        """self.x_bar,self.u_bar,self.Y,self.y = self.al_ilqr(
+        # TODO Add SDF constraints???
+        self.x_bar,self.u_bar,self.Y,self.y = self.al_ilqr(
             x_track=self.x_track,
             u_track=self.u_track,
             dyn=self.dynamics,
@@ -53,7 +54,7 @@ class PolicyiLQR:
             QN=self.QN,
             eps=self.eps,
             max_iters=self.max_iters
-        )"""
+        )
 
     def enable_logging(
         self,
@@ -141,6 +142,9 @@ class PolicyiLQR:
         y: numpy.ndarray
             Discrete control offset for control law (dimensions N x m)
         """
+        u_upper = np.array(self.dynamics.action_ranges())[:,1]
+        u_lower = np.array(self.dynamics.action_ranges())[:,0]
+
         # Check for a valid setup
         if max_iters <= 1:
             raise ValueError("Argument `max_iters` must be at least 1.")
@@ -161,27 +165,50 @@ class PolicyiLQR:
         du = np.zeros((N, m))
 
         # Initialize the nominal trajectory x_bar and u_bar
-        x_bar = np.zeros(np.shape(x_track))
+        x_bar = np.zeros_like(x_track)
         x_bar[0] = np.copy(x_track[0])
         u_bar = np.copy(u_track)
 
         # Step through each discrete point and create a dynamically feasible trajectory
-        A_total, B_total = quadrotor.linearize(x_track[:-1], u_track)
-        for k in range(N-1):
-            x_bar[k+1] = A_total[k] @ x_bar[k] + B_total[k] @ u_bar[k] + x_track[k]
+        # A_init, B_init = quadrotor.linearize(x_track[:-1],u_track)
+        # A_init,B_init = np.array(A_init),np.array(B_init)
+        # for k in range(N):
+        #     x_bar[k+1] = A_init[k] @ x_bar[k] + B_init[k] @ u_bar[k]
+        #     x_bar[k+1,3:7] /= np.linalg.norm(x_bar[k+1,3:7])
+        
+        # assert not np.any(np.isnan(A_init)), "A contains NaN values from tracked trajectory"
+        # assert not np.any(np.isnan(B_init)), "B contains NaN values from tracked trajectory"
+        # assert not np.any(np.isnan(x_bar)), "x_bar contains NaN values from tracked trajectory"
+        # assert not np.any(np.isnan(u_bar)), "u_bar contains NaN values from tracked trajectory"
+        # assert not np.any(np.isinf(A_init)), "A contains inf values from tracked trajectory"
+        # assert not np.any(np.isinf(B_init)), "B contains inf values from tracked trajectory"
+        # assert not np.any(np.isinf(x_bar)), "x_bar contains inf values from tracked trajectory"
+        # assert not np.any(np.isinf(u_bar)), "u_bar contains inf values from tracked trajectory"
+        
 
-        """for _k in range(N):
-            x_bar[_k+1] = np.array(quadrotor.step(x_bar[_k], u_bar[_k])) # Assert x_bar[k+1] = x_track[k+1]"""
+        for _k in range(N):
+            x_bar[_k+1] = np.array(quadrotor.step(x_bar[_k], u_bar[_k]))
+        print("x_bar: " + str(x_bar))
+        # x_bar = np.copy(x_track)
+
+        # Last cost
+        J_last =  np.inf
+        J = self.cost_function(x_bar,x_track,u_bar)
 
         # Regularization factor
         ρinit = 0
         ρ = ρinit
-        ρmax = 1e-8
-        ρinc = 1e-9
+        ρmax = 1e-6
+        ρinc = 1e-7
 
         # Get linearized jacobians
         A_total,B_total = quadrotor.linearize(x_bar[:-1],u_bar)
         A_total,B_total = np.array(A_total),np.array(B_total)
+
+        assert not np.any(np.isnan(A_total)), "A contains NaN values from tracked trajectory"
+        assert not np.any(np.isnan(B_total)), "B contains NaN values from tracked trajectory"
+        assert not np.any(np.isinf(A_total)), "A contains inf values from tracked trajectory"
+        assert not np.any(np.isinf(B_total)), "B contains inf values from tracked trajectory"
 
         ## iLQR loop
         # Create variable to exit loop given convergence achieved
@@ -195,8 +222,8 @@ class PolicyiLQR:
             lN_xx = np.copy(QN)
 
             # Calc cost to go at N
-            p = lN_x
-            P = lN_xx
+            p = np.copy(lN_x)
+            P = np.copy(lN_xx)
 
             for _k in range(N-1,-1,-1):
                 # Build cost function gradients / Hessians at kth step
@@ -220,23 +247,35 @@ class PolicyiLQR:
 
                 # Check if positive definite
                 incrementing = True
+                # Q_uu_reg = np.eye(np.shape(Q_uu)[0])*ρmax + Q_uu
                 while incrementing:
-                    Q_uu_reg = np.eye(np.shape(Q_uu)[0],np.shape(Q_uu)[1])*ρ + Q_uu
+                    Q_uu_reg = np.eye(np.shape(Q_uu)[0])*ρ + Q_uu
+                    print("k: " + str(_k) + " / " + str(N-1))
+                    print("Q_uu: " + str(Q_uu_reg))
+                    print("eigs: " + str(np.linalg.eigvals(Q_uu_reg)))
+                    print("A: " + str(A))
+                    print("B: " + str(B))
                     if not np.all(np.linalg.eigvals(Q_uu_reg) > 0):
                         ρ += ρinc
                         if ρ > ρmax:
-                            raise Exception("Hit maximum limit for regularization ρ=" + str(ρ))
+                            raise Exception("Hit maximum limit for regularization ρ = " + str(ρ))
                     else:
                         incrementing = False
                 
                 # Calc control gains
-                inv_gain = -np.linalg.inv(Q_uu_reg)
+                inv_gain = -np.linalg.pinv(Q_uu_reg)
                 Kk[_k] = inv_gain @ Q_ux
                 dk[_k] = inv_gain @ Q_u
                 P = Q_xx + Kk[_k].T @ Q_uu @ Kk[_k] + Kk[_k].T @ Q_ux + Q_xu @ Kk[_k]
                 p = Q_x + Kk[_k].T @ Q_uu @ dk[_k] + Kk[_k].T @ Q_u + Q_xu @ dk[_k]
-                #P = Q_xx + A.T@P@A - Kk[_k].T@Q_uu@Kk[_k]
-                #p = Q_x + A.T@p + Q_ux.T@dk[_k]
+                # P = Q_xx + Kk[_k].T @ Q_uu @ Kk[_k] - Kk[_k].T @ Q_ux - Q_xu @ Kk[_k]
+                # p = Q_x + Kk[_k].T @ Q_uu @ dk[_k] + Kk[_k].T @ Q_u - Q_xu @ dk[_k]
+                # P = Q_xx + A.T@P@A - Kk[_k].T@Q_uu@Kk[_k]
+                # p = Q_x + A.T@p + Q_ux.T@dk[_k]
+                # assert not np.any(np.isnan(Kk[_k])), "Kk contains NaN values from tracked trajectory"
+                # assert not np.any(np.isnan(dk[_k])), "dk contains NaN values from tracked trajectory"
+                # assert not np.any(np.isinf(Kk[_k])), "Kk contains inf values from tracked trajectory"
+                # assert not np.any(np.isinf(dk[_k])), "dk contains inf values from tracked trajectory"
 
             # Forwards Pass
             u = np.zeros((N, m))
@@ -244,17 +283,29 @@ class PolicyiLQR:
             x[0] = np.copy(x_track[0])
             for _k in range(N):
                 dx[_k] = x[_k] - x_bar[_k]
+                # print("x: " + str(np.linalg.norm(x[_k,3:7])))
+                # print("x_bar: " + str(np.linalg.norm(x_bar[_k,3:7])))
+                # print("dx: " + str(np.linalg.norm(dx[_k,3:7])))
                 du[_k] = dk[_k] + Kk[_k] @ dx[_k] 
                 u[_k] = u_bar[_k] + du[_k]
+                u[_k] = np.clip(u[_k], u_lower, u_upper) # Restrict action with limits
+                # print("u " + str(u[_k]))
+                # print("x " + str(x[_k]))
                 x[_k + 1] = np.array(quadrotor.step(x[_k],u[_k]))
-            assert not np.any(np.isnan(dx)), "dx contains NaN values " + str(dx)
-            assert not np.any(np.isnan(du)), "du contains NaN values " + str(du)
+            # assert not np.any(np.isnan(dx)), "dx contains NaN values " + str(dx)
+            # assert not np.any(np.isnan(du)), "du contains NaN values " + str(du)
             x_bar = np.copy(x)
             u_bar = np.copy(u)
+            # New cost
+            J_last = np.copy(J)
+            J = self.cost_function(x_bar,x_track,u_bar)
+            improve = abs(J_last - J)
 
-            print("iLQR iteration: " + str(_i) + "\ndu: " + str(np.max(np.abs(du))) + "\n")
+            print("iLQR iteration: " + str(_i) + "\nCost Improvement: " + str(J_last - J))
+            print("J = " + str(J))
+            print("J_last = " + str(J_last))
 
-            if np.max(np.abs(du)) < eps:
+            if improve < eps and _i > 2:
                 converged = True
                 break
 
@@ -405,8 +456,8 @@ class PolicyiLQR:
         # Regularization factor
         ρinit = 0
         ρ = ρinit
-        ρmax = 1e-8
-        ρinc = 1e-9
+        ρmax = 1e-6
+        ρinc = 1e-7
 
         # Get linearized jacobians
         A_total,B_total = dyn.linearize(x[:-1],u)
@@ -439,17 +490,21 @@ class PolicyiLQR:
 
             # Check if positive definite
             incrementing = True
+            # Q_uu_reg = np.eye(np.shape(Q_uu)[0],np.shape(Q_uu)[1])*ρmax + Q_uu
             while incrementing:
                 Q_uu_reg = np.eye(np.shape(Q_uu)[0],np.shape(Q_uu)[1])*ρ + Q_uu
-                if not np.all(np.linalg.eigvals(Q_uu_reg) > 0):
+                try:
+                    # Attempt Cholesky decomposition
+                    np.linalg.cholesky(Q_uu_reg)
+                    # If successful, Q_uu_reg is positive definite
+                    incrementing = False
+                except np.linalg.LinAlgError:
                     ρ += ρinc
                     if ρ > ρmax:
-                        raise Exception("Hit maximum limit for regularization")
-                else:
-                    incrementing = False
+                        raise Exception("Hit maximum limit for regularization: " + str(ρ))
             
             # Calc control gains
-            inv_gain = -np.linalg.inv(Q_uu_reg)
+            inv_gain = -np.linalg.pinv(Q_uu_reg)
             assert not np.any(np.isnan(inv_gain)), "inv_gain contains NaN values"
             assert not np.any(np.isnan(Q_ux)), "Q_ux contains NaN values"
             assert not np.any(np.isnan(Q_u)), "Q_u contains NaN values"
@@ -494,7 +549,7 @@ class PolicyiLQR:
         du = np.zeros((N-1,m))
 
         # Initialize line search parameters
-        α = 0.1
+        α = 1
         γ = 0.5
         β1 = 1e-4
         β2 = 10
@@ -507,6 +562,7 @@ class PolicyiLQR:
 
         while not break_line_search:
             iteration_count += 1
+            print("Iteration Count: " + str(iteration_count))
             # Propagate trajectory
             for _k in range(0,N-1):
                 assert not np.any(np.isnan(α)), "NaN detected in α " + str(α)
@@ -535,6 +591,7 @@ class PolicyiLQR:
             J = self.cost_function(x,x_track,u) # Calc cost function for this run
 
             z = (J - J_last) / np.sum([α * deltaV[_k,0] + (α**2) * deltaV[_k,1] for _k in range(0,np.shape(deltaV)[0])])
+            print("z: " + str(z))
             if (z >= β1) and (z <= β2):
                 # If value within line search range, return values
                 break_line_search = True
@@ -542,7 +599,7 @@ class PolicyiLQR:
                 # If values not within line search range, increment alpha and rerun
                 α = γ * α
                 if iteration_count >= max_iters:
-                    raise Exception("Max iterations reached for iLQR Forward Pass")
+                    raise Exception("Max iterations reached for iLQR Forward Pass. z: " + str(z))
 
         return x, u, J
     
