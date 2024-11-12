@@ -32,6 +32,7 @@ class SCPSolver:
             sig = 10.,
             eps_dyn = 1.,
             eps_sdf = 1e-4,
+            eps_quat = 1.,
             rho = 1.,
             slack_region = 1.,
             pull_from_cache=False
@@ -46,6 +47,7 @@ class SCPSolver:
         self.sig = sig
         self.eps_dyn = eps_dyn
         self.eps_sdf = eps_sdf
+        self.eps_quat = eps_quat
         self.rho = rho
         self.slack_region = slack_region
 
@@ -57,6 +59,7 @@ class SCPSolver:
         self.state = cvx.Variable((self.K + 1, self.nx))
         self.slack_sdf = cvx.Variable((self.K + 1, self.nss))
         self.slack_dyn = cvx.Variable((self.K, self.nx))
+        self.slack_quat = cvx.Variable(self.K+1)
         self.action_prev = trajInit.action
         self.state_prev = trajInit.state
         self.slack_sdf_prev = self.sdf.sdf_values(self.state_prev[:,:3])
@@ -76,13 +79,14 @@ class SCPSolver:
         A, B, C = np.array(A),np.array(B),np.array(C)
         E = np.eye(self.dynamics.state_size())
         self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + E@self.slack_dyn[k] for k in range(self.K) ]
-        self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
-        self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+        # self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
+        # self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
 
+        # self.constraints += [ cvx.norm(self.state[k, 3:7]) - 1 <= self.slack_quat[k] for k in range(self.K+1) ]
+
+        # bouond on dynamics slack variable
         slack_bound = self.slack_region*self.slack_inc
-        
         print(slack_bound)
-
         self.constraints += [ cvx.norm( self.slack_dyn, p='fro' ) <= slack_bound ]
     
     def sdf_constraints(
@@ -146,12 +150,12 @@ class SCPSolver:
         upper = ranges[:,1]
         norm_fac = np.square( np.linalg.norm(upper) )
 
-        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 )
+        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 ) #+ self.eps_quat*cvx.norm( self.slack_quat, p=1 )
 
         action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
         
-        bolza_sum = action_cost + distance_cost
+        bolza_sum = action_cost # + distance_cost
 
         self.objective = bolza_sum + terminal_cost
 
@@ -213,7 +217,11 @@ class SCPSolver:
                 prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
                 print("Attempting to solve the problem")
                 try:
-                    prob.solve(solver=cvx.CLARABEL)
+                    clarabel_options = {
+                        "tol_rel_gap": 1e-6,
+                        "tol_abs_gap": 1e-6
+                    }
+                    prob.solve(solver=cvx.CLARABEL)#,**clarabel_options)
                 except:
                     prob.solve(solver=cvx.SCS)
                 print("Solver: " + str(prob.solver_stats.solver_name))
