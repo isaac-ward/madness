@@ -103,9 +103,13 @@ class ItemHistoryTracker:
     This class is useful for representing state and action histories,
     and provides utilities for taking the last n items with zero padding 
     """
-    def __init__(self, item_shape):
+    def __init__(self, item_shape, zero_pad_item=None):
         self.history = []
         self.item_shape = item_shape
+        if zero_pad_item is None:
+            self.zero_pad_item = np.zeros(item_shape)
+        else:
+            self.zero_pad_item = zero_pad_item
 
     def append(self, item):
         self.history.append(item)
@@ -119,7 +123,7 @@ class ItemHistoryTracker:
         if items_available >= n:
             return np.array(self.history[-n:])
         else:
-            return np.array([np.zeros(self.item_shape) for _ in range(n - items_available)] + self.history)
+            return np.array([self.zero_pad_item for _ in range(n - items_available)] + self.history)
     
     def get_history(self):
         return np.array(self.history)

@@ -70,11 +70,15 @@ class Environment:
     @staticmethod
     def get_two_states_separated_by_distance(
         map_,
+        template,
         min_distance,
         rng=None,
     ):
         """
         Useful for resetting the environment with the initial state and goal
+
+        Template is a list of items, the letter R denotes randomize, letter X Y Z
+        denotes positional randomization, and the rest are fixed values
         
         Extents is a list of 3 tuples of (min, max) for each dimension
         """
@@ -86,27 +90,26 @@ class Environment:
         extents = map_.extents_metres_xyz
         
         # Get a random state
-        state_initial = np.array([
-            rng.uniform(low=extents[0][0], high=extents[0][1]),
-            rng.uniform(low=extents[1][0], high=extents[1][1]),
-            rng.uniform(low=extents[2][0], high=extents[2][1]),
-            1, 0, 0, 0,
-            0, 0, 0,
-            0, 0, 0,
-        ])
+        def get_random_state(extents):
+            state = np.zeros(len(template))
+            for i, item in enumerate(template):
+                if item == "X":
+                    state[i] = rng.uniform(low=extents[i][0], high=extents[i][1])
+                elif item == "Y":
+                    state[i] = rng.uniform(low=extents[i][0], high=extents[i][1])
+                elif item == "Z":
+                    state[i] = rng.uniform(low=extents[i][0], high=extents[i][1])
+                else:
+                    state[i] = item
+            return state
+        
+        state_initial = get_random_state(extents)
         
         # Get a random goal state that is at least min_distance away
         state_goal = state_initial
         attempts = 1000
         while np.linalg.norm(state_goal[0:3] - state_initial[0:3]) < min_distance and attempts > 0:
-            state_goal = np.array([
-                rng.uniform(low=extents[0][0], high=extents[0][1]),
-                rng.uniform(low=extents[1][0], high=extents[1][1]),
-                rng.uniform(low=extents[2][0], high=extents[2][1]),
-                1, 0, 0, 0,
-                0, 0, 0,
-                0, 0, 0,
-            ])
+            state_goal = get_random_state(extents)
             attempts -= 1
         
         return state_initial, state_goal
