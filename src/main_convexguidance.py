@@ -27,6 +27,15 @@ from policies.cvxguidance import SCPSolver, Trajectory
 
 if __name__ == "__main__":
 
+    def upsample(path, num_points_between=1):
+        upsampled_path = []
+        for i in range(len(path) - 1):
+            upsampled_path.append(path[i])
+            for j in range(1, num_points_between + 1):
+                upsampled_path.append(path[i])
+        upsampled_path.append(path[-1])  # Add the last point
+        return np.array(upsampled_path)
+
     # Seed everything
     utils.general.random_seed(42)
 
@@ -59,6 +68,7 @@ if __name__ == "__main__":
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
+    path_xyz = upsample(path_xyz, num_points_between=5)
     # path_xyz_smooth = path_xyz # TODO
     try:
         path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
@@ -81,10 +91,12 @@ if __name__ == "__main__":
 
     dyn.dt = 0.025
 
+
     # Initialize position state guess with smooth Astar results
     trajInit.state = np.zeros((K+1, dyn.state_size()))
     trajInit.state[:,:3] = path_xyz_smooth
     # trajInit.action = np.ones((K,4)) * np.sqrt(dyn.mass*dyn.g/(4*dyn.thrust_coef))
+    # trajInit.action = np.ones((K,4)) * w_trim
 
     # Use finite difference to back out velocities at each step (assume final velocity of zero)
     vel = np.zeros(np.shape(path_xyz_smooth))
@@ -364,7 +376,7 @@ if __name__ == "__main__":
     )
     utils.logging.save_to_npz(
         os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        propagated_trajInit_path#propagated_traj_path#path_xyz_smooth,
+        propagated_traj_path#propagated_trajInit_path#path_xyz_smooth,
     )
 
     # Log the CVX path
