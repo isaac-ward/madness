@@ -2,6 +2,7 @@
 import cvxpy as cvx
 import cupy as cp
 import numpy as np
+from tqdm import tqdm
 
 import utils.geometric
 from utils.general import log_softmax, gradient_log_softmax, Cacher
@@ -72,7 +73,7 @@ class SCPSolver:
         self.pull_from_cache = pull_from_cache
 
     def dyn_constraints(
-            self,
+        self,
     ):
         
         A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
@@ -86,8 +87,10 @@ class SCPSolver:
 
         # bouond on dynamics slack variable
         slack_bound = self.slack_region*self.slack_inc
-        print(slack_bound)
+        #print(slack_bound)
         self.constraints += [ cvx.norm( self.slack_dyn, p='fro' ) <= slack_bound ]
+
+        return slack_bound
     
     def sdf_constraints(
             self
@@ -137,9 +140,11 @@ class SCPSolver:
         
         self.constraints = []
 
-        self.dyn_constraints()
+        slack_bound = self.dyn_constraints()
         self.sdf_constraints()
         self.boundary_constraints(state_goal, state_history)
+
+        return slack_bound
 
     def update_objective(
         self,
@@ -159,10 +164,14 @@ class SCPSolver:
 
         self.objective = bolza_sum + terminal_cost
 
+        return terminal_cost, action_cost, distance_cost
+
     def solve(
             self,
             state_goal,
-            state_history
+            state_history,
+            return_information=False,
+            verbose=True,
     ):
         
         # Check if results cached for this
@@ -199,6 +208,15 @@ class SCPSolver:
             "action"
         )
 
+        log_total_cost = []
+        log_terminal_cost = []
+        log_action_cost = []
+        log_distance_cost = []
+        log_slack_bound = []
+
+        # Add a progress bar   
+        pbar = tqdm(total=self.maxiter, desc=f"Running SCP for max {self.maxiter} iterations")
+
         cacher_state = Cacher(computation_inputs_state)
         cacher_action = Cacher(computation_inputs_action)
         optimal_action_history = None
@@ -210,12 +228,14 @@ class SCPSolver:
         else:
             ii = 0
             while ii < self.maxiter:
-                print("SCP Iteration: ", ii)
+                pbar.update(1)
+                if verbose: print("SCP Iteration: ", ii)
                 ii += 1
-                self.update_constraints(state_goal, state_history)
-                self.update_objective(state_goal)
+                slack_bound = self.update_constraints(state_goal, state_history)
+                log_slack_bound.append(slack_bound)
+                terminal_cost, action_cost, distance_cost = self.update_objective(state_goal)
                 prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
-                print("Attempting to solve the problem")
+                if verbose: print("Attempting to solve the problem")
                 try:
                     clarabel_options = {
                         "tol_rel_gap": 1e-6,
@@ -224,9 +244,16 @@ class SCPSolver:
                     prob.solve(solver=cvx.CLARABEL)#,**clarabel_options)
                 except:
                     prob.solve(solver=cvx.SCS)
-                print("Solver: " + str(prob.solver_stats.solver_name))
-                print("Problem Status: ", prob.status)
-                print("Cost: " + str(prob.value))
+                if verbose: print("Solver: " + str(prob.solver_stats.solver_name))
+                if verbose: print("Problem Status: ", prob.status)
+                if verbose: print("Cost: " + str(prob.value))
+                cost = prob.value
+
+                # Store everything
+                log_total_cost.append(cost)
+                log_terminal_cost.append(terminal_cost.value)
+                log_action_cost.append(action_cost.value)
+                log_distance_cost.append(distance_cost.value)
     
                 delta_cost = prob.value - self.cost
                 if np.abs(delta_cost) < self.cost_tol:
@@ -243,7 +270,7 @@ class SCPSolver:
                 
                 # print("we made it this far boys. let's pass it on")
                 self.slack_region = np.linalg.norm(self.slack_dyn.value, ord=1)
-                print("Norm of slack_dyn: ", self.slack_region)
+                if verbose: print("Norm of slack_dyn: ", self.slack_region)
                 self.cost = np.copy(prob.value)
                 self.state_prev = np.copy(self.state.value)
                 self.action_prev = np.copy(self.action.value)
@@ -258,7 +285,10 @@ class SCPSolver:
             cacher_action.save(optimal_action_history)
             cacher_state.save(optimal_state_history)
 
-        return optimal_action_history, optimal_state_history
+        if return_information:
+            return optimal_action_history, optimal_state_history, (log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound)
+        else:
+            return optimal_action_history, optimal_state_history
 
 # TODO
 class PolicyConvex:
