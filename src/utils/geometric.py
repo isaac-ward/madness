@@ -63,9 +63,9 @@ def q2R(q):
 def R2Euler123(R):
 
     return jnp.array([
-        jnp.atan2(R[2,3],R[3,3]),
-        -jnp.asin(R[3,1]),
-        jnp.atan2(R[1,2],R[1,1])
+        jnp.atan2(R[1,2],R[2,2]),
+        -jnp.asin(R[0,2]),
+        jnp.atan2(R[0.1],R[0,0])
     ])
 
 def shortest_distance_between_path_and_point(path, point):
