@@ -11,6 +11,7 @@ class Agent:
         policy,                     # how to determine the optimal next action
         state_size,
         action_ranges,
+        zero_pad_state,
     ):
         """
         We'll start somewhere, and then we'll use the policy to determine
@@ -23,6 +24,7 @@ class Agent:
 
         # Action bounds
         self.action_ranges = action_ranges
+        self.zero_pad_state = zero_pad_state
         
         self.policy = policy
         # How many steps in the past does the policy have
@@ -30,7 +32,8 @@ class Agent:
         self.lookback = 32
 
         # We'll also track the history of the states
-        self.state_history_tracker  = ItemHistoryTracker(item_shape=(self.state_size,))
+        # Need a special zero pad item for states because quaternions can't be all zero
+        self.state_history_tracker  = ItemHistoryTracker(item_shape=(self.state_size,), zero_pad_item=zero_pad_state)
         self.action_history_tracker = ItemHistoryTracker(item_shape=(self.action_size,))
 
     def get_histories(self):

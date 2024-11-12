@@ -56,7 +56,9 @@ class MPPIComputer:
 
         # We'll simulate those actions using dynamics and figure
         # out the states
-        state_plans = np.zeros((self.K, self.H, self.dynamics.state_size()))
+        state_zero = self.dynamics.state_zero_with_quaternion_set_to_identity()
+        # Repeat KxH times
+        state_plans = np.tile(state_zero, (self.K, self.H, 1))
 
         # We will compute costs for each future
         costs = np.zeros((self.K,))
@@ -170,6 +172,7 @@ class PolicyMPPI:
         self,
         state_history,
         action_history,
+        timestep_index,
     ):
 
         # Check if we have a path to follow
