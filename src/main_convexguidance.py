@@ -50,7 +50,7 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = np.array([25,25,5])#25
+    state_goal[:3] = np.array([10,5,5])#25
     # state_goal[:3] = np.array([5,6,25])
     # state_goal[3] = 1
 
@@ -60,7 +60,12 @@ if __name__ == "__main__":
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     # path_xyz_smooth = path_xyz # TODO
-    path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+    try:
+        path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+    except Exception as e:
+        print(e)
+        path_xyz_smooth = path_xyz
+    
     print(path_xyz_smooth.shape)
     K = int(path_xyz_smooth.shape[0] - 1)
 
@@ -74,7 +79,7 @@ if __name__ == "__main__":
     g = dyn.g
     w_trim = np.sqrt(m*g/(4*k))
 
-    dyn.dt = 0.075
+    dyn.dt = 0.025
 
     # Initialize position state guess with smooth Astar results
     trajInit.state = np.zeros((K+1, dyn.state_size()))
