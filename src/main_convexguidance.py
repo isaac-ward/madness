@@ -153,12 +153,15 @@ if __name__ == "__main__":
     # For the states and for the actions we want time series plots as subplots
     # For the states we want position, euler angles, velocities, and angular velocities
     # Make subplots
-    num_plots = dyn.state_size()
+    num_plots = dyn.state_size() + 3
     fig = plt.figure(figsize=(10, num_plots*2))
-    state_labels = dyn.state_labels()
+    state_labels = dyn.state_labels() + ["ax", "ay", "az"]
     for i in range(num_plots):
         ax = fig.add_subplot(num_plots, 1, i+1)
-        ax.plot(trajInit.state[:,i])
+        if i < dyn.state_size():
+            ax.plot(trajInit.state[:,i])
+        else:
+            ax.plot(acc[:,i-dyn.state_size()])
         ax.set_title(state_labels[i])
     plt.tight_layout()
     plt.savefig(os.path.join(log_folder, "initial_guess_states.png"))
