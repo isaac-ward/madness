@@ -61,6 +61,8 @@ def gradient_log_softmax(s, v):
     s is sigma, the sharpness parameter
     v is the vector we are softmaxing over to produce a probability distribution
     """
+
+    # print(np.sum(np.exp(s*v), axis=-1))
     scale_factors = (1/np.sum(np.exp(s*v), axis=-1))
     return scale_factors[:,np.newaxis]*np.exp(s*v)
 
