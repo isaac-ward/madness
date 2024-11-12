@@ -74,87 +74,145 @@ if __name__ == "__main__":
     g = dyn.g
     w_trim = np.sqrt(m*g/(4*k))
 
-    dyn.dt = 0.25
+    dyn.dt = 0.075
 
     # Initialize position state guess with smooth Astar results
     trajInit.state = np.zeros((K+1, dyn.state_size()))
     trajInit.state[:,:3] = path_xyz_smooth
-    trajInit.action = np.ones((K,4)) * np.sqrt(dyn.mass*dyn.g/(4*dyn.thrust_coef))
+    # trajInit.action = np.ones((K,4)) * np.sqrt(dyn.mass*dyn.g/(4*dyn.thrust_coef))
 
-    # # Use finite difference to back out velocities at each step (assume final velocity of zero)
-    # vel = np.zeros(np.shape(path_xyz_smooth))
-    # vel[:-1] = (path_xyz_smooth[1:] - path_xyz_smooth[:-1])/dyn.dt
-    # vel[-1] = vel[-2]
+    # Use finite difference to back out velocities at each step (assume final velocity of zero)
+    vel = np.zeros(np.shape(path_xyz_smooth))
+    vel[:-1] = (path_xyz_smooth[1:] - path_xyz_smooth[:-1])/dyn.dt
+    vel[-1] = vel[-2]
 
-    # # Smooth the velocity components using Savitzky-Golay filter
-    # smoothed_vel_x = savgol_filter(vel[:, 0], window_length=5, polyorder=1)
-    # smoothed_vel_y = savgol_filter(vel[:, 1], window_length=5, polyorder=1)
-    # smoothed_vel_z = savgol_filter(vel[:, 2], window_length=5, polyorder=1)
+    # Smooth the velocity components using Savitzky-Golay filter
+    padded_vel = np.pad(vel, ((10,10), (0,0)), mode="symmetric")
+    smoothed_vel_x = savgol_filter(padded_vel[:, 0], window_length=2, polyorder=1)[10:-10]
+    smoothed_vel_y = savgol_filter(padded_vel[:, 1], window_length=2, polyorder=1)[10:-10]
+    smoothed_vel_z = savgol_filter(padded_vel[:, 2], window_length=2, polyorder=1)[10:-10]
 
-    # smoothed_vel = np.stack([smoothed_vel_x, smoothed_vel_y, smoothed_vel_z], axis=-1)
-    # trajInit.state[:,7:10] = vel
-    # print("shape of smoothed vel: ", smoothed_vel.shape)
+    # Define the time vector
+    time = np.linspace(0, K * dyn.dt, K+1)
 
-    # # Use finite difference to back out accelerations -> actions (acceleration at first step is assumed to be from zero velocity to starting velocity)
-    # accel = np.zeros((K+1,3))
-    # accel[1:] = (smoothed_vel[1:] - smoothed_vel[:-1])/dyn.dt
-    # accel -= np.array([[0,0,g]])
-    # # print(accel)
+    smoothed_vel = np.stack([smoothed_vel_x, smoothed_vel_y, smoothed_vel_z], axis=-1)
+    trajInit.state[:,6:9] = vel
+    print("shape of smoothed vel: ", smoothed_vel.shape)
 
-    # # Specify the window size for smoothing
-    # window_size = 5  # Adjust as needed
+    # Use finite difference to back out accelerations -> actions (acceleration at first step is assumed to be from zero velocity to starting velocity)
+    accel = np.zeros((K+1,3))
+    accel[1:] = (smoothed_vel[1:] - smoothed_vel[:-1])/dyn.dt
+    print("Before g: ", accel)
+    accel -= np.array([[0,0,g]])
+    print("After g: ", accel)
+    # print(accel)
 
-    # # Smooth the acceleration components using weighted moving average
-    # smoothed_accel_x = savgol_filter(accel[:, 0], window_length=5, polyorder=1)
-    # smoothed_accel_y = savgol_filter(accel[:, 1], window_length=5, polyorder=1)
-    # smoothed_accel_z = savgol_filter(accel[:, 2], window_length=5, polyorder=1)
-    # smoothed_accel = np.stack([smoothed_accel_x, smoothed_accel_y, smoothed_accel_z], axis=-1)
+    # Specify the window size for smoothing
+    window_size = 5  # Adjust as needed
 
-    # w = np.sqrt( m*np.linalg.norm(smoothed_accel[:-1], axis=-1)/(4*k) )
-    # w_bounds = dyn.action_ranges()
-    # w = np.where( w > w_bounds[0,1], w_bounds[0,1], w)
-    # w = np.where( w < w_bounds[0,0], w_bounds[0,0], w)
-    # trajInit.action = w[:,np.newaxis]*np.ones((K,4))
-    # # trajInit.action = w_trim*np.ones((K,4))
+    # Smooth the acceleration components using weighted moving average
+    padded_accel = np.pad(accel, ((10,10), (0,0)), mode="symmetric")
+    print("accel padded: ", padded_accel)
+    smoothed_accel_x = savgol_filter(padded_accel[:, 0], window_length=2, polyorder=1)[10:-10]
+    smoothed_accel_y = savgol_filter(padded_accel[:, 1], window_length=2, polyorder=1)[10:-10]
+    smoothed_accel_z = savgol_filter(padded_accel[:, 2], window_length=2, polyorder=1)[10:-10]
+    smoothed_accel = np.stack([smoothed_accel_x, smoothed_accel_y, smoothed_accel_z], axis=-1)
+    print("accel smoothed: ", smoothed_accel)
 
-    # # Use acceleration vector to determine attitude assuming thrust vector corresponds to -z body axis
+    fig, ax = plt.subplots(3, 1, figsize=(10, 8))
+
+    # Plot Euler angles (z, y, x)
+    ax[0].plot(time, path_xyz_smooth[:,0], label='p_x', color='b')
+    ax[0].plot(time, path_xyz_smooth[:,1], label='p_y', color='g')
+    ax[0].plot(time, path_xyz_smooth[:,2], label='p_z', color='r')
+    ax[0].set_title("Velocities")
+    ax[0].set_xlabel("Time [s]")
+    ax[0].set_ylabel("vel [m/s]")
+    ax[0].legend()
+    ax[0].grid(True)
+
+    # Plot Euler angles (z, y, x)
+    ax[1].plot(time, smoothed_vel_x[:], label='v_x', color='b')
+    ax[1].plot(time, smoothed_vel_y[:], label='v_y', color='g')
+    ax[1].plot(time, smoothed_vel_z[:], label='v_z', color='r')
+    ax[1].set_title("Velocities")
+    ax[1].set_xlabel("Time [s]")
+    ax[1].set_ylabel("vel [m/s]")
+    ax[1].legend()
+    ax[1].grid(True)
+
+    # Plot Euler angles (z, y, x)
+    ax[2].plot(time, smoothed_accel_x[:], label='a_x', color='b')
+    ax[2].plot(time, smoothed_accel_y[:], label='a_y', color='g')
+    ax[2].plot(time, smoothed_accel_z[:], label='a_z', color='r')
+    ax[2].set_title("Accelerations")
+    ax[2].set_xlabel("Time [s]")
+    ax[2].set_ylabel("accel [m/s^2]")
+    ax[2].legend()
+    ax[2].grid(True)
+
+    w = np.sqrt( m*np.linalg.norm(smoothed_accel[:-1], axis=-1)/(4*k) )
+    w_bounds = dyn.action_ranges()
+    w = np.where( w > w_bounds[0,1], w_bounds[0,1], w)
+    w = np.where( w < w_bounds[0,0], w_bounds[0,0], w)
+    trajInit.action = w[:,np.newaxis]*np.ones((K,4))
+    # trajInit.action = w_trim*np.ones((K,4))
+
+    # Use acceleration vector to determine attitude assuming thrust vector corresponds to -z body axis
     
-    # # thrust direction in global frame
-    # v1 = -smoothed_accel / np.linalg.norm(smoothed_accel, axis=-1)[:,np.newaxis] 
+    # thrust direction in global frame
+    v1 = -smoothed_accel / np.linalg.norm(smoothed_accel, axis=-1)[:,np.newaxis] 
 
-    # # thrust direction in body frame
-    # v2 = np.zeros((K+1,3))
-    # v2[:,2] = 1 
+    # thrust direction in body frame
+    v2 = np.zeros((K+1,3))
+    v2[:,2] = 1 
 
-    # # create quaternion representation of heading by computing axis-angle rotation between the body and global
-    # q_v = np.cross(v2, v1, axis=-1) / np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis]
-    # q_0 = np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis] / 2
-    # q = np.concat([q_0, q_v],axis=-1)
+    # create quaternion representation of heading by computing axis-angle rotation between the body and global
+    q_v = np.cross(v2, v1, axis=-1) / np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis]
+    q_0 = np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis] / 2
+    q = np.concat([q_0, q_v],axis=-1)
 
-    # # normalize quaternion
-    # q /= np.linalg.norm(q,axis=-1)[:, np.newaxis]
+    # normalize quaternion
+    q /= np.linalg.norm(q,axis=-1)[:, np.newaxis]
 
-    # # trajInit.state[:,3:7] = q
-    # # trajInit.state[:,3] = 1
+    # trajInit.state[:,3:7] = q
+    # trajInit.state[:,3] = 1
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+
+    # Plot Euler angles (z, y, x)
+    ax.plot(time, q[:, 0], label='q0', color='b')
+    ax.plot(time, q[:, 1], label='q1', color='g')
+    ax.plot(time, q[:, 2], label='q2', color='r')
+    ax.plot(time, q[:, 3], label='q3',color='m')
+    ax.set_title("Quaternions")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("q")
+    ax.legend()
+    ax.grid(True)
+
+    # For converting quaternions to Euler angles
+
+    R = utils.geometric.q2R(q.T)
+    u = utils.geometric.R2Euler123(R).T
+    print("u: " + str(u))
+
+    padded_u = np.pad(vel, ((10,10), (0,0)), mode="symmetric")
+    smoothed_u_x = savgol_filter(padded_u[:, 0], window_length=2, polyorder=1)[10:-10]
+    smoothed_u_y = savgol_filter(padded_u[:, 1], window_length=2, polyorder=1)[10:-10]
+    smoothed_u_z = savgol_filter(padded_u[:, 2], window_length=2, polyorder=1)[10:-10]
+    smoothed_u = np.stack([smoothed_u_x, smoothed_u_y, smoothed_u_z], axis=-1)
+    trajInit.state[:,3:6] = np.array([smoothed_u[:,2],smoothed_u[:,1],smoothed_u[:,0]]).T
+    print("Traj: " + str(trajInit.state[:,3:6]))
 
     
 
-    # # For converting quaternions to Euler angles
+    # Compute the angular velocity
+    qf = q[1:] # advanced time-step history
+    qb = q[:-1] # prior time-step history
 
-    # R = utils.geometric.q2R(q.T)
-    # u = utils.geometric.R2Euler123(R).T
-    # print("u: " + str(u))
-    # trajInit.state[:,3:6] = np.array([u[:,2],u[:,1],u[:,0]]).T
-    # print("Traj: " + str(trajInit.state[:,3:6]))
-
-    
-
-    # # Compute the angular velocity
-    # qf = q[1:] # advanced time-step history
-    # qb = q[:-1] # prior time-step history
-
-    # # initialize om
-    # om = np.zeros((K+1, 3))
+    # initialize om
+    om = np.zeros((K+1, 3))
 
     # # populate using vectorized quaternion conjugate multiplication
     # om[:-1] = 2/dyn.dt * np.stack([
@@ -163,9 +221,60 @@ if __name__ == "__main__":
     #     qb[:,0]*qf[:,3] - qb[:,1]*qf[:,2] + qb[:,2]*qf[:,1] - qb[:,3]*qf[:,0]
     # ], axis=-1)
     # om[-1] = om[-2]
-    # # trajInit.state[:,10:] = om
-    # trajInit.state[:,9:] = om
 
+    # Compute the relative rotation as the quaternion conjugate of the previous state multiplied by the next state (TRIAL)
+    delta_q = np.stack([
+        qb[:, 0] * qf[:, 0] + qb[:, 1] * qf[:, 1] + qb[:, 2] * qf[:, 2] + qb[:, 3] * qf[:, 3],
+        -qb[:, 1] * qf[:, 0] + qb[:, 0] * qf[:, 1] - qb[:, 3] * qf[:, 2] + qb[:, 2] * qf[:, 3],
+        -qb[:, 2] * qf[:, 0] + qb[:, 3] * qf[:, 1] + qb[:, 0] * qf[:, 2] - qb[:, 1] * qf[:, 3],
+        -qb[:, 3] * qf[:, 0] - qb[:, 2] * qf[:, 1] + qb[:, 1] * qf[:, 2] + qb[:, 0] * qf[:, 3]
+    ], axis=-1)
+
+    # Compute the angular velocity in the body frame
+    om[:-1] = 2 / dyn.dt * delta_q[:, 1:]  # Only take vector part for angular velocity
+    om[-1] = om[-2]
+
+    padded_om = np.pad(om, ((10,10), (0,0)), mode="symmetric")
+    smoothed_om_x = savgol_filter(padded_om[:, 0], window_length=2, polyorder=1)[10:-10]
+    smoothed_om_y = savgol_filter(padded_om[:, 1], window_length=2, polyorder=1)[10:-10]
+    smoothed_om_z = savgol_filter(padded_om[:, 2], window_length=2, polyorder=1)[10:-10]
+    smoothed_om = np.stack([smoothed_om_x, smoothed_om_y, smoothed_om_z], axis=-1)
+
+    # trajInit.state[:,10:] = om
+    trajInit.state[:,9:] = smoothed_om
+
+
+
+    # Extracting the Euler angles and angular velocities
+    euler_angles = trajInit.state[:, 3:6]  # Euler angles in order z, y, x
+    angular_velocities = trajInit.state[:, 9:]  # Angular velocities in body frame
+
+    # Plot Euler angles
+    fig, ax = plt.subplots(2, 1, figsize=(10, 8))
+
+    # Plot Euler angles (z, y, x)
+    ax[0].plot(time, euler_angles[:, 0], label='Euler angle (z)', color='b')
+    ax[0].plot(time, euler_angles[:, 1], label='Euler angle (y)', color='g')
+    ax[0].plot(time, euler_angles[:, 2], label='Euler angle (x)', color='r')
+    ax[0].set_title("Euler Angles (z, y, x)")
+    ax[0].set_xlabel("Time [s]")
+    ax[0].set_ylabel("Angle [rad]")
+    ax[0].legend()
+    ax[0].grid(True)
+
+    # Plot angular velocities in the body frame
+    ax[1].plot(time, angular_velocities[:, 0], label='Angular velocity ω_x', color='c')
+    ax[1].plot(time, angular_velocities[:, 1], label='Angular velocity ω_y', color='m')
+    ax[1].plot(time, angular_velocities[:, 2], label='Angular velocity ω_z', color='y')
+    ax[1].set_title("Angular Velocities in Body Frame")
+    ax[1].set_xlabel("Time [s]")
+    ax[1].set_ylabel("Angular Velocity [rad/s]")
+    ax[1].legend()
+    ax[1].grid(True)
+
+    # Display the plots
+    plt.tight_layout()
+    plt.show()
 
     # for i in range(1,K):
     #     trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
@@ -187,13 +296,13 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 50,
-                    eps_dyn=1e5,
+                    maxiter = 10,
+                    eps_dyn=1e3,
                     eps_sdf=1e-4,
                     eps_quat=10,
                     sig = 30.,
                     rho=2.,
-                    pull_from_cache=True)
+                    pull_from_cache=False)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_history = state_initial
