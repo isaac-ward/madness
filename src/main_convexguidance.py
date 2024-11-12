@@ -48,11 +48,11 @@ if __name__ == "__main__":
     # If you're using a map with invalid positions then you might need to specify the start and goal states manually
     state_initial = np.zeros(dyn.state_size())
     state_initial[:3] = 5
-    state_initial[3] = 1
+    # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
     state_goal[:3] = np.array([25,25,5])#25
     # state_goal[:3] = np.array([5,6,25])
-    state_goal[3] = 1
+    # state_goal[3] = 1
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -133,18 +133,18 @@ if __name__ == "__main__":
     # normalize quaternion
     q /= np.linalg.norm(q,axis=-1)[:, np.newaxis]
 
-    trajInit.state[:,3:7] = q
+    # trajInit.state[:,3:7] = q
     # trajInit.state[:,3] = 1
 
-    """
+    
 
-    For converting quaternions to Euler angles
+    # For converting quaternions to Euler angles
 
     R = utils.geometric.q2R(q.T)
     u = utils.geometric.R2Euler123(R)
     trajInit.state[:,3:6] = u.T
 
-    """
+    
 
     # Compute the angular velocity
     qf = q[1:] # advanced time-step history
@@ -160,7 +160,8 @@ if __name__ == "__main__":
         qb[:,0]*qf[:,3] - qb[:,1]*qf[:,2] + qb[:,2]*qf[:,1] - qb[:,3]*qf[:,0]
     ], axis=-1)
     om[-1] = om[-2]
-    trajInit.state[:,10:] = om
+    # trajInit.state[:,10:] = om
+    trajInit.state[:,9:] = om
 
 
     # for i in range(1,K):

@@ -82,7 +82,7 @@ class SCPSolver:
         self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
         self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
 
-        self.constraints += [ cvx.norm(self.state[k, 3:7]) - 1 <= self.slack_quat[k] for k in range(self.K+1) ]
+        # self.constraints += [ cvx.norm(self.state[k, 3:7]) - 1 <= self.slack_quat[k] for k in range(self.K+1) ]
 
         # bouond on dynamics slack variable
         slack_bound = self.slack_region*self.slack_inc
@@ -150,7 +150,7 @@ class SCPSolver:
         upper = ranges[:,1]
         norm_fac = np.square( np.linalg.norm(upper) )
 
-        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 ) + self.eps_quat*cvx.norm( self.slack_quat, p=1 )
+        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 ) #+ self.eps_quat*cvx.norm( self.slack_quat, p=1 )
 
         action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
