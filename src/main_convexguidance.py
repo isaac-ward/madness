@@ -62,7 +62,7 @@ if __name__ == "__main__":
     # path_xyz_smooth = path_xyz # TODO
     path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
     print(path_xyz_smooth.shape)
-    K = path_xyz_smooth.shape[0] - 1
+    K = int(path_xyz_smooth.shape[0] - 1)
 
 
     # Create initial trajectory guess for SCP
@@ -79,89 +79,92 @@ if __name__ == "__main__":
     # Initialize position state guess with smooth Astar results
     trajInit.state = np.zeros((K+1, dyn.state_size()))
     trajInit.state[:,:3] = path_xyz_smooth
+    trajInit.action = np.ones((K,4)) * np.sqrt(dyn.mass*dyn.g/(4*dyn.thrust_coef))
 
-    # Use finite difference to back out velocities at each step (assume final velocity of zero)
-    vel = np.zeros(np.shape(path_xyz_smooth))
-    vel[:-1] = (path_xyz_smooth[1:] - path_xyz_smooth[:-1])/dyn.dt
-    vel[-1] = vel[-2]
+    # # Use finite difference to back out velocities at each step (assume final velocity of zero)
+    # vel = np.zeros(np.shape(path_xyz_smooth))
+    # vel[:-1] = (path_xyz_smooth[1:] - path_xyz_smooth[:-1])/dyn.dt
+    # vel[-1] = vel[-2]
 
-    # Smooth the velocity components using Savitzky-Golay filter
-    smoothed_vel_x = savgol_filter(vel[:, 0], window_length=5, polyorder=1)
-    smoothed_vel_y = savgol_filter(vel[:, 1], window_length=5, polyorder=1)
-    smoothed_vel_z = savgol_filter(vel[:, 2], window_length=5, polyorder=1)
+    # # Smooth the velocity components using Savitzky-Golay filter
+    # smoothed_vel_x = savgol_filter(vel[:, 0], window_length=5, polyorder=1)
+    # smoothed_vel_y = savgol_filter(vel[:, 1], window_length=5, polyorder=1)
+    # smoothed_vel_z = savgol_filter(vel[:, 2], window_length=5, polyorder=1)
 
-    smoothed_vel = np.stack([smoothed_vel_x, smoothed_vel_y, smoothed_vel_z], axis=-1)
-    trajInit.state[:,7:10] = vel
-    print("shape of smoothed vel: ", smoothed_vel.shape)
+    # smoothed_vel = np.stack([smoothed_vel_x, smoothed_vel_y, smoothed_vel_z], axis=-1)
+    # trajInit.state[:,7:10] = vel
+    # print("shape of smoothed vel: ", smoothed_vel.shape)
 
-    # Use finite difference to back out accelerations -> actions (acceleration at first step is assumed to be from zero velocity to starting velocity)
-    accel = np.zeros((K+1,3))
-    accel[1:] = (smoothed_vel[1:] - smoothed_vel[:-1])/dyn.dt
-    accel -= np.array([[0,0,g]])
-    # print(accel)
+    # # Use finite difference to back out accelerations -> actions (acceleration at first step is assumed to be from zero velocity to starting velocity)
+    # accel = np.zeros((K+1,3))
+    # accel[1:] = (smoothed_vel[1:] - smoothed_vel[:-1])/dyn.dt
+    # accel -= np.array([[0,0,g]])
+    # # print(accel)
 
-    # Specify the window size for smoothing
-    window_size = 5  # Adjust as needed
+    # # Specify the window size for smoothing
+    # window_size = 5  # Adjust as needed
 
-    # Smooth the acceleration components using weighted moving average
-    smoothed_accel_x = savgol_filter(accel[:, 0], window_length=5, polyorder=1)
-    smoothed_accel_y = savgol_filter(accel[:, 1], window_length=5, polyorder=1)
-    smoothed_accel_z = savgol_filter(accel[:, 2], window_length=5, polyorder=1)
-    smoothed_accel = np.stack([smoothed_accel_x, smoothed_accel_y, smoothed_accel_z], axis=-1)
+    # # Smooth the acceleration components using weighted moving average
+    # smoothed_accel_x = savgol_filter(accel[:, 0], window_length=5, polyorder=1)
+    # smoothed_accel_y = savgol_filter(accel[:, 1], window_length=5, polyorder=1)
+    # smoothed_accel_z = savgol_filter(accel[:, 2], window_length=5, polyorder=1)
+    # smoothed_accel = np.stack([smoothed_accel_x, smoothed_accel_y, smoothed_accel_z], axis=-1)
 
-    w = np.sqrt( m*np.linalg.norm(smoothed_accel[:-1], axis=-1)/(4*k) )
-    w_bounds = dyn.action_ranges()
-    w = np.where( w > w_bounds[0,1], w_bounds[0,1], w)
-    w = np.where( w < w_bounds[0,0], w_bounds[0,0], w)
-    trajInit.action = w[:,np.newaxis]*np.ones((K,4))
-    # trajInit.action = w_trim*np.ones((K,4))
+    # w = np.sqrt( m*np.linalg.norm(smoothed_accel[:-1], axis=-1)/(4*k) )
+    # w_bounds = dyn.action_ranges()
+    # w = np.where( w > w_bounds[0,1], w_bounds[0,1], w)
+    # w = np.where( w < w_bounds[0,0], w_bounds[0,0], w)
+    # trajInit.action = w[:,np.newaxis]*np.ones((K,4))
+    # # trajInit.action = w_trim*np.ones((K,4))
 
-    # Use acceleration vector to determine attitude assuming thrust vector corresponds to -z body axis
+    # # Use acceleration vector to determine attitude assuming thrust vector corresponds to -z body axis
     
-    # thrust direction in global frame
-    v1 = -smoothed_accel / np.linalg.norm(smoothed_accel, axis=-1)[:,np.newaxis] 
+    # # thrust direction in global frame
+    # v1 = -smoothed_accel / np.linalg.norm(smoothed_accel, axis=-1)[:,np.newaxis] 
 
-    # thrust direction in body frame
-    v2 = np.zeros((K+1,3))
-    v2[:,2] = 1 
+    # # thrust direction in body frame
+    # v2 = np.zeros((K+1,3))
+    # v2[:,2] = 1 
 
-    # create quaternion representation of heading by computing axis-angle rotation between the body and global
-    q_v = np.cross(v2, v1, axis=-1) / np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis]
-    q_0 = np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis] / 2
-    q = np.concat([q_0, q_v],axis=-1)
+    # # create quaternion representation of heading by computing axis-angle rotation between the body and global
+    # q_v = np.cross(v2, v1, axis=-1) / np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis]
+    # q_0 = np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis] / 2
+    # q = np.concat([q_0, q_v],axis=-1)
 
-    # normalize quaternion
-    q /= np.linalg.norm(q,axis=-1)[:, np.newaxis]
+    # # normalize quaternion
+    # q /= np.linalg.norm(q,axis=-1)[:, np.newaxis]
 
-    # trajInit.state[:,3:7] = q
-    # trajInit.state[:,3] = 1
-
-    
-
-    # For converting quaternions to Euler angles
-
-    R = utils.geometric.q2R(q.T)
-    u = utils.geometric.R2Euler123(R)
-    trajInit.state[:,3:6] = u.T
+    # # trajInit.state[:,3:7] = q
+    # # trajInit.state[:,3] = 1
 
     
 
-    # Compute the angular velocity
-    qf = q[1:] # advanced time-step history
-    qb = q[:-1] # prior time-step history
+    # # For converting quaternions to Euler angles
 
-    # initialize om
-    om = np.zeros((K+1, 3))
+    # R = utils.geometric.q2R(q.T)
+    # u = utils.geometric.R2Euler123(R).T
+    # print("u: " + str(u))
+    # trajInit.state[:,3:6] = np.array([u[:,2],u[:,1],u[:,0]]).T
+    # print("Traj: " + str(trajInit.state[:,3:6]))
 
-    # populate using vectorized quaternion conjugate multiplication
-    om[:-1] = 2/dyn.dt * np.stack([
-        qb[:,0]*qf[:,1] - qb[:,1]*qf[:,0] - qb[:,2]*qf[:,3] + qb[:,3]*qf[:,2],
-        qb[:,0]*qf[:,2] + qb[:,1]*qf[:,3] - qb[:,2]*qf[:,0] - qb[:,3]*qf[:,1],
-        qb[:,0]*qf[:,3] - qb[:,1]*qf[:,2] + qb[:,2]*qf[:,1] - qb[:,3]*qf[:,0]
-    ], axis=-1)
-    om[-1] = om[-2]
-    # trajInit.state[:,10:] = om
-    trajInit.state[:,9:] = om
+    
+
+    # # Compute the angular velocity
+    # qf = q[1:] # advanced time-step history
+    # qb = q[:-1] # prior time-step history
+
+    # # initialize om
+    # om = np.zeros((K+1, 3))
+
+    # # populate using vectorized quaternion conjugate multiplication
+    # om[:-1] = 2/dyn.dt * np.stack([
+    #     qb[:,0]*qf[:,1] - qb[:,1]*qf[:,0] - qb[:,2]*qf[:,3] + qb[:,3]*qf[:,2],
+    #     qb[:,0]*qf[:,2] + qb[:,1]*qf[:,3] - qb[:,2]*qf[:,0] - qb[:,3]*qf[:,1],
+    #     qb[:,0]*qf[:,3] - qb[:,1]*qf[:,2] + qb[:,2]*qf[:,1] - qb[:,3]*qf[:,0]
+    # ], axis=-1)
+    # om[-1] = om[-2]
+    # # trajInit.state[:,10:] = om
+    # trajInit.state[:,9:] = om
 
 
     # for i in range(1,K):
@@ -208,6 +211,11 @@ if __name__ == "__main__":
         propagated_traj[i,:] = dyn.step(propagated_traj[i-1,:], optimal_action_history[i-1,:])
     propagated_traj_path = propagated_traj[:,:3]
 
+    # Propagated path real dynamics
+    for i in range(1,K+1):
+        trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
+    propagated_trajInit_path = trajInit.state[:,:3]
+
     # print("trimmed rotor speed: ", w_trim)
     # print("rotor speed history", optimal_action_history)
     # print(propagated_traj_path)
@@ -242,7 +250,7 @@ if __name__ == "__main__":
     )
     utils.logging.save_to_npz(
         os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        propagated_traj_path#path_xyz_smooth,
+        propagated_trajInit_path#propagated_traj_path#path_xyz_smooth,
     )
 
     # Log the CVX path
