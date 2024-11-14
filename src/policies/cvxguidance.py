@@ -150,18 +150,26 @@ class SCPSolver:
         self,
         state_goal
     ):
-        
+        # Get the action ranges for normalization
         ranges = self.dynamics.action_ranges()
         upper = ranges[:,1]
         norm_fac = np.square( np.linalg.norm(upper) )
 
-        terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 ) #+ self.eps_quat*cvx.norm( self.slack_quat, p=1 )
+        # Compute the action cost
+        #action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
+        action_norms = cvx.norm(self.action, p=2, axis=1)  # Compute L2 norms for each action (axis=1 for rows)
+        action_cost = cvx.sum_squares(action_norms / norm_fac) / self.K  # Sum of squared normalized actions
 
-        action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
+        # Compute the terminal cost
+        #terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 ) #+ self.eps_quat*cvx.norm( self.slack_quat, p=1 )
+        terminal_cost = -self.eps_sdf * cvx.sum(self.slack_sdf) + self.eps_dyn * cvx.norm(self.slack_dyn, p=1)
+
+        # Compute the distance cost
+        # Frobenius norm for position only
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
         
+        # Final objective is a weighted sum of the above
         bolza_sum = action_cost # + distance_cost
-
         self.objective = bolza_sum + terminal_cost
 
         return terminal_cost, action_cost, distance_cost

@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.spatial.transform import Rotation as R
+import cvxpy
 from tqdm import tqdm
 import scipy
 import os
@@ -6,8 +8,8 @@ import pickle
 import csv
 import time
 import copy
+import matplotlib as mpl
 import matplotlib.pyplot as plt
-import cupy as cp
 from scipy.signal import savgol_filter
 
 import utils.general
@@ -26,15 +28,6 @@ from sdf import Environment_SDF
 from policies.cvxguidance import SCPSolver, Trajectory
 
 if __name__ == "__main__":
-
-    def upsample(path, num_points_between=1):
-        upsampled_path = []
-        for i in range(len(path) - 1):
-            upsampled_path.append(path[i])
-            for j in range(1, num_points_between + 1):
-                upsampled_path.append(path[i])
-        upsampled_path.append(path[-1])  # Add the last point
-        return np.array(upsampled_path)
 
     # Seed everything
     utils.general.random_seed(42)
@@ -59,19 +52,18 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = np.array([10,5,5])#25
-    # state_goal[:3] = np.array([5,6,25])
-    # state_goal[3] = 1
+    #state_goal[:3] = np.array([25,25,25])
+    state_goal[:3] = state_initial[:3] + np.array([20,0,0])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
-    path_xyz = upsample(path_xyz, num_points_between=5)
+    #path_xyz = upsample(path_xyz, num_points_between=5)
     # path_xyz_smooth = path_xyz # TODO
     try:
-        path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
+        path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz, desired_points_per_meter=10)
     except Exception as e:
         print(e)
         path_xyz_smooth = path_xyz
@@ -95,37 +87,108 @@ if __name__ == "__main__":
 
     # We need to formulate an initial guess for the trajectory based on the A* path and
     # finite difference methods, using an euler angle angle representation (123 scheme)
-    def finite_diff_helper(vector):
+    def finite_diff_helper(vector, clamp=True):
         fd = np.zeros(np.shape(vector))
         dt = dyn.dt
 
-        # Central difference for intermediate points
-        fd[1:-1] = (vector[2:] - vector[:-2]) / (2 * dt)
+        # Keep the first and last points the same
+        if clamp:
+            fd[0] = vector[0]
+            fd[-1] = vector[-1]
 
-        # Forward difference for the first element
-        fd[0] = (vector[1] - vector[0]) / dt
+            # Apply finite difference for each middle point
+            for i in range(1, len(vector) - 1):
+                fd[i] = (vector[i + 1] - vector[i - 1]) / (2 * dt)
+        else:
+            # Apply finite difference for each middle point
 
-        # Backward difference for the last element
-        fd[-1] = (vector[-1] - vector[-2]) / dt
+            # Forward difference for the first point
+            fd[0] = (vector[1] - vector[0]) / dt
 
+            # Central difference for middle points
+            for i in range(1, len(vector) - 1):
+                fd[i] = (vector[i + 1] - vector[i - 1]) / (2 * dt)
+
+            # Backward difference for the last point
+            fd[-1] = (vector[-1] - vector[-2]) / dt
+            
         # Assert that the shape is good
         assert fd.shape == vector.shape, f"Shape is {fd.shape} but should be {vector.shape}"
 
         return fd 
-    pos = path_xyz_smooth
+    
+    def clamped_smoothness_helper(vector, smoothness_weight=20.0, closeness_weight=1.0):
+        n_points, n_dims = vector.shape
+        smoothed_vector = np.zeros_like(vector)
+
+        for i in range(n_dims):
+            # Define the optimization variable for this column
+            x = cvxpy.Variable(n_points)
+
+            # Objective 1: Smoothness - minimize squared differences between consecutive points
+            smoothness_objective = cvxpy.sum_squares(x[1:] - x[:-1])
+
+            # Objective 2: Closeness to the original path - minimize deviation from the original vector
+            closeness_objective = cvxpy.sum_squares(x - vector[:, i])
+
+            # Combined objective with weights
+            objective = cvxpy.Minimize(smoothness_weight * smoothness_objective + closeness_weight * closeness_objective)
+
+            # Constraints to keep the first and last points fixed (to avoid drifting)
+            constraints = [x[0] == vector[0, i], x[-1] == vector[-1, i]]
+
+            # Set up and solve the problem
+            prob = cvxpy.Problem(objective, constraints)
+            prob.solve()
+
+            # Store the optimized column in the smoothed vector
+            smoothed_vector[:, i] = x.value
+        return smoothed_vector
+    
+    # Get the linear kinematics
+    pos = clamped_smoothness_helper(path_xyz_smooth, smoothness_weight=200)
     # Compute velocities from finite difference with zero padding
-    vel = finite_diff_helper(pos)
-    acc = finite_diff_helper(vel)
+    vel = clamped_smoothness_helper(finite_diff_helper(pos, clamp=False))
+    acc = clamped_smoothness_helper(finite_diff_helper(vel, clamp=False))
     acc -= np.array([[0,0,g]])
+
     # Compute the xyz 123 scheme euler angles
     rot = np.zeros(pos.shape)
-    rot[:,0] = np.arctan2(vel[:,1], vel[:,2])
-    rot[:,1] = -np.arcsin(vel[:,0]/np.linalg.norm(vel, axis=-1))
-    rot[:,2] = np.arctan2(acc[:,1], acc[:,2])
+    # Iterate over each time step to compute the rotation matrix and Euler angles
+    for i in range(len(vel)):
+        # Forward axis (x-axis) - normalize velocity vector
+        forward = vel[i] / np.linalg.norm(vel[i])
+        
+        # Up axis (z-axis) - gravity-aligned up vector
+        up = np.array([0, 0, -1])  # Gravity points down along z
+        
+        # Right axis (y-axis) - perpendicular to forward and up
+        right = np.cross(up, forward)
+        right /= np.linalg.norm(right)  # Normalize
+        
+        # Recompute up to ensure orthogonality
+        up = np.cross(forward, right)
+        
+        # Construct the rotation matrix
+        R_matrix = np.column_stack((forward, right, up))
+        
+        # Convert rotation matrix to Euler angles (XYZ convention)
+        rotation = R.from_matrix(R_matrix)  # Create a Rotation object
+        euler_angles = rotation.as_euler('xyz', degrees=False)  # Get Euler angles in radians
+    
+        # Store the Euler angles
+        rot[i] = euler_angles
+
     # We actually list in the order z, y, x
     rot = np.array([rot[:,2], rot[:,1], rot[:,0]]).T
+
+    # Smoothen
+    rot = clamped_smoothness_helper(rot)
+    
     # Compute the angular velocities
-    ang_vel = finite_diff_helper(rot)
+    ang_vel = clamped_smoothness_helper(finite_diff_helper(rot))
+    #ang_vel = finite_diff_helper(rot)
+
     # Assemble in the order pos, rot, vel, ang_vel
     # x, y, z, φ, θ, ψ, xd, yd, zd, wx, wy, wz
     trajInit.state = np.concatenate([pos, rot, vel, ang_vel], axis=-1)
@@ -149,34 +212,43 @@ if __name__ == "__main__":
     # Assert that the shape is correct
     assert trajInit.action.shape == (K, dyn.action_size()), f"Shape is {trajInit.action.shape} but should be {(K, dyn.action_size())}"
 
-    # Log the state and action guesses for the initial trajectory for visualization
-    # For the states and for the actions we want time series plots as subplots
-    # For the states we want position, euler angles, velocities, and angular velocities
-    # Make subplots
-    num_plots = dyn.state_size() + 3
-    fig = plt.figure(figsize=(10, num_plots*2))
-    state_labels = dyn.state_labels() + ["ax", "ay", "az"]
-    for i in range(num_plots):
-        ax = fig.add_subplot(num_plots, 1, i+1)
-        if i < dyn.state_size():
-            ax.plot(trajInit.state[:,i])
-        else:
-            ax.plot(acc[:,i-dyn.state_size()])
-        ax.set_title(state_labels[i])
-    plt.tight_layout()
-    plt.savefig(os.path.join(log_folder, "initial_guess_states.png"))
+    def log_states_and_actions(name, states, actions, log_accelerations=False, accels=None):
+        # Log the state and action guesses for the initial trajectory for visualization
+        # For the states and for the actions we want time series plots as subplots
+        # For the states we want position, euler angles, velocities, and angular velocities
+        # Make subplots
+        num_plots = dyn.state_size() 
+        state_labels = dyn.state_labels() 
+        if log_accelerations:
+            num_plots += 3
+            state_labels += ["ax", "ay", "az"]
+        fig = plt.figure(figsize=(10, num_plots*2))
+        for i in range(num_plots):
+            ax = fig.add_subplot(num_plots, 1, i+1)
+            # Disable scientific notation on the y-axis (or x-axis if needed)
+            ax.ticklabel_format(useOffset=False)
+            if i < dyn.state_size():
+                ax.plot(states[:,i])
+            else:
+                ax.plot(accels[:,i-dyn.state_size()])
+            ax.set_title(state_labels[i])
+        plt.tight_layout()
+        plt.savefig(os.path.join(log_folder, f"{name}_states.png"))
 
-    # For the actions we want the rotor speeds
-    # Make subplots
-    num_plots = dyn.action_size()
-    fig = plt.figure(figsize=(10, num_plots*2))
-    action_labels = dyn.action_labels()
-    for i in range(num_plots):
-        ax = fig.add_subplot(num_plots, 1, i+1)
-        ax.plot(trajInit.action[:,i])
-        ax.set_title(action_labels[i])
-    plt.tight_layout()
-    plt.savefig(os.path.join(log_folder, "initial_guess_actions.png"))
+        # For the actions we want the rotor speeds
+        # Make subplots
+        num_plots = dyn.action_size()
+        fig = plt.figure(figsize=(10, num_plots*2))
+        action_labels = dyn.action_labels()
+        for i in range(num_plots):
+            ax = fig.add_subplot(num_plots, 1, i+1)
+            # Disable scientific notation on the y-axis (or x-axis if needed)
+            ax.ticklabel_format(useOffset=False)
+            ax.plot(actions[:,i])
+            ax.set_title(action_labels[i])
+        plt.tight_layout()
+        plt.savefig(os.path.join(log_folder, f"{name}_actions.png"))
+    log_states_and_actions("initial_guess", trajInit.state, trajInit.action, log_accelerations=True, accels=acc)
 
     use_legacy = False
     if use_legacy:
@@ -417,22 +489,33 @@ if __name__ == "__main__":
         return_information=True,
         verbose=False,
     )
+
+    # Log it out
+    log_states_and_actions("optimal_guess", optimal_state_history, optimal_action_history, log_accelerations=False)
     
     # print( "norm of scp quat: ", np.linalg.norm( optimal_state_history[:,3:7] , axis=-1) )
     # print("Optimal Control: " + str(optimal_action_history))
     # Extract euclidean coordinates of drone path from state history
     position_history = optimal_state_history[:,:3]
 
-    # Propagated path real dynamics
-    propagated_traj = np.copy(optimal_state_history)
+    # Given the known initial action state and the optimal action history, we can propagate the state history
+    # to get the propagated path
+    propagated_traj = np.zeros_like(optimal_state_history)
+    propagated_traj[0,:] = state_initial
     for i in range(1,K+1):
         propagated_traj[i,:] = dyn.step(propagated_traj[i-1,:], optimal_action_history[i-1,:])
     propagated_traj_path = propagated_traj[:,:3]
 
-    # Propagated path real dynamics
-    for i in range(1,K+1):
-        trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
-    propagated_trajInit_path = trajInit.state[:,:3]
+    # # Propagated path real dynamics
+    # propagated_traj = np.copy(optimal_state_history)
+    # for i in range(1,K+1):
+    #     propagated_traj[i,:] = dyn.step(propagated_traj[i-1,:], optimal_action_history[i-1,:])
+    # propagated_traj_path = propagated_traj[:,:3]
+
+    # # Propagated path real dynamics
+    # for i in range(1,K+1):
+    #     trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
+    # propagated_trajInit_path = trajInit.state[:,:3]
 
     # print("trimmed rotor speed: ", w_trim)
     # print("rotor speed history", optimal_action_history)
@@ -459,7 +542,7 @@ if __name__ == "__main__":
     # Unpack the logs and plot
     log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound = cvx_logs
     num_subplots = len(cvx_logs)
-    fig, ax = plt.subplots(num_subplots, 1, figsize=(10, 8))
+    fig, ax = plt.subplots(num_subplots, 1, figsize=(10, num_subplots*2))
     for i, (name, log) in enumerate(
         [
             ("Total Cost", log_total_cost),
@@ -469,7 +552,7 @@ if __name__ == "__main__":
             ("Slack Bound", log_slack_bound),
         ]
     ):
-        print(f"Plotting {name}: {log}")
+        #print(f"Plotting {name}: {log}")
         ax[i].plot(log)
         ax[i].set_title(name)
         ax[i].set_xlabel("Iteration")
@@ -495,13 +578,17 @@ if __name__ == "__main__":
     )
     utils.logging.save_to_npz(
         os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        propagated_traj_path#propagated_trajInit_path#path_xyz_smooth,
+        path_xyz_smooth,
     )
 
     # Log the CVX path
     utils.logging.save_to_npz(
         os.path.join(log_folder, "cvx", "path_xyz_cvx.npz"),
         position_history,
+    )
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "cvx", "propagated.npz"),
+        propagated_traj_path #propagated_trajInit_path#path_xyz_smooth,
     )
 
     # Render visuals

@@ -2,6 +2,9 @@ import numpy as np
 from mapping import Map
 from dynamics_jax import DynamicsQuadcopter3D
 from utils.general import Cacher
+import time
+
+from tqdm import tqdm
 
 class SDF_Types:
     sphere=0
@@ -88,16 +91,29 @@ class Environment_SDF:
                 mapping=map_env
             ))
 
+            # Make a progress bar
+            pbar = tqdm(total=max_spheres-1)
+
             # Search and add more SDFs
             new_start_point = np.zeros(3)
             for _i in range(max_spheres-1):
-                print("Iteration: " + str(_i))
+
+                # Update progress bar
+                pbar.update(1)
+
+                #print("Iteration: " + str(_i))
                 # Check if new sdf is needed
                 search_complete = self.sdf_list[-1].points_within_sphere(end_point_meters)
                 if search_complete:
                     # If search complete, add one final sphere to end point
                     final_sphere = Sphere_SDF.get_optimal_sdf(end_point_meters,collision_radius_metres,map_env)
                     self.add_sdf(final_sphere)
+
+                    # Update progress bar
+                    pbar.set_description(f"SDF representation complete")
+                    for _ in range(max_spheres - _i - 1):
+                        pbar.update(1)
+                        time.sleep(0.001)
                     break
 
                 # Get new center
@@ -109,16 +125,19 @@ class Environment_SDF:
                 while(building):
                     # Build next sphere
                     next_sphere = Sphere_SDF.get_optimal_sdf(new_start_point,collision_radius_metres,map_env)
-                    print("Next Sphere: " + str(next_sphere.center_metres_xyz))
-                    print(next_sphere.interior_metre_coords)
+                    #print("Next Sphere: " + str(next_sphere.center_metres_xyz))
+                    #print(next_sphere.interior_metre_coords)
 
                     # Try to refine sphere further
                     next_sphere = next_sphere.sphere_refinement(
                         collision_radius_metres=collision_radius_metres,
                         mapping=map_env
                     )
-                    print("Refined Sphere: " + str(next_sphere.center_metres_xyz))
-                    print(next_sphere.interior_metre_coords)
+                    #print("Refined Sphere: " + str(next_sphere.center_metres_xyz))
+                    #print(next_sphere.interior_metre_coords)
+
+                    # Report the sphere on the pbar
+                    pbar.set_description(f"SDF center (m) @ index {_i} = {next_sphere.center_metres_xyz}")
 
                     # Check if new sdf has volume
                     if next_sphere.radius_voxels <= 1:
@@ -397,7 +416,8 @@ class Sphere_SDF:
 
     def points_within_sphere(
             self,
-            points:np.ndarray
+            points:np.ndarray,
+            verbose=False,
     ):
         """
         Given a list of points, return a binary array describing if the point is within (1) or outside (0) 
@@ -416,26 +436,30 @@ class Sphere_SDF:
         try:
             # Calculate squared distance from center for each vector
             distances_squared = np.sum((points - self.center_metres_xyz) ** 2, axis=1)
-            print(points)
-            print(self.center_metres_xyz)
-            print(distances_squared)
+            if verbose:
+                print(points)
+                print(self.center_metres_xyz)
+                print(distances_squared)
             
             # Compare distances to the squared radius
             within_sphere = (distances_squared <= (self.radius_metres ** 2)).astype(int)
-            print(self.radius_metres ** 2)
-            print(within_sphere)
+            if verbose:
+                print(self.radius_metres ** 2)
+                print(within_sphere)
         
         except:
             # Calculate squared distance from center for each vector
             distances_squared = np.sum((points - self.center_metres_xyz) ** 2)
-            print(points)
-            print(self.center_metres_xyz)
-            print(distances_squared)
+            if verbose:
+                print(points)
+                print(self.center_metres_xyz)
+                print(distances_squared)
             
             # Compare distances to the squared radius
             within_sphere = (distances_squared <= (self.radius_metres ** 2)).astype(int)
-            print(self.radius_metres ** 2)
-            print(within_sphere)
+            if verbose:
+                print(self.radius_metres ** 2)
+                print(within_sphere)
         
         return within_sphere
 
@@ -537,7 +561,7 @@ class Sphere_SDF:
 
         # Check what elements of A* path are within the sphere
         astar_in_sphere = self.points_within_sphere(astar)
-        print(astar_in_sphere)
+        #print(astar_in_sphere)
         
         # Get last switch from 1 to 0
         last_in = np.zeros(3)
@@ -621,15 +645,16 @@ class Sphere_SDF:
         # Get closest point to sphere center
         distances = np.linalg.norm(xyzpath - self.center_metres_xyz, axis=1)
         closest_index = np.argmin(distances)
-
         try:
             # Get direction to next position
             xyzdir = xyzpath[closest_index+1] - xyzpath[closest_index]
-            normalize_xyzdir = xyzdir / np.linalg.norm(xyzdir)
         except:
             # Get direction toward end
             xyzdir = xyzpath[closest_index] - self.center_metres_xyz
-            normalize_xyzdir = xyzdir / np.linalg.norm(xyzdir)
+
+        norm = np.linalg.norm(xyzdir)
+        assert norm != 0, f"When computing next SDF center, the norm of the xyz direction was 0"
+        normalize_xyzdir = xyzdir / norm
         
         # Add xyzpath perturbation to perturbed direction
         perturbed_direction += (0.8)*normalize_xyzdir
