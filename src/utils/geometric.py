@@ -2,6 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 import cvxpy as cp
 from scipy.spatial.transform import Rotation as R
+from scipy.interpolate import interp1d
 
 
 def euler_angles_rad_to_quaternion(phi, theta, psi):
@@ -98,8 +99,24 @@ def forwardness_of_path_a_wrt_path_b(path_a, path_b):
     
     return forwardness_measure
 
-def smooth_path_same_endpoints(original_path):
+def smooth_path_same_endpoints(original_path, desired_points_per_meter=50):
     N = original_path.shape[0]
+
+    # Get the path's length and the number of points per meter
+    length_m = np.sum(np.linalg.norm(np.diff(original_path, axis=0), axis=1))
+    points_per_meter = N / length_m
+    print(f"Original path has {N} points and length {length_m:.2f} m, at {points_per_meter:.2f} points per meter")
+
+    # We want approximately 100 points per metre defaulty
+    new_N = int(length_m * desired_points_per_meter)
+    print(f"Path will be resampled to ~{new_N} points (at ~{desired_points_per_meter} points per meter)")
+    N = new_N
+
+    # Interpolate original path to match new_N points
+    original_indices = np.linspace(0, 1, original_path.shape[0])
+    new_indices = np.linspace(0, 1, new_N)
+    interpolator = interp1d(original_indices, original_path, axis=0, kind='linear')
+    resampled_path = interpolator(new_indices)
     
     # Variables to optimize: the new path
     new_path = cp.Variable((N, 3))
@@ -114,14 +131,14 @@ def smooth_path_same_endpoints(original_path):
     smoothness_penalty = cp.sum_squares(new_path[1:] - new_path[:-1])
     
     # Closeness to original path: minimize squared distance
-    closeness_penalty = cp.sum_squares(new_path - original_path)
+    closeness_penalty = cp.sum_squares(new_path - resampled_path)
 
     # TODO we could add obstacle constraints
     
     # Objective function: trade-off between smoothness and closeness
     # Weight for smoothness (higher is smoother, but less close to original path)
     # we find that tan alpha ~ 10 works well
-    alpha = 20
+    alpha = 100
     objective = cp.Minimize(closeness_penalty + alpha * smoothness_penalty)
     
     # Solve the problem
@@ -132,12 +149,23 @@ def smooth_path_same_endpoints(original_path):
         optimal_path = new_path.value
         optimal_path = np.array(optimal_path)
 
-        if np.allclose(optimal_path, original_path, atol=1e-3):
-            raise ValueError("Smooth path optimization made no meaningful change to the path.")
+        # We cannot have any duplicated points, only unique ones
+        print(f"Optimized path has {optimal_path.shape[0]} points, ", end="")
+        optimal_path = np.unique(optimal_path, axis=0)
+        print(f"{optimal_path.shape[0]} are unique")
+
+        if np.allclose(optimal_path, resampled_path, atol=1e-3):
+            raise ValueError("Smooth path optimization made no meaningful change to the path beyond interpolation")
+        
+        # Report the smoothness and closeness of the optimized path that was achieved
+        smoothness = smoothness_penalty.value
+        closeness = closeness_penalty.value
+        print(f"Obtained a smoothness of {smoothness:.2f} and closeness of {closeness:.2f} to the original, with a smoothness hyperparameter of {alpha}")
 
         # Always report
         path_length = np.sum(np.linalg.norm(np.diff(optimal_path, axis=0), axis=1))
-        print(f"Path found with {len(optimal_path)} points and length {path_length:.2f} m (after convex optimization)")
+        points_per_meter = optimal_path.shape[0] / path_length
+        print(f"Path found with {len(optimal_path)} points and length {path_length:.2f} m (after convex optimization), at {points_per_meter:.2f} points per meter")
 
         return optimal_path
     else:
