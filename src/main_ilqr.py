@@ -60,12 +60,12 @@ if __name__ == "__main__":
     # If you're using a map with invalid positions then you might need to specify the start and goal states manually
     state_initial = np.zeros(dyn.state_size())
     state_initial[:3] = 5
-    state_initial[3] = 1
+    # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
     # state_goal[:3] = np.array([10,5,2])
-    # state_goal[:3] = 25
-    state_goal[:3] = np.array([20,20,5])
-    state_goal[3] = 1
+    state_goal[:3] = 25
+    # state_goal[:3] = np.array([25,25,5])
+    # state_goal[3] = 1
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -208,25 +208,28 @@ if __name__ == "__main__":
     # iLQR ----------------------------------------------------------
     basic_state_traj = np.zeros((K+1,n))#np.zeros_like(optimal_state_history)
     basic_state_traj[:,:3] = path_xyz_smooth
-    basic_state_traj[:,3] = 1
+    # basic_state_traj[:,3] = 1
     basic_hover_action = np.ones((K,m)) * np.sqrt(dyn.mass*dyn.g/(4*dyn.thrust_coef))
     # Create iLQR policy
     n,m = dyn.state_size(),dyn.action_size()
     Q = np.eye(n) * 1
-    Q[:3] = Q[:3] * 30
-    R = np.eye(m) * 10
-    QN = np.eye(n) * 10
-    QN[:3] = QN[:3] * 1000
+    Q[:3] = Q[:3] * 10
+    R = np.eye(m) * 1
+    QN = np.eye(n) * 1
+    QN[:3] = QN[:3] * 20
+    W = np.eye(m) * 0
     policy = PolicyiLQR(
         dynamics=copy.deepcopy(dyn),
         Q=Q,
         R=R,
         QN=QN,
+        W=W,
         x_track=basic_state_traj,#optimal_state_history,
         u_track=basic_hover_action,#optimal_action_history,
+        segments=20,
         eps=1e-2,
         max_iters=1000,
-        verbose=True
+        verbose=True,
     )
     ilqr_traj = np.copy(path_xyz_smooth)
 
@@ -283,6 +286,49 @@ if __name__ == "__main__":
 
     # ----------------------------------------------------------------
 
+    # Plot state errors
+    # Plotting the state errors
+    # TODO plot iLQR nominal trajectory
+    fig, axs = plt.subplots(7, 2, figsize=(12, 18))
+    fig.suptitle("State Error Over Time")
+
+    policy.state_error = np.array(policy.state_error[1:])
+
+    for i, ax in enumerate(axs.flatten()):
+        if i < policy.state_error.shape[1]:  # Ensure you don't exceed the number of states
+            ax.plot(policy.state_error[:, i], label=f'Error in {dyn.state_labels()[i]}')
+            ax.set_xlabel("Time [s]")
+            ax.set_ylabel("Error")
+            ax.legend()
+        else:
+            ax.axis('off')  # Hide unused subplots
+
+    # plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to fit title
+    plt.savefig("Debguggggggggggg.png")
+
+    # Plot cost
+    # Plotting the cost
+    fig, axs = plt.subplots(7, 2, figsize=(12, 18))
+    fig.suptitle("State Error Over Time")
+
+    policy.cost = np.array(policy.cost)
+    cost_labels = ["iLQR_terminal","AL_terminal","iLQR_tracking","AL_tracking","continuity"]
+    print(policy.cost)
+
+    for i, ax in enumerate(axs.flatten()):
+        if i < policy.cost.shape[1]:  # Ensure you don't exceed the number of states
+            cost_data = np.where(policy.cost[:, i] > 0, policy.cost[:, i], np.nan)
+            ax.plot(cost_data, label=f'Cost in {cost_labels[i]}')
+            ax.set_xlabel("Time Step")
+            ax.set_ylabel("Cost")
+            ax.set_yscale('log')
+            ax.legend()
+        else:
+            ax.axis('off')  # Hide unused subplots
+
+    # plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to fit title
+    plt.savefig("COSTDEBUG.png")
+
     # Log everything of interest
     environment.log(log_folder)
 
@@ -303,13 +349,18 @@ if __name__ == "__main__":
     )
 
     # Log the CVX path
+    nominal_traj = np.copy(policy.x_bar[:,:3])
+    print(nominal_traj)
     utils.logging.save_to_npz(
         os.path.join(log_folder, "cvx", "path_xyz_cvx.npz"),
-        path_xyz_smooth#position_history,
+        nominal_traj#path_xyz_smooth#position_history,
     )
+
+    # Log the iLQR path
+    # TODO
 
     # Render visuals
     visual = Visual(log_folder)
-    # visual.render_video(desired_fps=25)
     #visual.plot_histories()
     visual.plot_environment()
+    visual.render_video(desired_fps=25)
