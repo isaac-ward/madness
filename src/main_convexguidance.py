@@ -52,8 +52,8 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    #state_goal[:3] = np.array([25,25,25])
-    state_goal[:3] = state_initial[:3] + np.array([20,0,0])
+    state_goal[:3] = np.array([25,25,25])
+    #state_goal[:3] = state_initial[:3] + np.array([5,0,0])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -156,38 +156,52 @@ if __name__ == "__main__":
     rot = np.zeros(pos.shape)
     # Iterate over each time step to compute the rotation matrix and Euler angles
     for i in range(len(vel)):
-        # Forward axis (x-axis) - normalize velocity vector
-        forward = vel[i] / np.linalg.norm(vel[i])
+        # # Forward axis (x-axis) - normalize velocity vector
+        # forward = vel[i] / np.linalg.norm(vel[i])
         
-        # Up axis (z-axis) - gravity-aligned up vector
-        up = np.array([0, 0, -1])  # Gravity points down along z
+        # # Up axis (z-axis) - gravity-aligned up vector
+        # up = np.array([0, 0, 1])  # Gravity points down along z
         
-        # Right axis (y-axis) - perpendicular to forward and up
-        right = np.cross(up, forward)
-        right /= np.linalg.norm(right)  # Normalize
+        # # Right axis (y-axis) - perpendicular to forward and up
+        # right = np.cross(up, forward)
+        # right /= np.linalg.norm(right)  # Normalize
         
-        # Recompute up to ensure orthogonality
-        up = np.cross(forward, right)
+        # # Recompute up to ensure orthogonality
+        # up = np.cross(forward, right)
         
-        # Construct the rotation matrix
-        R_matrix = np.column_stack((forward, right, up))
+        # # Construct the rotation matrix
+        # R_matrix = np.column_stack((forward, right, up))
         
-        # Convert rotation matrix to Euler angles (XYZ convention)
-        rotation = R.from_matrix(R_matrix)  # Create a Rotation object
-        euler_angles = rotation.as_euler('xyz', degrees=False)  # Get Euler angles in radians
+        # # Convert rotation matrix to Euler angles (XYZ convention)
+        # rotation = R.from_matrix(R_matrix)  # Create a Rotation object
+        # euler_angles = rotation.as_euler('zyx', degrees=False)  # Get Euler angles in radians
     
-        # Store the Euler angles
+        # # Store the Euler angles
+        # rot[i] = euler_angles
+
+        # Up axis is normalized accel
+        up = - acc[i] / np.linalg.norm(acc[i]) # negative because +z is down in this world
+        # Forward axis is normalized velocity
+        forward = vel[i] / np.linalg.norm(vel[i])
+        # Right axis is cross product of up and forward
+        right = np.cross(up, forward)
+        # Then forward is cross product of right and up
+        forward = np.cross(right, up)
+
+        # Compute the euler angle rotations that would transform a vector in the global frame into the body frame
+        rotation_matrix = R.from_matrix(np.column_stack((forward, right, up)))
+        euler_angles = rotation_matrix.as_euler('zyx', degrees=False)
         rot[i] = euler_angles
 
-    # We actually list in the order z, y, x
-    rot = np.array([rot[:,2], rot[:,1], rot[:,0]]).T
-
     # Smoothen
-    rot = clamped_smoothness_helper(rot)
+    # rot = clamped_smoothness_helper(rot)
     
     # Compute the angular velocities
-    ang_vel = clamped_smoothness_helper(finite_diff_helper(rot))
-    #ang_vel = finite_diff_helper(rot)
+    #ang_vel = clamped_smoothness_helper(finite_diff_helper(rot))
+    ang_vel = finite_diff_helper(rot)
+
+    # Angular velocity order is x y z so swap it around
+    ang_vel = ang_vel[:, ::-1]
 
     # Assemble in the order pos, rot, vel, ang_vel
     # x, y, z, φ, θ, ψ, xd, yd, zd, wx, wy, wz

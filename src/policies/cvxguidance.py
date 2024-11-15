@@ -79,9 +79,11 @@ class SCPSolver:
         A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
         E = np.eye(self.dynamics.state_size())
+        # Dynamic feasibility constraints
         self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + E@self.slack_dyn[k] for k in range(self.K) ]
-        # self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
-        # self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+        # Following two lines are for trust region constraints for state and action
+        self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
+        self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
 
         # self.constraints += [ cvx.norm(self.state[k, 3:7]) - 1 <= self.slack_quat[k] for k in range(self.K+1) ]
 
@@ -156,7 +158,7 @@ class SCPSolver:
         norm_fac = np.square( np.linalg.norm(upper) )
 
         # Compute the action cost
-        #action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
+        # action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
         action_norms = cvx.norm(self.action, p=2, axis=1)  # Compute L2 norms for each action (axis=1 for rows)
         action_cost = cvx.sum_squares(action_norms / norm_fac) / self.K  # Sum of squared normalized actions
 
