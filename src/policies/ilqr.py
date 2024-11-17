@@ -4,9 +4,9 @@ from dynamics_jax import DynamicsQuadcopter3D
 import os
 import shutil
 
-class PolicyiLQR:
+class PolicyALiLQR:
     """
-    
+    Class that solves for and executes an AL-iLQR trajectory tracking policy.
 
     Parameters
     ----------
@@ -82,16 +82,10 @@ class PolicyiLQR:
             raise ValueError("Argument `max_iters` must be at least 1")
 
         # Solve segmented AL-iLQR
-        self.x_bar,self.u_bar,self.Y,self.y = self.segmented_al_ilqr(
+        self.x_bar,self.u_bar,self.Y,self.y = self._segmented_al_ilqr(
             x_track=self.x_track,
             u_track=self.u_track,
-            dyn=self.dynamics,
-            Q=self.Q,
-            R=self.R,
-            QN=self.QN,
             segments=self.segments,
-            eps=self.eps,
-            max_iters=self.max_iters,
         )
     
     def _print(
@@ -153,200 +147,12 @@ class PolicyiLQR:
             pass
 
         return optimal_action
-
-    # ----------------------------------------------------------------
-    
-    def ilqr(self,x_track,u_track,quadrotor:DynamicsQuadcopter3D,Q,R,QN,eps=1e-3,max_iters=1000):
-        """
-        Compute controls to track a given trajectory with iLQR. The iLQR tracking control law is described by
-        the formula: u = u_bar + y + Y * (x - x_bar).
-        This code is based on resources from Stanford AA203.
-        Useful course notes can be found here: https://github.com/StanfordASL/AA203-Notes/blob/master/notes.pdf
-        TODO Remove
-
-        Parameters
-        ----------
-        x_track: numpy.ndarray
-            Discrete state trajectory to track (dimensions N x n)
-        u_track: numpy.ndarray
-            Discrete initial control inputs to track trajectory (dimensions N x m)
-        quadrotor: DynamicsQuadcopter3D
-            Quadrotor dynamics object
-        Q: numpy.ndarray
-            The state cost matrix
-        R: numpy.ndarray
-            The control cost matrix
-        QN: numpy.ndarray
-            The terminal state cost matrix 
-        eps: float
-            Optional, convergence tolerance. Default 1e-3
-        max_iters: int
-            Optional, maximum allowable iterations of iLQR loop for convergence
-        
-        Returns
-        -------
-        x_bar: numpy.ndarray
-            Discrete nominal state trajectory (dimensions N x n)
-        u_bar: numpy.ndarray
-            Discrete nominal control trajectory (dimensions N x m)
-        Y: numpy.ndarray
-            Discrete control gains for control law (dimensions N x m x n)
-        y: numpy.ndarray
-            Discrete control offset for control law (dimensions N x m)
-        """
-        u_upper = np.array(self.dynamics.action_ranges())[:,1]
-        u_lower = np.array(self.dynamics.action_ranges())[:,0]
-
-        # Check for a valid setup
-        if max_iters <= 1:
-            raise ValueError("Argument `max_iters` must be at least 1.")
-
-        # Get state and control dimensions
-        n = quadrotor.state_size()  # state dimension
-        m = quadrotor.action_size()  # control dimension
-
-        # Get total number of discrete control points on trajectory
-        N = np.shape(u_track)[0]
-
-        # Initialize control gains Y and offsets y
-        Kk = np.zeros((N, m, n))
-        dk = np.zeros((N, m))
-
-        # Initialize the nominal trajectory deviations dx and du
-        dx = np.zeros((N + 1, n))
-        du = np.zeros((N, m))
-
-        # Initialize the nominal trajectory x_bar and u_bar
-        x_bar = np.zeros_like(x_track)
-        x_bar[0] = np.copy(x_track[0])
-        u_bar = np.copy(u_track)
-
-        # Step through each discrete point and create a dynamically feasible trajectory
-        for _k in range(N):
-            x_bar[_k+1] = np.array(quadrotor.step(x_bar[_k], u_bar[_k]))
-        print("x_bar: " + str(x_bar))
-        # x_bar = np.copy(x_track)
-
-        # Last cost
-        J_last =  np.inf
-        J = self.cost_function(x_bar,x_track,u_bar)
-
-        # Regularization factor
-        ρinit = 0
-        ρ = ρinit
-        ρmax = 1e-6
-        ρinc = 1e-7
-
-        # Get linearized jacobians
-        A_total,B_total = quadrotor.linearize(x_bar[:-1],u_bar)
-        A_total,B_total = np.array(A_total),np.array(B_total)
-
-        assert not np.any(np.isnan(A_total)), "A contains NaN values from tracked trajectory"
-        assert not np.any(np.isnan(B_total)), "B contains NaN values from tracked trajectory"
-        assert not np.any(np.isinf(A_total)), "A contains inf values from tracked trajectory"
-        assert not np.any(np.isinf(B_total)), "B contains inf values from tracked trajectory"
-
-        ## iLQR loop
-        # Create variable to exit loop given convergence achieved
-        converged = False
-
-        # Limit iterations with max_iters
-        for _i in range(max_iters):
-            # Backwards Pass: 
-            # Build cost function gradients / Hessians at N
-            lN_x = QN @ (x_bar[-1] - x_track[-1])
-            lN_xx = np.copy(QN)
-
-            # Calc cost to go at N
-            p = np.copy(lN_x)
-            P = np.copy(lN_xx)
-
-            for _k in range(N-1,-1,-1):
-                # Build cost function gradients / Hessians at kth step
-                lk_x = Q @ (x_bar[_k] - x_track[_k])
-                lk_u = R @ u_bar[_k]
-                lk_xx = np.copy(Q)
-                lk_uu = np.copy(R)
-                lk_ux = 0
-
-                # Get A, B
-                A = np.copy(A_total[_k])
-                B = np.copy(B_total[_k])
-
-                # Build gradients / Hessians of action value function
-                Q_xx = lk_xx + A.T @ P @ A
-                Q_uu = lk_uu + B.T @ P @ B
-                Q_ux = lk_ux + B.T @ P @ A
-                Q_xu = np.copy(Q_ux.T)
-                Q_x = lk_x + A.T @ p
-                Q_u = lk_u + B.T @ p
-
-                # Check if positive definite
-                incrementing = True
-                # Q_uu_reg = np.eye(np.shape(Q_uu)[0])*ρmax + Q_uu
-                while incrementing:
-                    Q_uu_reg = np.eye(np.shape(Q_uu)[0])*ρ + Q_uu
-                    print("k: " + str(_k) + " / " + str(N-1))
-                    print("Q_uu: " + str(Q_uu_reg))
-                    print("eigs: " + str(np.linalg.eigvals(Q_uu_reg)))
-                    print("A: " + str(A))
-                    print("B: " + str(B))
-                    if not np.all(np.linalg.eigvals(Q_uu_reg) > 0):
-                        ρ += ρinc
-                        if ρ > ρmax:
-                            raise Exception("Hit maximum limit for regularization ρ = " + str(ρ))
-                    else:
-                        incrementing = False
-                
-                # Calc control gains
-                inv_gain = -np.linalg.pinv(Q_uu_reg)
-                Kk[_k] = inv_gain @ Q_ux
-                dk[_k] = inv_gain @ Q_u
-                P = Q_xx + Kk[_k].T @ Q_uu @ Kk[_k] + Kk[_k].T @ Q_ux + Q_xu @ Kk[_k]
-                p = Q_x + Kk[_k].T @ Q_uu @ dk[_k] + Kk[_k].T @ Q_u + Q_xu @ dk[_k]
-
-            # Forwards Pass
-            u = np.zeros((N, m))
-            x = np.zeros((N + 1, n))
-            x[0] = np.copy(x_track[0])
-            for _k in range(N):
-                dx[_k] = x[_k] - x_bar[_k]
-                du[_k] = dk[_k] + Kk[_k] @ dx[_k] 
-                u[_k] = u_bar[_k] + du[_k]
-                u[_k] = np.clip(u[_k], u_lower, u_upper) # Restrict action with limits
-                x[_k + 1] = np.array(quadrotor.step(x[_k],u[_k]))
-            x_bar = np.copy(x)
-            u_bar = np.copy(u)
-            # New cost
-            J_last = np.copy(J)
-            J = self.cost_function(x_bar,x_track,u_bar)
-            improve = abs(J_last - J)
-
-            print("iLQR iteration: " + str(_i) + "\nCost Improvement: " + str(J_last - J))
-            print("J = " + str(J))
-            print("J_last = " + str(J_last))
-
-            if improve < eps and _i > 2:
-                converged = True
-                break
-
-        # Verify solution found
-        if not converged:
-            raise RuntimeError("iLQR did not converge!")
-        
-        return x_bar, u_bar, Kk, dk
     
     def segmented_al_ilqr(
             self,
             x_track:np.ndarray,
             u_track:np.ndarray,
-            dyn:DynamicsQuadcopter3D,
-            Q:np.ndarray,
-            R:np.ndarray,
-            QN:np.ndarray,
             segments=1,
-            eps=1e-2,
-            max_iters=1000,
     ):
         """
         Compute closed loop control policy using AL-iLQR to track a given trajectory. This function allows for solving the
@@ -361,22 +167,23 @@ class PolicyiLQR:
             An array of discrete points making up a state trajectory we wish to track
         u_track: np.ndarray
             An array of discrete controls which is our "best guess" for executing the x_track trajectory
-        dyn: DynamicsQuadcopter3D
-            Class describing the nonlinear dynamics of a quadcopter
-        Q: np.ndarray
-            The state cost matrix (real, symmetric, positive semi-definite matrix)
-        R: np.ndarray
-            The control cost matrix (real, symmetric, positive-definite matrix)
-        QN: np.ndarray
-            The terminal state cost matrix (real, symmetric, positive semi-definite matrix)
         segments: int
             Number of segments to divide the AL-iLQR problem into, default is a single segment (aka solving 1 problem)
-        eps: float
-            The convergence criteria for AL-iLQR. If the cost improvement is less than this threshold for any iteration,
-            consider it converged. Default is 1e-2
-        max_iters: int
-            The maximum number of iterations for the AL-iLQR solver.
+        
+        Returns
+        -------
+        x_nominal: np.ndarray
+            Nominal state trajectory for AL-iLQR
+        u_nominal: np.ndarray
+            Nominal control inputs for AL-iLQR
+        Kk: np.ndarray
+            Feedback control gains
+        dk: np.ndarray
+            Feedforward control gains
         """
+        # Get class variables
+        dyn = self.dynamics         # System dynamics
+
         # Get state and control dimensions
         N = np.shape(x_track)[0]
         n = dyn.state_size()
@@ -402,7 +209,7 @@ class PolicyiLQR:
             # Populate continuity and starting state if prior segment exists
             if _segs != 0:
                 x_start = np.copy(x_track[start_step])
-                u_continuity = np.copy(u_nominal[start_step-1])
+                #u_continuity = np.copy(u_nominal[start_step-1])
             
             # Print status if verbose
             self._print("\nRunning AL-iLQR over segment " + str(_segs + 1) + "/" + str(segments) + " (" + str(start_step)
@@ -414,8 +221,9 @@ class PolicyiLQR:
                 x_start=x_start,
                 x_track=x_track[start_step:end_step + 1],
                 u_track=u_track[start_step:end_step],
-                u_continuity=u_continuity
             )
+            #     u_continuity=u_continuity
+            # )
             
             # Store solution segments
             x_nominal[start_step:end_step + 1] = np.copy(x_nominal_seg)
@@ -424,6 +232,55 @@ class PolicyiLQR:
             dk[start_step:end_step] = np.copy(dk_seg)
         
         # Return control sequence
+        return x_nominal, u_nominal, Kk, dk
+    
+    def _segmented_al_ilqr(
+        self,
+        x_track: np.ndarray,
+        u_track: np.ndarray,
+        segments=1,
+    ):
+        """
+        Compute closed loop control policy using AL-iLQR to track a given trajectory, solving independently over segments.
+        """
+        # Get class variables
+        dyn = self.dynamics
+
+        # Get state and control dimensions
+        N = x_track.shape[0]
+        n, m = dyn.state_size(), dyn.action_size()
+
+        # Preallocate variables
+        x_nominal = np.zeros_like(x_track)
+        u_nominal = np.zeros_like(u_track)
+        Kk = np.zeros((N-1, m, n))
+        dk = np.zeros((N-1, m))
+
+        # Calculate segment size and boundaries
+        segment_size = N // segments
+        segment_indices = [
+            (int(seg * segment_size), int(min((seg + 1) * segment_size, N - 1)))
+            for seg in range(segments)
+        ]
+
+        # Run AL-iLQR independently for each segment
+        results = [
+            self.al_ilqr(
+                x_start=x_track[start_step],
+                x_track=x_track[start_step:end_step + 1],
+                u_track=u_track[start_step:end_step]
+            )
+            for start_step, end_step in segment_indices
+        ]
+
+        # Merge results from all segments
+        for seg, (start_step, end_step) in enumerate(segment_indices):
+            x_nominal_seg, u_nominal_seg, Kk_seg, dk_seg = results[seg]
+            x_nominal[start_step:end_step + 1] = x_nominal_seg
+            u_nominal[start_step:end_step] = u_nominal_seg
+            Kk[start_step:end_step] = Kk_seg
+            dk[start_step:end_step] = dk_seg
+
         return x_nominal, u_nominal, Kk, dk
     
     def al_ilqr(
@@ -440,7 +297,6 @@ class PolicyiLQR:
         track the state trajectory. 
         
         The iLQR tracking control law is described by the formula: u = u_nominal + y + Y * (x - x_nominal).
-
 
         Parameters
         ----------
@@ -572,8 +428,38 @@ class PolicyiLQR:
             ρmult=1,
     ):
         """
-        The AL-iLQR backpass algorithm. 
-        TODO comment
+        The AL-iLQR backward pass algorithm
+
+        The purpose of the AL-iLQR backward pass is to compute the locally optimal control policy characterized 
+        by the feedback (Kk) and feedforward (dk) gains. First, you solve Riccati-like equations starting from 
+        the terminal point in the trajectory and iterating backwards (hence the name backwards pass). With these 
+        equations solved, we can solve for the gains.
+
+        Parameters
+        ----------
+        x: np.ndarray
+            State trajectory for current iteration
+        x_track: np.ndarray
+            An array of discrete points making up a state trajectory we wish to track
+        u: np.ndarray
+            An array of discrete controls which is our "best guess" for executing the x_track trajectory
+        λ: np.ndarray
+            Lagrange multipliers
+        Iμ: np.ndarray
+            Penalty matrix at each timestep
+        u_continuity: np.ndarray
+            The final action from the last segment of the tracking problem, default to None
+        ρmult: int
+            Scaling factor for regularization
+        
+        Returns
+        -------
+        Kk: np.ndarray
+            Feedback gain
+        dk: np.ndarray
+            Feedforward gain
+        deltaV: np.ndarray
+            Expected cost improvement for this backward pass
         """
         # Get class variables
         Q = self.Q          # State cost matrix
@@ -607,7 +493,7 @@ class PolicyiLQR:
         # Regularization factor
         ρmax = 1e4          # Maximum regularization
         ρinc = 2            # Regularization scaling factor
-        ρ = ρmult * (1e-9)  # Regularization factor
+        ρ = max(ρmult * (1e-9),(1e-9))  # Regularization factor
 
         # Get linearized jacobians
         A_total,B_total = dyn.linearize(x[:-1],u)
@@ -688,7 +574,46 @@ class PolicyiLQR:
     ):
         """
         The AL-iLQR forward pass algorithm. 
-        TODO comment
+        
+        The forward pass applies the control gains calculated in the backward pass to determine the new nominal 
+        trajectory. Evaluate the cost of this new trajectory and compare it to the previous trajectory. Check if 
+        the trajectory has improved sufficiently and scale with a line search (adjusting the feedforward gains).
+
+        Parameters
+        ----------
+        x_last: np.ndarray
+            Last AL-iLQR iteration state trajectory
+        x_track: np.ndarray
+            An array of discrete points making up a state trajectory we wish to track
+        u_last: np.ndarray
+            Last AL-iLQR iteration control inputs
+        Kk: np.ndarray
+            Feedback gain
+        dk: np.ndarray
+            Feedforward gain
+        J_last: float
+            Last AL-iLQR iteration cost
+        deltaV: np.ndarray
+            Expected cost improvement for this backward pass
+        λ: np.ndarray
+            Lagrange multipliers
+        Iμ: np.ndarray
+            Penalty matrix at each timestep
+        max_iters: int
+            Maxium iterations for linesearch, default to 50
+        u_continuity: np.ndarray
+            The final action from the last segment of the tracking problem, default to None
+        
+        Returns
+        -------
+        x: np.ndarray
+            New state trajectory
+        u: np.ndarray
+            New control inputs
+        J: float
+            New cost of trajectory
+        forward_err: int
+            0 if line search converged, 1 if line search fails to converge
         """
         # Get class variables
         dyn = self.dynamics # System dynamics
@@ -962,3 +887,335 @@ class PolicyiLQR:
         # TODO derivatives computed here, not in backpass (dx,du,dxx,duu,dxu)
 
         return c
+
+class PolicyiLQR:
+    """
+    Class that solves for and executes an iLQR trajectory tracking policy.
+
+    Parameters
+    ----------
+    dynamics: DynamicsQuadcopter3D
+        Class describing the nonlinear dynamics of a system
+    Q: np.ndarray
+        The state cost matrix (real, symmetric, positive semi-definite matrix) dimensions n x n
+    R: np.ndarray
+        The control cost matrix (real, symmetric, positive-definite matrix) dimensions m x m
+    QN: np.ndarray
+        The terminal state cost matrix (real, symmetric, positive semi-definite matrix) dimensions n x n
+    W: np.ndarray
+        The continuity cost matrix dimensions m x m
+    x_track: np.ndarray
+        An array of discrete points making up a state trajectory we wish to track
+    u_track: np.ndarray
+        An array of discrete controls which is our "best guess" for executing the x_track trajectory
+    segments: int
+        Number of segments to divide the AL-iLQR problem into, default is a single segment (aka solving 1 problem)
+    eps: float
+        The convergence criteria for AL-iLQR. If the cost improvement is less than this threshold for any iteration,
+        consider it converged. Default is 1e-2
+    max_iters: int
+        The maximum number of iterations for the AL-iLQR solver
+    verbose: boolean
+        Print status messages to terminal while solving tracking problem
+    """
+    def __init__(
+        self,
+        dynamics:DynamicsQuadcopter3D,
+        Q:np.ndarray,
+        R:np.ndarray,
+        QN:np.ndarray,
+        W:np.ndarray,
+        x_track:np.ndarray,
+        u_track:np.ndarray,
+        segments=1,
+        eps=1e-2,
+        max_iters=1000,
+        verbose=False
+    ):
+        """
+        Initialization function for PolicyiLQR class
+        """
+        # Store system dynamics
+        self.dynamics = dynamics    # System dynamics
+
+        # Store trajectory to track
+        self.x_track = x_track      # State trajectory to track
+        self.u_track = u_track      # Open loop control inputs for x_track
+
+        # Store iLQR cost matrices
+        self.Q = Q                  # State cost matrix
+        self.R = R                  # Control cost matrix
+        self.QN = QN                # Terminal state cost matrix
+        self.W = W                  # Continuity cost matrix
+        
+        # AL-iLQR parameters
+        self.eps = eps              # Convergence criteria
+        self.max_iters = max_iters  # Maximum allowable iterations
+        self.segments = segments    # Segments for AL-iLQR problem
+
+        # Class variables
+        self.log_folder = None      # Log folder for logging
+        self.verbose = verbose      # Verbose option for class operations
+
+        # Internal diagnostic variables
+        self.state_error = []       # State error
+        self.cost = []              # Costs
+
+        # Verify inputs are valid
+        if self.max_iters <= 1:
+            raise ValueError("Argument `max_iters` must be at least 1")
+
+        # Solve segmented AL-iLQR
+        self.x_bar,self.u_bar,self.Y,self.y = self.segmented_al_ilqr(
+            x_track=self.x_track,
+            u_track=self.u_track,
+            dyn=self.dynamics,
+            Q=self.Q,
+            R=self.R,
+            QN=self.QN,
+            segments=self.segments,
+            eps=self.eps,
+            max_iters=self.max_iters,
+        )
+    
+    def _print(
+            self, 
+            *args
+    ):
+        """
+        Function to print messages to terminal when verbose option is enabled
+        """
+        if self.verbose:
+            print(*args)
+
+    def enable_logging(
+        self,
+        run_folder,
+    ):
+        """
+        Enable logging to a folder
+        """
+        self.log_folder = os.path.join(run_folder, "policy", "ilqr")
+
+    def delete_logs(
+            self
+    ):
+        """
+        Function to delete all logs
+        """
+        if self.log_folder is not None:
+            shutil.rmtree(self.log_folder)
+    
+    def act(
+        self,
+        state_history:np.ndarray,
+        action_history:np.ndarray,
+        timestep:int,
+    ):
+        """
+        Function to execute iLQR control
+        """
+        # Get the optimal action and other logging information
+        x = state_history[-1]
+        optimal_action = self.u_bar[timestep] + self.y[timestep] + self.Y[timestep] @ (x - self.x_bar[timestep])
+
+        # Store state error
+        self.state_error.append((x - self.x_bar[timestep]))
+
+        # Cap the action range
+        u_upper = np.array(self.dynamics.action_ranges())[:,1]
+        u_lower = np.array(self.dynamics.action_ranges())[:,0]
+        optimal_action = np.clip(optimal_action, u_lower, u_upper) # Restrict action with limits
+
+        # Print controls executed
+        self._print("u: " + str(optimal_action))
+
+        # Log the state and action plans alongside the costs, 
+        # if we're logging
+        # TODO
+        if self.log_folder is not None:
+            pass
+
+        return optimal_action
+
+    # ----------------------------------------------------------------
+    
+    def ilqr(self,x_track,u_track,quadrotor:DynamicsQuadcopter3D,Q,R,QN,eps=1e-3,max_iters=1000):
+        """
+        Compute controls to track a given trajectory with iLQR. The iLQR tracking control law is described by
+        the formula: u = u_bar + y + Y * (x - x_bar).
+        This code is based on resources from Stanford AA203.
+        Useful course notes can be found here: https://github.com/StanfordASL/AA203-Notes/blob/master/notes.pdf
+        TODO Fix
+
+        Parameters
+        ----------
+        x_track: numpy.ndarray
+            Discrete state trajectory to track (dimensions N x n)
+        u_track: numpy.ndarray
+            Discrete initial control inputs to track trajectory (dimensions N x m)
+        quadrotor: DynamicsQuadcopter3D
+            Quadrotor dynamics object
+        Q: numpy.ndarray
+            The state cost matrix
+        R: numpy.ndarray
+            The control cost matrix
+        QN: numpy.ndarray
+            The terminal state cost matrix 
+        eps: float
+            Optional, convergence tolerance. Default 1e-3
+        max_iters: int
+            Optional, maximum allowable iterations of iLQR loop for convergence
+        
+        Returns
+        -------
+        x_bar: numpy.ndarray
+            Discrete nominal state trajectory (dimensions N x n)
+        u_bar: numpy.ndarray
+            Discrete nominal control trajectory (dimensions N x m)
+        Y: numpy.ndarray
+            Discrete control gains for control law (dimensions N x m x n)
+        y: numpy.ndarray
+            Discrete control offset for control law (dimensions N x m)
+        """
+        u_upper = np.array(self.dynamics.action_ranges())[:,1]
+        u_lower = np.array(self.dynamics.action_ranges())[:,0]
+
+        # Check for a valid setup
+        if max_iters <= 1:
+            raise ValueError("Argument `max_iters` must be at least 1.")
+
+        # Get state and control dimensions
+        n = quadrotor.state_size()  # state dimension
+        m = quadrotor.action_size()  # control dimension
+
+        # Get total number of discrete control points on trajectory
+        N = np.shape(u_track)[0]
+
+        # Initialize control gains Y and offsets y
+        Kk = np.zeros((N, m, n))
+        dk = np.zeros((N, m))
+
+        # Initialize the nominal trajectory deviations dx and du
+        dx = np.zeros((N + 1, n))
+        du = np.zeros((N, m))
+
+        # Initialize the nominal trajectory x_bar and u_bar
+        x_bar = np.zeros_like(x_track)
+        x_bar[0] = np.copy(x_track[0])
+        u_bar = np.copy(u_track)
+
+        # Step through each discrete point and create a dynamically feasible trajectory
+        for _k in range(N):
+            x_bar[_k+1] = np.array(quadrotor.step(x_bar[_k], u_bar[_k]))
+        print("x_bar: " + str(x_bar))
+        # x_bar = np.copy(x_track)
+
+        # Last cost
+        J_last =  np.inf
+        J = self.cost_function(x_bar,x_track,u_bar)
+
+        # Regularization factor
+        ρinit = 0
+        ρ = ρinit
+        ρmax = 1e-6
+        ρinc = 1e-7
+
+        # Get linearized jacobians
+        A_total,B_total = quadrotor.linearize(x_bar[:-1],u_bar)
+        A_total,B_total = np.array(A_total),np.array(B_total)
+
+        assert not np.any(np.isnan(A_total)), "A contains NaN values from tracked trajectory"
+        assert not np.any(np.isnan(B_total)), "B contains NaN values from tracked trajectory"
+        assert not np.any(np.isinf(A_total)), "A contains inf values from tracked trajectory"
+        assert not np.any(np.isinf(B_total)), "B contains inf values from tracked trajectory"
+
+        ## iLQR loop
+        # Create variable to exit loop given convergence achieved
+        converged = False
+
+        # Limit iterations with max_iters
+        for _i in range(max_iters):
+            # Backwards Pass: 
+            # Build cost function gradients / Hessians at N
+            lN_x = QN @ (x_bar[-1] - x_track[-1])
+            lN_xx = np.copy(QN)
+
+            # Calc cost to go at N
+            p = np.copy(lN_x)
+            P = np.copy(lN_xx)
+
+            for _k in range(N-1,-1,-1):
+                # Build cost function gradients / Hessians at kth step
+                lk_x = Q @ (x_bar[_k] - x_track[_k])
+                lk_u = R @ u_bar[_k]
+                lk_xx = np.copy(Q)
+                lk_uu = np.copy(R)
+                lk_ux = 0
+
+                # Get A, B
+                A = np.copy(A_total[_k])
+                B = np.copy(B_total[_k])
+
+                # Build gradients / Hessians of action value function
+                Q_xx = lk_xx + A.T @ P @ A
+                Q_uu = lk_uu + B.T @ P @ B
+                Q_ux = lk_ux + B.T @ P @ A
+                Q_xu = np.copy(Q_ux.T)
+                Q_x = lk_x + A.T @ p
+                Q_u = lk_u + B.T @ p
+
+                # Check if positive definite
+                incrementing = True
+                # Q_uu_reg = np.eye(np.shape(Q_uu)[0])*ρmax + Q_uu
+                while incrementing:
+                    Q_uu_reg = np.eye(np.shape(Q_uu)[0])*ρ + Q_uu
+                    print("k: " + str(_k) + " / " + str(N-1))
+                    print("Q_uu: " + str(Q_uu_reg))
+                    print("eigs: " + str(np.linalg.eigvals(Q_uu_reg)))
+                    print("A: " + str(A))
+                    print("B: " + str(B))
+                    if not np.all(np.linalg.eigvals(Q_uu_reg) > 0):
+                        ρ += ρinc
+                        if ρ > ρmax:
+                            raise Exception("Hit maximum limit for regularization ρ = " + str(ρ))
+                    else:
+                        incrementing = False
+                
+                # Calc control gains
+                inv_gain = -np.linalg.pinv(Q_uu_reg)
+                Kk[_k] = inv_gain @ Q_ux
+                dk[_k] = inv_gain @ Q_u
+                P = Q_xx + Kk[_k].T @ Q_uu @ Kk[_k] + Kk[_k].T @ Q_ux + Q_xu @ Kk[_k]
+                p = Q_x + Kk[_k].T @ Q_uu @ dk[_k] + Kk[_k].T @ Q_u + Q_xu @ dk[_k]
+
+            # Forwards Pass
+            u = np.zeros((N, m))
+            x = np.zeros((N + 1, n))
+            x[0] = np.copy(x_track[0])
+            for _k in range(N):
+                dx[_k] = x[_k] - x_bar[_k]
+                du[_k] = dk[_k] + Kk[_k] @ dx[_k] 
+                u[_k] = u_bar[_k] + du[_k]
+                u[_k] = np.clip(u[_k], u_lower, u_upper) # Restrict action with limits
+                x[_k + 1] = np.array(quadrotor.step(x[_k],u[_k]))
+            x_bar = np.copy(x)
+            u_bar = np.copy(u)
+            # New cost
+            J_last = np.copy(J)
+            J = self.cost_function(x_bar,x_track,u_bar)
+            improve = abs(J_last - J)
+
+            print("iLQR iteration: " + str(_i) + "\nCost Improvement: " + str(J_last - J))
+            print("J = " + str(J))
+            print("J_last = " + str(J_last))
+
+            if improve < eps and _i > 2:
+                converged = True
+                break
+
+        # Verify solution found
+        if not converged:
+            raise RuntimeError("iLQR did not converge!")
+        
+        return x_bar, u_bar, Kk, dk
