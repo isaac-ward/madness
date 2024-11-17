@@ -33,7 +33,7 @@ class SCPSolver:
             sig = 10.,
             eps_dyn = 1.,
             eps_sdf = 1e-4,
-            eps_quat = 1.,
+            eps_rot = 1.,
             rho = 1.,
             slack_region = 1.,
             pull_from_cache=False
@@ -48,7 +48,7 @@ class SCPSolver:
         self.sig = sig
         self.eps_dyn = eps_dyn
         self.eps_sdf = eps_sdf
-        self.eps_quat = eps_quat
+        self.eps_rot = eps_rot
         self.rho = rho
         self.slack_region = slack_region
 
@@ -78,7 +78,8 @@ class SCPSolver:
         
         A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
-        E = np.eye(self.dynamics.state_size())
+        # E = np.eye(self.dynamics.state_size())
+        E = np.diag([1e-4, 1e-4, 1e-4, 1e-2, 1e-2, 1e-2, 1, 1, 1, 1 ,1, 1])
         # Dynamic feasibility constraints
         self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + E@self.slack_dyn[k] for k in range(self.K) ]
         # Following two lines are for trust region constraints for state and action
@@ -155,12 +156,16 @@ class SCPSolver:
         # Get the action ranges for normalization
         ranges = self.dynamics.action_ranges()
         upper = ranges[:,1]
-        norm_fac = np.square( np.linalg.norm(upper) )
+        action_upper_norm = np.square( np.linalg.norm(upper) )
 
         # Compute the action cost
         # action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
-        action_norms = cvx.norm(self.action, p=2, axis=1)  # Compute L2 norms for each action (axis=1 for rows)
-        action_cost = cvx.sum_squares(action_norms / norm_fac) / self.K  # Sum of squared normalized actions
+        # action_norms = cvx.norm(self.action, p=2, axis=1)  # Compute L2 norms for each action (axis=1 for rows)
+        # action_cost = cvx.sum_squares(action_norms) / (action_upper_norm * self.K)  # Sum of squared normalized actions
+        action_cost = cvx.square( cvx.norm(self.action, p='fro') ) / (action_upper_norm * self.K)
+
+        # Compute cost for rotation rate
+        rotation_cost = self.eps_rot * cvx.square( cvx.norm(self.state[:,-3:], p='fro') ) / self.K
 
         # Compute the terminal cost
         #terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 ) #+ self.eps_quat*cvx.norm( self.slack_quat, p=1 )
@@ -171,7 +176,7 @@ class SCPSolver:
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
         
         # Final objective is a weighted sum of the above
-        bolza_sum = action_cost # + distance_cost
+        bolza_sum = action_cost + rotation_cost # + distance_cost
         self.objective = bolza_sum + terminal_cost
 
         return terminal_cost, action_cost, distance_cost
@@ -279,7 +284,8 @@ class SCPSolver:
                     continue
                 
                 # print("we made it this far boys. let's pass it on")
-                self.slack_region = np.linalg.norm(self.slack_dyn.value, ord=1)
+                self.slack_dyn_prev = self.slack_dyn
+                self.slack_region = np.linalg.norm(self.slack_dyn_prev.value, ord=1)
                 if verbose: print("Norm of slack_dyn: ", self.slack_region)
                 self.cost = np.copy(prob.value)
                 self.state_prev = np.copy(self.state.value)
@@ -296,7 +302,7 @@ class SCPSolver:
             cacher_state.save(optimal_state_history)
 
         if return_information:
-            return optimal_action_history, optimal_state_history, (log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound)
+            return optimal_action_history, optimal_state_history, (log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound), self.slack_dyn_prev.value
         else:
             return optimal_action_history, optimal_state_history
 

@@ -52,8 +52,8 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = np.array([25,25,25])
-    #state_goal[:3] = state_initial[:3] + np.array([5,0,0])
+    # state_goal[:3] = np.array([25,25,10])
+    state_goal[:3] = state_initial[:3] + np.array([5,5,20])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -83,7 +83,7 @@ if __name__ == "__main__":
     g = dyn.g
     w_trim = np.sqrt(m*g/(4*k))
 
-    dyn.dt = 0.025
+    dyn.dt = 0.05
 
     # We need to formulate an initial guess for the trajectory based on the A* path and
     # finite difference methods, using an euler angle angle representation (123 scheme)
@@ -198,10 +198,12 @@ if __name__ == "__main__":
     
     # Compute the angular velocities
     #ang_vel = clamped_smoothness_helper(finite_diff_helper(rot))
-    ang_vel = finite_diff_helper(rot)
+    ang_vel = finite_diff_helper(rot, clamp=False)
 
     # Angular velocity order is x y z so swap it around
     ang_vel = ang_vel[:, ::-1]
+
+    ang_vel = clamped_smoothness_helper(ang_vel)
 
     # Assemble in the order pos, rot, vel, ang_vel
     # x, y, z, φ, θ, ψ, xd, yd, zd, wx, wy, wz
@@ -487,17 +489,18 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 10,
-                    eps_dyn=1e3,
-                    eps_sdf=1e-4,
-                    eps_quat=10,
+                    maxiter = 40,
+                    eps_dyn=1e1,
+                    eps_sdf=1e-6,
+                    eps_rot=1e-1,
                     sig = 30.,
                     rho=2.,
+                    slack_region=1.,
                     pull_from_cache=False)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_history = state_initial
-    optimal_action_history, optimal_state_history, cvx_logs = scp.solve(
+    optimal_action_history, optimal_state_history, cvx_cost_logs, cvx_slack_log = scp.solve(
         state_goal=state_goal,
         state_history=state_history[np.newaxis,:],
         return_information=True,
@@ -554,8 +557,8 @@ if __name__ == "__main__":
     # log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost
     # Plot each on its own axes arrange vertically with a common x axis
     # Unpack the logs and plot
-    log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound = cvx_logs
-    num_subplots = len(cvx_logs)
+    log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound = cvx_cost_logs
+    num_subplots = len(cvx_cost_logs)
     fig, ax = plt.subplots(num_subplots, 1, figsize=(10, num_subplots*2))
     for i, (name, log) in enumerate(
         [
@@ -575,6 +578,25 @@ if __name__ == "__main__":
     plt.tight_layout()
     # Save it to the log folder
     plt.savefig(os.path.join(log_folder, "costs.png"))
+
+
+    def log_slack_vars(name, slack):
+        try:
+            num_plots = slack.shape[1]
+            labels = dyn.state_labels()
+            fig = plt.figure(figsize=(10,num_plots*2))
+            for i in range(num_plots):
+                ax = fig.add_subplot(num_plots, 1, i+1)
+                # Disable scientific notation on the y-axis (or x-axis if needed)
+                ax.ticklabel_format(useOffset=False)
+                ax.plot(slack[:,i])
+                ax.set_title(labels[i])
+            plt.tight_layout()
+            plt.savefig(os.path.join(log_folder, f"{name}_slack.png"))
+        except Exception as e:
+            print(e)
+
+    log_slack_vars("dynamics", cvx_slack_log)
 
     # Log everything of interest
     environment.log(log_folder)
