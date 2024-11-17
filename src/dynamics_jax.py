@@ -220,7 +220,7 @@ class DynamicsQuadcopter3D:
         state_delta = state_delta.at[5].set(p + q * s_φ * t_θ + r * c_φ * t_θ)
         # Velocities change according to forces and moments
         state_delta = state_delta.at[6].set(-(ft / self.mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ))
-        state_delta = state_delta.at[7].set(-(ft / self.mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ))
+        state_delta = state_delta.at[7].set(-(ft / self.mass) * ( s_ψ * s_θ * c_φ - c_ψ * s_φ ))
         state_delta = state_delta.at[8].set(self.g - (ft / self.mass) * (c_θ * c_φ))
         # Body rates change according to moments of inertia and torques
         state_delta = state_delta.at[9].set(((self.Iy - self.Iz) * q * r + tx) / self.Ix)
