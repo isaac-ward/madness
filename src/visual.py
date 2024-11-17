@@ -169,6 +169,14 @@ class Visual:
             path_cvx_flag = True
         except:
             warnings.warn(f"No cvx path found at {fp_path_cvx}")
+        
+        path_propagated_flag = False
+        fp_path_propagated = os.path.join(self.run_folder, "cvx", "propagated.npz")
+        try:
+            path_propagated = utils.logging.load_from_npz(fp_path_propagated)
+            path_propagated_flag = True
+        except:
+            warnings.warn(f"No propagated cvx path found at {fp_path_propagated}")
 
         # Now get the voxel grid info for rendering
         print("Precomputing voxel information...", end="")
@@ -300,7 +308,7 @@ class Visual:
                 plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
 
             # In 3D, plot the path and smooth paths in 
-            def plot_path(path, color, style):
+            def plot_path(path, color, style, label=None):
                 ax.plot(
                     path[:, 0],
                     path[:, 1],
@@ -309,11 +317,16 @@ class Visual:
                     linestyle=style,
                     alpha=1,
                     linewidth=2,
+                    label=label,
                 )
 
-            if path_flag: plot_path(path_xyz, 'grey', ':')
-            if path_smooth_flag: plot_path(path_xyz_smooth, 'orange', '-')
-            if path_cvx_flag: plot_path(path_xyz_cvx, 'cyan', '-')
+            if path_flag: plot_path(path_xyz, 'grey', ':', 'A* path')
+            if path_smooth_flag: plot_path(path_xyz_smooth, 'orange', '-', 'optimized A* path')
+            if path_cvx_flag: plot_path(path_xyz_cvx, 'cyan', '-', 'convex optimal')
+            if path_propagated_flag: plot_path(path_propagated, 'green', '-', 'convex propagated')
+
+            # make a legend
+            ax.legend()
 
         # Save the figure
         #plt.tight_layout()
