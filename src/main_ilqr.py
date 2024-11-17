@@ -20,7 +20,7 @@ from agent import Agent
 from visual import Visual
 from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
 from policies.mppi import PolicyMPPI
-from policies.ilqr import PolicyiLQR
+from policies.ilqr import PolicyALiLQR
 import policies.samplers
 import standard
 from sdf import Environment_SDF
@@ -218,7 +218,8 @@ if __name__ == "__main__":
     QN = np.eye(n) * 1
     QN[:3] = QN[:3] * 20
     W = np.eye(m) * 0
-    policy = PolicyiLQR(
+    start_time = time.time()
+    policy = PolicyALiLQR(
         dynamics=copy.deepcopy(dyn),
         Q=Q,
         R=R,
@@ -231,6 +232,7 @@ if __name__ == "__main__":
         max_iters=1000,
         verbose=True,
     )
+    end_time = time.time()
     ilqr_traj = np.copy(path_xyz_smooth)
 
     # Can now create an agent
@@ -364,3 +366,4 @@ if __name__ == "__main__":
     #visual.plot_histories()
     visual.plot_environment()
     visual.render_video(desired_fps=25)
+    print("Runtime: " + str(end_time-start_time))
