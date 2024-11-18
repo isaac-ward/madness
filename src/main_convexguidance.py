@@ -491,7 +491,7 @@ if __name__ == "__main__":
                     trajInit=trajInit,
                     maxiter = 40,
                     eps_dyn=1e1,
-                    eps_sdf=1e-6,
+                    eps_sdf=1e-4,
                     eps_rot=1e-1,
                     sig = 30.,
                     rho=2.,
@@ -540,8 +540,7 @@ if __name__ == "__main__":
     # print(position_history)
 
     # Create the environment
-    num_seconds = 16
-    num_steps = int(num_seconds / dyn.dt)
+    num_steps = K
     environment = Environment(
         state_initial=state_initial,
         state_goal=state_goal,
@@ -557,15 +556,17 @@ if __name__ == "__main__":
     # log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost
     # Plot each on its own axes arrange vertically with a common x axis
     # Unpack the logs and plot
-    log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound = cvx_cost_logs
+    log_action_cost, log_rotation_cost, log_virtual_cost, log_distance_cost, log_terminal_cost, log_bolza_sum, log_slack_bound = cvx_cost_logs
     num_subplots = len(cvx_cost_logs)
     fig, ax = plt.subplots(num_subplots, 1, figsize=(10, num_subplots*2))
     for i, (name, log) in enumerate(
         [
-            ("Total Cost", log_total_cost),
-            ("Terminal Cost", log_terminal_cost),
             ("Action Cost", log_action_cost),
+            ("Rotation Cost", log_rotation_cost),
+            ("Virtual Cost", log_virtual_cost),
             ("Distance Cost", log_distance_cost),
+            ("Terminal Cost", log_terminal_cost),
+            ("Total Cost", log_bolza_sum),
             ("Slack Bound", log_slack_bound),
         ]
     ):
