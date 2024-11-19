@@ -490,17 +490,17 @@ if __name__ == "__main__":
                     sdf = sdfs,
                     trajInit=trajInit,
                     maxiter = 40,
-                    eps_dyn=1e1,
+                    eps_dyn=1e3,
                     eps_sdf=1e-4,
                     eps_rot=1e-1,
-                    sig = 30.,
+                    sig = 5.,
                     rho=2.,
                     slack_region=1.,
                     pull_from_cache=False)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_history = state_initial
-    optimal_action_history, optimal_state_history, cvx_cost_logs, cvx_slack_log = scp.solve(
+    optimal_action_history, optimal_state_history, cvx_cost_logs, cvx_slack_log, cvx_prob = scp.solve(
         state_goal=state_goal,
         state_history=state_history[np.newaxis,:],
         return_information=True,
@@ -580,6 +580,9 @@ if __name__ == "__main__":
     # Save it to the log folder
     plt.savefig(os.path.join(log_folder, "costs.png"))
 
+    # Plot other information relating to the solve
+    solve_info_str = f"Solver: {cvx_prob.solver_stats.solver_name}\nStatus: {cvx_prob.status}"
+    utils.logging.write_string_to_text_file(os.path.join(log_folder, "solve_info.txt"), solve_info_str)
 
     def log_slack_vars(name, slack):
         try:

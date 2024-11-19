@@ -81,6 +81,10 @@ def write_preview_to_text_file(filepath, array, num_entries=4):
         f.write("\n...\n")
         f.write(str(array[-num_entries:]))
 
+def write_string_to_text_file(filepath, s):
+    with open(filepath, "w") as f:
+        f.write(s)
+
 def save_state_and_action_trajectories(
     folder_save,
     state_trajectories,
