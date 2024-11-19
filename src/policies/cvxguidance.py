@@ -35,7 +35,6 @@ class SCPSolver:
             eps_sdf = 1e-4,
             eps_rot = 1.,
             rho = 1.,
-            E = np.diag([1e-4, 1e-4, 1e-4, 1e-2, 1e-2, 1e-2, 1, 1, 1, 1 ,1, 1]),
             slack_region = 1.,
             pull_from_cache=False
     ):
@@ -51,12 +50,13 @@ class SCPSolver:
         self.eps_sdf = eps_sdf
         self.eps_rot = eps_rot
         self.rho = rho
-        self.slack_region = slack_region
+        # self.slack_region = slack_region
 
         self.nu = self.dynamics.action_size()
         self.nx = self.dynamics.state_size()
         self.nss = len(self.sdf.sdf_list)
 
+        E = np.diag([1e-4, 1e-4, 1e-4, 1e-2, 1e-2, 1e-2, 1, 1, 1, 1 ,1, 1])
         self.E = E
 
         self.action = cvx.Variable((self.K,self.nu))
@@ -66,6 +66,25 @@ class SCPSolver:
         self.slack_quat = cvx.Variable(self.K+1)
         self.action_prev = trajInit.action
         self.state_prev = trajInit.state
+        
+        A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
+        A, B, C = np.array(A), np.array(B), np.array(C)
+
+        propState = np.copy(trajInit.state)
+        for i in range(K):  # Runs for all actions
+            propState[i+1, :] = dynamics.step(propState[i, :], trajInit.action[i, :])
+
+        # Compute affine components
+        A_prop = np.array([A[i] @ propState[i, :] for i in range(K)])
+        B_action = np.array([B[i] @ trajInit.action[i, :] for i in range(K)])
+        residual = propState[1:, :] - (A_prop + B_action + C)
+
+        self.slack_region = np.linalg.norm(
+            np.array([np.linalg.inv(self.E) @ residual[i, :] for i in range(K)]),
+            ord=1
+        )
+
+
         self.slack_sdf_prev = self.sdf.sdf_values(self.state_prev[:,:3])
         self.sdf = sdf
         self.constraints = []
@@ -94,7 +113,7 @@ class SCPSolver:
         # bouond on dynamics slack variable
         slack_bound = self.slack_region*self.slack_inc
         #print(slack_bound)
-        self.constraints += [ cvx.norm( self.slack_dyn, p='fro' ) <= slack_bound ]
+        # self.constraints += [ cvx.norm( self.slack_dyn, p=1 ) <= slack_bound ]
 
         return slack_bound
     
@@ -171,7 +190,8 @@ class SCPSolver:
         rotation_cost = self.eps_rot * cvx.square( cvx.norm(self.state[:,-3:], p='fro') )
 
         # Compute virtual control running cost
-        virtual_cost = self.eps_dyn * cvx.norm(self.E @ (self.slack_dyn).T, p=1)
+        # virtual_cost = self.eps_dyn * cvx.norm(self.E @ (self.slack_dyn).T, p=1)
+        virtual_cost = self.eps_dyn * cvx.norm(self.slack_dyn, p=1)
 
         # Compute the distance cost
         # Frobenius norm for position only
@@ -185,6 +205,7 @@ class SCPSolver:
         running_cost = action_cost + rotation_cost + virtual_cost # + distance_cost
         bolza_cost = running_cost + terminal_cost
         self.objective = bolza_cost
+        # self.objective = terminal_cost + virtual_cost
 
         return action_cost, rotation_cost, virtual_cost, distance_cost, terminal_cost, bolza_cost
 
@@ -265,7 +286,7 @@ class SCPSolver:
                         "tol_rel_gap": 1e-6,
                         "tol_abs_gap": 1e-6
                     }
-                    prob.solve(solver=cvx.CLARABEL)#,**clarabel_options)
+                    prob.solve(solver=cvx.CLARABEL)# ,**clarabel_options)
                 except:
                     prob.solve(solver=cvx.SCS)
                 if verbose: print("Solver: " + str(prob.solver_stats.solver_name))
@@ -313,7 +334,7 @@ class SCPSolver:
             cacher_state.save(optimal_state_history)
 
         if return_information:
-            return optimal_action_history, optimal_state_history, (log_action_cost, log_rotation_cost, log_virtual_cost, log_distance_cost, log_terminal_cost, log_bolza_cost, log_slack_bound), self.slack_dyn_prev.value
+            return optimal_action_history, optimal_state_history, (log_action_cost, log_rotation_cost, log_virtual_cost, log_distance_cost, log_terminal_cost, log_bolza_cost, log_slack_bound), self.slack_dyn_prev.value, prob
         else:
             return optimal_action_history, optimal_state_history
 
