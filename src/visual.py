@@ -118,7 +118,16 @@ class Visual:
         # Close the figure
         plt.close(fig)
 
-    def plot_environment(self):
+    def plot_environment_from_objects(
+        self,
+        map_,
+        sdfs,
+        path_xyz,
+        path_xyz_smooth,
+        path_xyz_cvx,
+        path_propagated,
+        save_filename,
+    ):
 
         # For plot environment to work correctly we need the following
         # - signed_distance_function.pkl
@@ -138,45 +147,14 @@ class Visual:
             "y": fig.add_subplot(gs[1, 1], projection='3d'),
         }
 
-        # Load the map and the signed distance function data
-        map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
-        sdfs = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "signed_distance_function.pkl"))
-
         # shape is (3,2) and is the lower and upper bounds for each axis
         extents = map_.extents_metres_xyz
 
         # We also want the a* (not policy) path, if it exists
-        path_flag = False
-        fp_path = os.path.join(self.run_folder, "a_star", "start_to_goal.npz")
-        try:
-            path_xyz = utils.logging.load_from_npz(fp_path)
-            path_flag = True
-        except:
-            warnings.warn(f"No path found for A* at {fp_path}")
-
-        path_smooth_flag = False
-        fp_path_smooth = os.path.join(self.run_folder, "a_star", "start_to_goal_smooth.npz")
-        try:
-            path_xyz_smooth = utils.logging.load_from_npz(fp_path_smooth)
-            path_smooth_flag = True
-        except:
-            warnings.warn(f"No (smoothed) path found for A* at {fp_path_smooth}")
-        
-        path_cvx_flag = False
-        fp_path_cvx = os.path.join(self.run_folder, "cvx", "path_xyz_cvx.npz")
-        try:
-            path_xyz_cvx = utils.logging.load_from_npz(fp_path_cvx)
-            path_cvx_flag = True
-        except:
-            warnings.warn(f"No cvx path found at {fp_path_cvx}")
-        
-        path_propagated_flag = False
-        fp_path_propagated = os.path.join(self.run_folder, "cvx", "propagated.npz")
-        try:
-            path_propagated = utils.logging.load_from_npz(fp_path_propagated)
-            path_propagated_flag = True
-        except:
-            warnings.warn(f"No propagated cvx path found at {fp_path_propagated}")
+        path_flag = path_xyz is not None
+        path_smooth_flag = path_xyz_smooth is not None
+        path_cvx_flag = path_xyz_cvx is not None
+        path_propagated_flag = path_propagated is not None
 
         # Now get the voxel grid info for rendering
         print("Precomputing voxel information...", end="")
@@ -330,7 +308,75 @@ class Visual:
 
         # Save the figure
         #plt.tight_layout()
-        fig.savefig(os.path.join(self.visuals_folder, "environment.png"))               
+        fig.savefig(os.path.join(self.visuals_folder, f"{save_filename}"))   
+
+
+    def plot_environment(self):
+
+        # For plot environment to work correctly we need the following
+        # - signed_distance_function.pkl
+        # - map.pkl
+
+        # Create a figure
+        fig = plt.figure(figsize=(24, 24))
+        # 1 row, two columns
+        gs = gridspec.GridSpec(2, 2) #, height_ratios=[1, 1, 0.15, 0.15, 0.15, 0.15])
+        axs = {
+            # main world view render
+            "main": fig.add_subplot(gs[0, 0], projection='3d'),
+
+            # orthographic views (from which axis)
+            "z": fig.add_subplot(gs[0, 1], projection='3d'),
+            "x": fig.add_subplot(gs[1, 0], projection='3d'),
+            "y": fig.add_subplot(gs[1, 1], projection='3d'),
+        }
+
+        # Load the map and the signed distance function data
+        map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
+        sdfs = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "signed_distance_function.pkl"))
+        
+        # We also want the a* (not policy) path, if it exists
+        path_flag = False
+        fp_path = os.path.join(self.run_folder, "a_star", "start_to_goal.npz")
+        try:
+            path_xyz = utils.logging.load_from_npz(fp_path)
+            path_flag = True
+        except:
+            warnings.warn(f"No path found for A* at {fp_path}")
+
+        path_smooth_flag = False
+        fp_path_smooth = os.path.join(self.run_folder, "a_star", "start_to_goal_smooth.npz")
+        try:
+            path_xyz_smooth = utils.logging.load_from_npz(fp_path_smooth)
+            path_smooth_flag = True
+        except:
+            warnings.warn(f"No (smoothed) path found for A* at {fp_path_smooth}")
+        
+        path_cvx_flag = False
+        fp_path_cvx = os.path.join(self.run_folder, "cvx", "path_xyz_cvx.npz")
+        try:
+            path_xyz_cvx = utils.logging.load_from_npz(fp_path_cvx)
+            path_cvx_flag = True
+        except:
+            warnings.warn(f"No cvx path found at {fp_path_cvx}")
+        
+        path_propagated_flag = False
+        fp_path_propagated = os.path.join(self.run_folder, "cvx", "propagated.npz")
+        try:
+            path_propagated = utils.logging.load_from_npz(fp_path_propagated)
+            path_propagated_flag = True
+        except:
+            warnings.warn(f"No propagated cvx path found at {fp_path_propagated}")
+            
+        self.plot_environment_from_objects(
+            map_=map_,
+            sdfs=sdfs,
+            path_xyz=path_xyz if path_flag else None,
+            path_xyz_smooth=path_xyz_smooth if path_smooth_flag else None,
+            path_xyz_cvx=path_xyz_cvx if path_cvx_flag else None,
+            path_propagated=path_propagated if path_propagated_flag else None,
+            save_filename="environment.png",
+        )   
 
     def load_mppi_steps_states_actions_costs(self):
         mppi_folder = os.path.join(self.run_folder, "policy", "mppi")
