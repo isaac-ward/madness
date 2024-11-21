@@ -53,9 +53,9 @@ if __name__ == "__main__":
     state_goal = np.zeros(dyn.state_size())
     # state_goal[:3] = np.array([10,5,2])
     # state_goal[:3] = 25
-    state_goal[:3] = np.array([25,25,5])
+    # state_goal[:3] = np.array([25,25,5])
     # state_goal[3] = 1
-    # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
+    state_goal[:3] = state_initial[:3] + np.array([5,5,20])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -259,9 +259,7 @@ if __name__ == "__main__":
         verbose=True,
     )
 
-    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=30)
-
-    
+    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=5)
 
     path_scvx = x_scvx[:,:3]
 
@@ -270,6 +268,27 @@ if __name__ == "__main__":
     for i in range(1,K+1):
         propagated_traj[i,:] = dyn.step(propagated_traj[i-1,:], u_scvx[i-1,:])
     propagated_traj_path = propagated_traj[:,:3]
+
+    # Create the figure and axis
+    plt.figure(figsize=(10, 6))
+
+    # Plot the data
+    plt.plot([lpi['u_cost'] for lpi in logs_per_iter], label="Control Cost", color="blue", linewidth=2.5, linestyle="-")
+    plt.plot([lpi['x_cost'] for lpi in logs_per_iter], label="State-Goal Cost", color="orange", linewidth=2.5, linestyle="-")
+    plt.plot([lpi['nu_cost'] for lpi in logs_per_iter], label="Virtual Control Cost", color="red", linewidth=2.5, linestyle="-")
+    plt.plot([lpi['sdf_cost'] for lpi in logs_per_iter], label="SDF Cost", color="black", linewidth=2.5, linestyle="-")
+
+    # Beautify the chart
+    plt.title("Beautiful Line Chart", fontsize=18, fontweight="bold", color="darkblue")
+    plt.xlabel("X-axis (Iteration)", fontsize=14)
+    plt.ylabel("Y-axis (Cost)", fontsize=14)
+    plt.grid(color='gray', linestyle=':', linewidth=0.5)
+    plt.legend(fontsize=12, loc="upper right")
+    plt.tight_layout()
+
+    # Save and display the chart
+    plt.savefig('beautiful_line_chart.png', dpi=300)
+    plt.show()
 
     # Create the environment
     num_steps = np.shape(path_xyz_smooth)[0]
