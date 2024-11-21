@@ -284,8 +284,7 @@ class SCPSolver:
                     continue
                 
                 # print("we made it this far boys. let's pass it on")
-                self.slack_dyn_prev = self.slack_dyn
-                self.slack_region = np.linalg.norm(self.slack_dyn_prev.value, ord=1)
+                self.slack_region = np.linalg.norm(self.slack_dyn.value, ord=1)
                 if verbose: print("Norm of slack_dyn: ", self.slack_region)
                 self.cost = np.copy(prob.value)
                 self.state_prev = np.copy(self.state.value)
@@ -302,9 +301,384 @@ class SCPSolver:
             cacher_state.save(optimal_state_history)
 
         if return_information:
-            return optimal_action_history, optimal_state_history, (log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound), self.slack_dyn_prev.value
+            return optimal_action_history, optimal_state_history, (log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound), self.slack_dyn.value
         else:
             return optimal_action_history, optimal_state_history
+        
+class SCvxSolver:
+    """
+    Just trying to simplify this problem
+    """
+    def __init__(
+            self,
+            dynamics:DynamicsQuadcopter3D,
+            x_traj_init:np.ndarray,
+            u_traj_init:np.ndarray,
+            x_start:np.ndarray,
+            x_goal:np.ndarray,
+            sdf:Environment_SDF,
+            sig=50,
+            eps=1e-3,
+            eps_ss=1e-4,
+            verbose=False,
+    ):
+        self.dynamics = dynamics
+        self.x_traj_init = x_traj_init
+        self.u_traj_init = u_traj_init
+        self.x_start = x_start
+        self.x_goal = x_goal
+        self.sdf = sdf
+        self.sig = sig
+        self.eps = eps
+        self.eps_ss = eps_ss
+        self.verbose = verbose
+
+        self.N = np.shape(self.x_traj_init)[0]
+        self.n = self.dynamics.state_size()
+        self.m = self.dynamics.action_size()
+        self.nss = len(self.sdf.sdf_list)
+    
+    def _print(
+            self, 
+            *args
+    ):
+        """
+        Function to print messages to terminal when verbose option is enabled
+        """
+        if self.verbose:
+            print(*args)
+    
+    def boundary_constraints(
+            self,
+            x:cvx.Variable,
+    ):
+        """
+        Boundary constraints for state trajectory
+
+        Equations 38f and 38g in paper.
+        """
+        # Create constraint list
+        constraints = []
+
+        # Add state boundary constraints
+        constraints += [x[0] == self.x_start]
+        constraints += [x[-1] == self.x_goal]
+
+        return constraints
+    
+    def set_constraints(
+            self,
+            x:cvx.Variable,
+            u:cvx.Variable,
+    ):
+        """
+        Set constraints for both state and action trajectories.
+
+        Equations 38c and 38d in paper.
+        """
+        # Create constraint list
+        constraints = []
+
+        # Add state set contraints
+        # TODO add free final time constraint
+        # TODO add velocity constraints
+        # TODO add angular velocity constraints
+
+        # Add control set constraints
+        u_upper = np.array(self.dynamics.action_ranges())[:,1]
+        u_lower = np.array(self.dynamics.action_ranges())[:,0]
+        constraints += [u[k] <= u_upper for k in range(self.N - 1)]
+        constraints += [u[k] >= u_lower for k in range(self.N - 1)]
+
+        return constraints
+    
+    def sdf_constraints(
+            self,
+            x:cvx.Variable,
+            x_prev:np.ndarray,
+            slack_sdf:cvx.Variable
+    ):
+        """
+        """
+        # Create constraint list
+        constraints = []
+
+        # slack sdf prev is going to be a matrix (num_timesteps, num_sdfs)
+        slack_sdf_prev = self.sdf.sdf_values(x_prev[:,:3])
+
+        # G's shape is the same
+        G = gradient_log_softmax(self.sig, slack_sdf_prev)
+
+        # # affine part of the assembled matrix form of the constraints
+        L0 = log_softmax(self.sig, slack_sdf_prev)
+        
+        constraints += [cvx.diag( G @ (slack_sdf - slack_sdf_prev).T) + L0 >= 0]
+
+        for i in range(self.nss):
+            c = self.sdf.sdf_list[i].center_metres_xyz
+
+            match self.sdf.sdf_list[i].sdf_type:
+                case 0:
+                    r = self.sdf.sdf_list[i].radius_metres
+                    constraints += [slack_sdf[k,i] <= 1 - (1/r)*cvx.norm2(x[k,:3] - c) for k in range(self.N)]
+                case 1:
+                    # NOT TESTED
+                    s = self.sdf.sdf_list[i].diagonal_metres
+                    constraints += [slack_sdf[k,i] <= 1 - cvx.norm_inf((x[k,:3] - c)/s ) for k in range(self.N)]
+        
+        return constraints
+    
+    def dynamic_constraints(
+        self,
+        x:cvx.Variable,
+        u:cvx.Variable,
+        nu:cvx.Variable,
+        x_prev:np.ndarray,
+        u_prev:np.ndarray,
+        nu_max:float,
+    ):
+        """
+        Dynamic constraints for states and controls
+
+        Equations 36b
+        """
+        # Create constraint list
+        constraints = []
+
+        # Propagate states with model
+        # x_prop = np.zeros_like(x_prev)
+        # x_prop[0] = np.copy(x_prev[0])
+        # for _k in range(self.N - 1):
+        #     x_prop[_k + 1] = self.dynamics.step(x_prop[_k], u_prev[_k])
+
+        # Get affinized dynamics
+        A, B, C = self.dynamics.affinize(x_prev[:-1],u_prev)
+        A, B, C = np.array(A),np.array(B),np.array(C)
+
+        # Create virtual control term (recommended to be identity matrix)
+        E = np.eye(self.n)#np.zeros_like(A[0])
+
+        # Dynamic feasibility constraint (Equation 46a)
+        constraints += [x[k+1] == A[k] @ x[k] + B[k] @ u[k] + C[k] + E @ nu[k] for k in range(self.N - 1)]
+
+        constraints += [cvx.max(cvx.abs(nu)) <= nu_max]
+
+        return constraints
+    
+    def trust_region_constraints(
+            self,
+            x:cvx.Variable,
+            u:cvx.Variable,
+            x_prev:np.ndarray,
+            u_prev:np.ndarray,
+            αx,
+            αu,
+            η,
+    ):
+        """
+        Add trust region constraint to handle artificial unboundedness
+        """
+        # Create constraint list
+        constraints = []
+
+        # Add trust region constraint (Equation 45)
+        constraints += [αx*cvx.norm2(x[_k] - x_prev[_k]) + αu*cvx.norm2(u[_k] - u_prev[_k]) <= η for _k in range(self.N - 1)]
+
+        return constraints
+    
+    def objective_update(
+            self,
+            x:cvx.Variable,
+            u:cvx.Variable,
+            slack_sdf:cvx.Variable,
+            nu:cvx.Variable,
+            λ,
+    ):
+        """
+        Update the objective function of the SCvx SCP problem.
+        # TODO normalize?
+        """
+        # Define objective function
+        objective = 0
+
+        # Add control effort cost
+        u_upper = np.array(self.dynamics.action_ranges())[:,1]
+        u_lower = np.array(self.dynamics.action_ranges())[:,0]
+        control_objective = cvx.sum([(cvx.norm2(u[_k]))**2 for _k in range(self.N - 1)])
+        objective += control_objective
+
+        # Add goal distance cost
+        distance_objective = cvx.sum([(cvx.norm2(x[_k] - self.x_goal))**2 for _k in range(self.N - 1)])
+        objective += distance_objective
+
+        # Add virtual control cost
+        virtual_control_objective = λ * cvx.sum([cvx.norm2(nu[_k])**2 for _k in range(self.N - 1)])
+        objective += virtual_control_objective
+
+        # Add sdf terminal cost
+        sdf_objective = -self.eps_ss * cvx.sum(slack_sdf)
+        objective += sdf_objective
+
+        return objective, control_objective, distance_objective, virtual_control_objective, sdf_objective
+    
+    def solve_failed(
+            self,
+            η,
+            λ,
+            virt_max,
+            failed,
+    ):
+        """
+        """
+        λscale = 2.
+        λmax = 1e6
+        λmin = 1e-3
+        ηscale = 2.
+        ηmax = 10
+        ηmin = 1e-3
+        virt_scale = 2
+        if failed:
+            # λ /= λscale
+            η *= ηscale
+            virt_max *= virt_scale
+        else:
+            if λ < λmax:
+                λ *= λscale
+            η /= ηscale
+            virt_max /= virt_scale
+
+        return η, λ, virt_max
+
+
+    def solve(
+            self,
+            max_iters=30,
+            return_information=False,
+    ):
+        """
+        The Successive Convexification (SCvx) solver is outlined in "Convex Optimization for 
+        Trajectory Generation" by Malyuta et al.
+
+        SCvx is an applied methodology for solving Sequential Convex Programs (SCPs). SCP is a 
+        framework to apply convex optimization techniques to solve an inherently non-convex problem.
+        It works by solving a sequence of convex subproblems (which are approximations of the original
+        non-convex problem). By the end, the user should have a fairly accurate local optimal solution
+        for the problem.
+
+        SCvx solves the SCP by employing
+        1. Virtual control variables (slack variables)
+        2. Adaptive trust regions
+
+        TODO this shit is ass and slow as fuck need to better tune and scale (plus need better update rules)
+        - αx
+        - αu
+        - ηinit
+        - λinit
+        - nu_max
+        """
+        # Define previous trajectory
+        x_prev = np.copy(self.x_traj_init)
+        u_prev = np.copy(self.u_traj_init)
+        J_prev = np.inf
+
+        # Define trust region parameters
+        αx = 1.
+        αu = 0
+        ηinit = 10.
+        η = np.copy(ηinit)
+        
+        # Define virtual control penalty
+        λinit = 30.
+        λ = np.copy(λinit)
+        nu_max = 1.
+
+        # Define SCvx convergence variables
+        iters = 1
+        converged = False
+
+        # Logs
+        logs_per_iter = []
+
+        # SCvx loop
+        while (iters <= max_iters) and (not converged):
+            # Print Info
+            self._print("SCvx Iteration " + str(iters))
+            self._print("   λ: " + str(λ))
+            self._print("   η: " + str(η))
+            self._print("   nu_max: " + str(nu_max))
+
+            # Create convex variables
+            x = cvx.Variable((self.N,self.n))
+            u = cvx.Variable((self.N - 1,self.m))
+            nu = cvx.Variable((self.N - 1,self.n))
+            slack_sdf = cvx.Variable((self.N,self.nss))
+
+            # Get problem constraints
+            constraints = []
+            constraints += self.boundary_constraints(x)
+            # constraints += [x[0] == self.x_start]
+            # if nu_max <= 1:
+            #     constraints += [x[-1] == self.x_goal]
+            constraints += self.dynamic_constraints(x,u,nu,x_prev,u_prev,nu_max)
+            constraints += self.set_constraints(x,u)
+            constraints += self.trust_region_constraints(x,u,x_prev,u_prev,αx,αu,η)
+            constraints += self.sdf_constraints(x,x_prev,slack_sdf)
+
+            # Get problem objective
+            objective, control_objective, distance_objective, virtual_control_objective, sdf_objective = self.objective_update(x,u,slack_sdf,nu,λ)
+
+            # Solve problem
+            prob = cvx.Problem(cvx.Minimize(objective),constraints)
+            try:
+                prob.solve(solver=cvx.CLARABEL)
+            except:
+                η, λ, nu_max = self.solve_failed(η,λ,nu_max,1)
+                continue
+            if not(prob.status == cvx.OPTIMAL or prob.status == cvx.OPTIMAL_INACCURATE):
+                η, λ, nu_max = self.solve_failed(η,λ,nu_max,1)
+                continue
+            else:
+                η, λ, nu_max = self.solve_failed(η,λ,nu_max,0)
+            J = prob.value
+
+            # Check convergence criteria
+            if (abs(J_prev - J) < self.eps):
+                converged = True
+            
+            # Display improvement
+            self._print("   Cost improvement: " + str(J_prev - J))
+            self._print("   Max Virtual Control: " + str(np.max(np.abs(nu.value))))
+            self._print("   Control Objective: " + str(control_objective.value))
+            self._print("   Distance Objective: " + str(distance_objective.value))
+            self._print("   Virtual Control Objective: " + str(virtual_control_objective.value))
+            self._print("   SDF Objective: " + str(sdf_objective.value))
+
+            # Penalize virtual control
+            # if (np.linalg.norm(nu.value,np.inf)) > self.eps and (λ < λmax):
+            #     λ *= λscale
+            #     η /= ηscale
+
+            # Store new previous trajectory
+            x_prev = np.copy(x.value)
+            u_prev = np.copy(u.value)
+            J_prev = np.copy(J)
+
+            # 
+            log_per_iter = {"x":x_prev,
+                            "u":u_prev,
+                            "nu":nu.value,
+                            "J":J_prev,
+                            "u_cost":control_objective.value,
+                            "x_cost":distance_objective.value,
+                            "nu_cost":virtual_control_objective.value,
+                            "sdf_cost":sdf_objective.value,
+                            }
+            logs_per_iter.append(log_per_iter)
+
+            # Add iters
+            iters += 1
+
+        return x.value,u.value,logs_per_iter
 
 # TODO
 class PolicyConvex:

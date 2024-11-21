@@ -46,43 +46,49 @@ class PolicyALiLQR:
         segments=1,
         eps=1e-2,
         max_iters=1000,
-        verbose=False
+        verbose=False,
+        run_folder=None,
     ):
         """
         Initialization function for PolicyiLQR class
         """
         # Store system dynamics
-        self.dynamics = dynamics    # System dynamics
+        self.dynamics = dynamics        # System dynamics
 
         # Store trajectory to track
-        self.x_track = x_track      # State trajectory to track
-        self.u_track = u_track      # Open loop control inputs for x_track
+        self.x_track = x_track          # State trajectory to track
+        self.u_track = u_track          # Open loop control inputs for x_track
 
         # Store iLQR cost matrices
-        self.Q = Q                  # State cost matrix
-        self.R = R                  # Control cost matrix
-        self.QN = QN                # Terminal state cost matrix
-        self.W = W                  # Continuity cost matrix
+        self.Q = Q                      # State cost matrix
+        self.R = R                      # Control cost matrix
+        self.QN = QN                    # Terminal state cost matrix
+        self.W = W                      # Continuity cost matrix
         
         # AL-iLQR parameters
-        self.eps = eps              # Convergence criteria
-        self.max_iters = max_iters  # Maximum allowable iterations
-        self.segments = segments    # Segments for AL-iLQR problem
+        self.eps = eps                  # Convergence criteria
+        self.max_iters = max_iters      # Maximum allowable iterations
+        self.segments = segments        # Segments for AL-iLQR problem
 
         # Class variables
-        self.log_folder = None      # Log folder for logging
-        self.verbose = verbose      # Verbose option for class operations
+        self.run_folder = run_folder    # Run folder for logging
+        self.log_folder = None          # Log folder for logging
+        self.verbose = verbose          # Verbose option for class operations
 
         # Internal diagnostic variables
-        self.state_error = []       # State error
-        self.cost = []              # Costs
+        self.state_error = []           # State error
+        self.cost = []                  # Costs
 
         # Verify inputs are valid
         if self.max_iters <= 1:
             raise ValueError("Argument `max_iters` must be at least 1")
+        
+        # Enable logging if desired
+        if self.run_folder != None:
+            self.enable_logging(self.run_folder)
 
         # Solve segmented AL-iLQR
-        self.x_bar,self.u_bar,self.Y,self.y = self._segmented_al_ilqr(
+        self.x_bar,self.u_bar,self.Kk,self.dk = self.segmented_al_ilqr(
             x_track=self.x_track,
             u_track=self.u_track,
             segments=self.segments,
@@ -105,7 +111,7 @@ class PolicyALiLQR:
         """
         Enable logging to a folder
         """
-        self.log_folder = os.path.join(run_folder, "policy", "ilqr")
+        self.log_folder = os.path.join(run_folder, "policy", "al_ilqr")
 
     def delete_logs(
             self
@@ -115,6 +121,16 @@ class PolicyALiLQR:
         """
         if self.log_folder is not None:
             shutil.rmtree(self.log_folder)
+    
+    def generate_logs(
+            self,
+    ):
+        """
+        Function to generate log files on the performance of AL-iLQR
+        """
+        # TODO Cost improvement over time
+
+        # TODO Plot nominal trajectory improvement per iteration
     
     def act(
         self,
@@ -127,7 +143,7 @@ class PolicyALiLQR:
         """
         # Get the optimal action and other logging information
         x = state_history[-1]
-        optimal_action = self.u_bar[timestep] + self.y[timestep] + self.Y[timestep] @ (x - self.x_bar[timestep])
+        optimal_action = self.u_bar[timestep] + self.dk[timestep] + self.Kk[timestep] @ (x - self.x_bar[timestep])
 
         # Store state error
         self.state_error.append((x - self.x_bar[timestep]))
@@ -392,7 +408,7 @@ class PolicyALiLQR:
                 ρmult *= ρscaling
                 self._print("**Warning** Line Search convergence failed, increasing regularization term (ρ) by " + str(ρmult) + "x")
                 continue
-            elif ρmult != ρmult_init:
+            elif ρmult > ρmult_init:
                 # Scale down regularization multiplier
                 ρmult = ρmult / ρscaling
 
@@ -494,6 +510,10 @@ class PolicyALiLQR:
         ρmax = 1e4          # Maximum regularization
         ρinc = 2            # Regularization scaling factor
         ρ = max(ρmult * (1e-9),(1e-9))  # Regularization factor
+
+        # Verify regularization is ok
+        if ρ > ρmax:
+            raise Exception("Hit maximum limit for regularization (ρ = " + str(ρ) + ")")
 
         # Get linearized jacobians
         A_total,B_total = dyn.linearize(x[:-1],u)
