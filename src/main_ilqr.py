@@ -9,6 +9,8 @@ import copy
 import matplotlib.pyplot as plt
 import cupy as cp
 from scipy.signal import savgol_filter
+import cvxpy
+from scipy.spatial.transform import Rotation as R
 
 import utils.general
 import utils.logging
@@ -27,16 +29,6 @@ from sdf import Environment_SDF
 from policies.cvxguidance import SCPSolver, Trajectory
 
 if __name__ == "__main__":
-
-    def upsample(path, num_points_between=1):
-        upsampled_path = []
-        for i in range(len(path) - 1):
-            upsampled_path.append(path[i])
-            for j in range(1, num_points_between + 1):
-                upsampled_path.append(path[i])
-        upsampled_path.append(path[-1])  # Add the last point
-        return np.array(upsampled_path)
-
     # Seed everything
     utils.general.random_seed(42)
 
@@ -50,127 +42,187 @@ if __name__ == "__main__":
     m = dyn.action_size()
 
     # Create a map representation
-    #map_ = standard.get_standard_map()
+    # map_ = standard.get_standard_map()
     # map_ = standard.get_28x28x28_at_111()
-
     map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
-    # NOTE: The following utility finds two random points - it doesn't check for collisions!
-    # If you're using a map with invalid positions then you might need to specify the start and goal states manually
     state_initial = np.zeros(dyn.state_size())
     state_initial[:3] = 5
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
     # state_goal[:3] = np.array([10,5,2])
-    state_goal[:3] = 25
+    # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
     # state_goal[3] = 1
+    state_goal[:3] = state_initial[:3] + np.array([5,5,20])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
-    path_xyz = upsample(path_xyz, num_points_between=5)
-    # path_xyz_smooth = path_xyz # TODO
-    path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
-    print(path_xyz)
-    print(path_xyz_smooth)
-    print(path_xyz_smooth.shape)
+    try:
+        path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz, desired_points_per_meter=10)
+    except Exception as e:
+        print(e)
+        path_xyz_smooth = path_xyz
     K = path_xyz_smooth.shape[0] - 1
 
+    # SCP --------------------------------------------------------------------------------------------------------------------
+    # Create initial trajectory guess for SCP
+    trajInit = Trajectory()
 
-    # # Create initial trajectory guess for SCP
-    # trajInit = Trajectory()
+    # Extract dynamics constants and coeffs
+    k = dyn.thrust_coef
+    m = dyn.mass
+    g = dyn.g
+    w_trim = np.sqrt(m*g/(4*k))
 
-    # # Extract dynamics constants and coeffs
-    # k = dyn.thrust_coef
-    # m = dyn.mass
-    # g = dyn.g
-    # w_trim = np.sqrt(m*g/(4*k))
-    # #dyn.dt = 0.25
+    dyn.dt = 0.05
 
-    # # Initialize position state guess with smooth Astar results
-    # trajInit.state = np.zeros((K+1, dyn.state_size()))
-    # trajInit.state[:,:3] = path_xyz_smooth
-    # # trajInit.action = np.zeros((K,4))
+    # We need to formulate an initial guess for the trajectory based on the A* path and
+    # finite difference methods, using an euler angle angle representation (123 scheme)
+    def finite_diff_helper(vector, clamp=True):
+        fd = np.zeros(np.shape(vector))
+        dt = dyn.dt
 
-    # # Use finite difference to back out velocities at each step (assume final velocity of zero)
-    # vel = np.zeros(np.shape(path_xyz_smooth))
-    # vel[:-1] = (path_xyz_smooth[1:] - path_xyz_smooth[:-1])/dyn.dt
-    # vel[-1] = vel[-2]
+        # Keep the first and last points the same
+        if clamp:
+            fd[0] = vector[0]
+            fd[-1] = vector[-1]
 
-    # # Smooth the velocity components using Savitzky-Golay filter
-    # smoothed_vel_x = savgol_filter(vel[:, 0], window_length=5, polyorder=1)
-    # smoothed_vel_y = savgol_filter(vel[:, 1], window_length=5, polyorder=1)
-    # smoothed_vel_z = savgol_filter(vel[:, 2], window_length=5, polyorder=1)
+            # Apply finite difference for each middle point
+            for i in range(1, len(vector) - 1):
+                fd[i] = (vector[i + 1] - vector[i - 1]) / (2 * dt)
+        else:
+            # Apply finite difference for each middle point
 
-    # smoothed_vel = np.stack([smoothed_vel_x, smoothed_vel_y, smoothed_vel_z], axis=-1)
-    # trajInit.state[:,7:10] = vel
-    # print("shape of smoothed vel: ", smoothed_vel.shape)
+            # Forward difference for the first point
+            fd[0] = (vector[1] - vector[0]) / dt
 
-    # # Use finite difference to back out accelerations -> actions (acceleration at first step is assumed to be from zero velocity to starting velocity)
-    # accel = np.zeros((K+1,3))
-    # accel[1:] = (smoothed_vel[1:] - smoothed_vel[:-1])/dyn.dt
-    # accel -= np.array([[0,0,g]])
-    # # print(accel)
+            # Central difference for middle points
+            for i in range(1, len(vector) - 1):
+                fd[i] = (vector[i + 1] - vector[i - 1]) / (2 * dt)
 
-    # # Specify the window size for smoothing
-    # window_size = 5  # Adjust as needed
+            # Backward difference for the last point
+            fd[-1] = (vector[-1] - vector[-2]) / dt
+            
+        # Assert that the shape is good
+        assert fd.shape == vector.shape, f"Shape is {fd.shape} but should be {vector.shape}"
 
-    # # Smooth the acceleration components using weighted moving average
-    # smoothed_accel_x = savgol_filter(accel[:, 0], window_length=5, polyorder=1)
-    # smoothed_accel_y = savgol_filter(accel[:, 1], window_length=5, polyorder=1)
-    # smoothed_accel_z = savgol_filter(accel[:, 2], window_length=5, polyorder=1)
-    # smoothed_accel = np.stack([smoothed_accel_x, smoothed_accel_y, smoothed_accel_z], axis=-1)
-
-    # w = np.sqrt( m*np.linalg.norm(smoothed_accel[:-1], axis=-1)/(4*k) )
-    # w_bounds = dyn.action_ranges()
-    # w = np.where( w > w_bounds[0,1], w_bounds[0,1], w)
-    # w = np.where( w < w_bounds[0,0], w_bounds[0,0], w)
-    # trajInit.action = w[:,np.newaxis]*np.ones((K,4))
-    # # trajInit.action = w_trim*np.ones((K,4))
-
-    # # Use acceleration vector to determine attitude assuming thrust vector corresponds to -z body axis
+        return fd 
     
-    # # thrust direction in global frame
-    # v1 = -smoothed_accel / np.linalg.norm(smoothed_accel, axis=-1)[:,np.newaxis] 
+    def clamped_smoothness_helper(vector, smoothness_weight=20.0, closeness_weight=1.0):
+        n_points, n_dims = vector.shape
+        smoothed_vector = np.zeros_like(vector)
 
-    # # thrust direction in body frame
-    # v2 = np.zeros((K+1,3))
-    # v2[:,2] = 1 
+        for i in range(n_dims):
+            # Define the optimization variable for this column
+            x = cvxpy.Variable(n_points)
 
-    # # create quaternion representation of heading by computing axis-angle rotation between the body and global
-    # q_v = np.cross(v2, v1, axis=-1) / np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis]
-    # q_0 = np.sqrt(2 * (1 + np.sum(v1*v2, axis=-1)))[:,np.newaxis] / 2
-    # q = np.concat([q_0, q_v],axis=-1)
+            # Objective 1: Smoothness - minimize squared differences between consecutive points
+            smoothness_objective = cvxpy.sum_squares(x[1:] - x[:-1])
 
-    # # normalize quaternion
-    # q /= np.linalg.norm(q,axis=-1)[:, np.newaxis]
+            # Objective 2: Closeness to the original path - minimize deviation from the original vector
+            closeness_objective = cvxpy.sum_squares(x - vector[:, i])
 
-    # trajInit.state[:,3:7] = q
-    # # trajInit.state[:,3] = 1
+            # Combined objective with weights
+            objective = cvxpy.Minimize(smoothness_weight * smoothness_objective + closeness_weight * closeness_objective)
 
-    # # Compute the angular velocity
-    # qf = q[1:] # advanced time-step history
-    # qb = q[:-1] # prior time-step history
+            # Constraints to keep the first and last points fixed (to avoid drifting)
+            constraints = [x[0] == vector[0, i], x[-1] == vector[-1, i]]
 
-    # # initialize om
-    # om = np.zeros((K+1, 3))
+            # Set up and solve the problem
+            prob = cvxpy.Problem(objective, constraints)
+            prob.solve()
 
-    # # populate using vectorized quaternion conjugate multiplication
-    # om[:-1] = 2/dyn.dt * np.stack([
-    #     qb[:,0]*qf[:,1] - qb[:,1]*qf[:,0] - qb[:,2]*qf[:,3] + qb[:,3]*qf[:,2],
-    #     qb[:,0]*qf[:,2] + qb[:,1]*qf[:,3] - qb[:,2]*qf[:,0] - qb[:,3]*qf[:,1],
-    #     qb[:,0]*qf[:,3] - qb[:,1]*qf[:,2] + qb[:,2]*qf[:,1] - qb[:,3]*qf[:,0]
-    # ], axis=-1)
-    # om[-1] = om[-2]
-    # trajInit.state[:,10:] = om
+            # Store the optimized column in the smoothed vector
+            smoothed_vector[:, i] = x.value
+        return smoothed_vector
+    
+    # Get the linear kinematics
+    pos = clamped_smoothness_helper(path_xyz_smooth, smoothness_weight=200)
+    # Compute velocities from finite difference with zero padding
+    vel = clamped_smoothness_helper(finite_diff_helper(pos, clamp=False))
+    acc = clamped_smoothness_helper(finite_diff_helper(vel, clamp=False))
+    acc -= np.array([[0,0,g]])
 
+    # Compute the xyz 123 scheme euler angles
+    rot = np.zeros(pos.shape)
+    # Iterate over each time step to compute the rotation matrix and Euler angles
+    for i in range(len(vel)):
+        # # Forward axis (x-axis) - normalize velocity vector
+        # forward = vel[i] / np.linalg.norm(vel[i])
+        
+        # # Up axis (z-axis) - gravity-aligned up vector
+        # up = np.array([0, 0, 1])  # Gravity points down along z
+        
+        # # Right axis (y-axis) - perpendicular to forward and up
+        # right = np.cross(up, forward)
+        # right /= np.linalg.norm(right)  # Normalize
+        
+        # # Recompute up to ensure orthogonality
+        # up = np.cross(forward, right)
+        
+        # # Construct the rotation matrix
+        # R_matrix = np.column_stack((forward, right, up))
+        
+        # # Convert rotation matrix to Euler angles (XYZ convention)
+        # rotation = R.from_matrix(R_matrix)  # Create a Rotation object
+        # euler_angles = rotation.as_euler('zyx', degrees=False)  # Get Euler angles in radians
+    
+        # # Store the Euler angles
+        # rot[i] = euler_angles
 
-    # # for i in range(1,K):
-    # #     trajInit.state[i,:] = dyn.step(trajInit.state[i-1,:], trajInit.action[i-1,:])
+        # Up axis is normalized accel
+        up = - acc[i] / np.linalg.norm(acc[i]) # negative because +z is down in this world
+        # Forward axis is normalized velocity
+        forward = vel[i] / np.linalg.norm(vel[i])
+        # Right axis is cross product of up and forward
+        right = np.cross(up, forward)
+        # Then forward is cross product of right and up
+        forward = np.cross(right, up)
+
+        # Compute the euler angle rotations that would transform a vector in the global frame into the body frame
+        rotation_matrix = R.from_matrix(np.column_stack((forward, right, up)))
+        euler_angles = rotation_matrix.as_euler('zyx', degrees=False)
+        rot[i] = euler_angles
+
+    # Smoothen
+    # rot = clamped_smoothness_helper(rot)
+    
+    # Compute the angular velocities
+    #ang_vel = clamped_smoothness_helper(finite_diff_helper(rot))
+    ang_vel = finite_diff_helper(rot, clamp=False)
+
+    # Angular velocity order is x y z so swap it around
+    ang_vel = ang_vel[:, ::-1]
+
+    ang_vel = clamped_smoothness_helper(ang_vel)
+
+    # Assemble in the order pos, rot, vel, ang_vel
+    # x, y, z, φ, θ, ψ, xd, yd, zd, wx, wy, wz
+    trajInit.state = np.concatenate([pos, rot, vel, ang_vel], axis=-1)
+
+    # Assert that the shape is correct
+    assert trajInit.state.shape == (K+1, dyn.state_size()), f"Shape is {trajInit.state.shape} but should be {(K+1, dyn.state_size())}"
+    
+    # Create an initial rough guess of the contorl inputs by 
+    # lookginat the mag of the acceleration times the mass and dividing 
+    # by 4 times the thrust coefficient (one for each rotor), and then 
+    # taking the square root. In other words:
+    # ft = k * (w1_sq + w2_sq + w3_sq + w4_sq)
+    # m * a = k * (w1_sq + w2_sq + w3_sq + w4_sq)
+    # w = sqrt(m * a / (4 * k))
+    action_guesses = np.sqrt(m*np.linalg.norm(acc[:-1], axis=-1)/(4*k))
+    # Clip it into the action bounds
+    action_guesses = np.clip(action_guesses, dyn.action_ranges()[0,0], dyn.action_ranges()[0,1])
+    # Set the actions
+    trajInit.action = action_guesses[:,np.newaxis]*np.ones((K,4))
+
+    # Assert that the shape is correct
+    assert trajInit.action.shape == (K, dyn.action_size()), f"Shape is {trajInit.action.shape} but should be {(K, dyn.action_size())}"
 
     # Create a list to hold centers and radii
     sdfs = Environment_SDF(dyn)
@@ -182,56 +234,89 @@ if __name__ == "__main__":
         max_spheres=500,
         randomness_deg=45
     )
-    print("Sphere Count: " + str(len(sdfs.sdf_list)))
+    #print("Sphere Count: " + str(len(sdfs.sdf_list)))
 
-    # # initialize SCP solver object
-    # scp = SCPSolver(K = K,
-    #                 dynamics=copy.deepcopy(dyn),
-    #                 sdf = sdfs,
-    #                 trajInit=trajInit,
-    #                 maxiter = 20,
-    #                 eps_dyn=1e5,
-    #                 eps_sdf=10.,
-    #                 sig = 30.,
-    #                 rho=2.,
-    #                 pull_from_cache=True)
+    # initialize SCP solver object
+    scp = SCPSolver(K = K,
+                    dynamics=copy.deepcopy(dyn),
+                    sdf = sdfs,
+                    trajInit=trajInit,
+                    maxiter = 40,
+                    eps_dyn=1e1,
+                    eps_sdf=1e-6,
+                    eps_rot=1e-1,
+                    sig = 30.,
+                    rho=2.,
+                    slack_region=1.,
+                    pull_from_cache=True)
 
-    # # Setup SCP iterations manually until exit condition is implemented
-    # state_history = state_initial
-    # optimal_action_history, optimal_state_history = scp.solve(state_goal=state_goal,
-    #             state_history=state_history[np.newaxis,:])
-    # #print(optimal_action_history)
-    
-    # # Extract euclidean coordinates of drone path from state history
-    # position_history = optimal_state_history[:,:3]
+    # Setup SCP iterations manually until exit condition is implemented
+    state_history = state_initial
+    optimal_action_history, optimal_state_history, cvx_cost_logs, cvx_slack_log = scp.solve(
+        state_goal=state_goal,
+        state_history=state_history[np.newaxis,:],
+        return_information=True,
+        verbose=False,
+    )
 
-    # iLQR ----------------------------------------------------------
-    basic_state_traj = np.zeros((K+1,n))#np.zeros_like(optimal_state_history)
-    basic_state_traj[:,:3] = path_xyz_smooth
-    # basic_state_traj[:,3] = 1
-    basic_hover_action = np.ones((K,m)) * np.sqrt(dyn.mass*dyn.g/(4*dyn.thrust_coef))
+    # iLQR --------------------------------------------------------------------------------------------------------------------
     # Create iLQR policy
     n,m = dyn.state_size(),dyn.action_size()
-    Q = np.eye(n) * 1
-    Q[:3] = Q[:3] * 10
+    Q = np.eye(n) * 10
+    Q[:3] = Q[:3] * 2
     R = np.eye(m) * 1
-    QN = np.eye(n) * 1
-    QN[:3] = QN[:3] * 20
+    QN = np.eye(n) * 20
+    QN[:3] = QN[:3] * 2
     W = np.eye(m) * 0
+    
+    def al_ilqr_hover():
+        """
+        AL-iLQR sovled using an initial hover trajectory
+        """
+        basic_state_traj = np.zeros((K+1,n))#np.zeros_like(optimal_state_history)
+        basic_state_traj[:,:3] = path_xyz_smooth
+        # basic_state_traj[:,3] = 1
+        basic_hover_action = np.ones((K,m)) * np.sqrt(dyn.mass*dyn.g/(4*dyn.thrust_coef))
+
+        policy = PolicyALiLQR(
+            dynamics=copy.deepcopy(dyn),
+            Q=Q,
+            R=R,
+            QN=QN,
+            W=W,
+            x_track=basic_state_traj,
+            u_track=basic_hover_action,
+            segments=20,
+            eps=1e-2,
+            max_iters=1000,
+            verbose=True,
+        )
+
+        return policy
+
+    def al_ilqr_scp():
+        """
+        AL-iLQR sovled using an SCP trajectory
+        """
+        policy = PolicyALiLQR(
+            dynamics=copy.deepcopy(dyn),
+            Q=Q,
+            R=R,
+            QN=QN,
+            W=W,
+            x_track=optimal_state_history,
+            u_track=optimal_action_history,
+            segments=20,
+            eps=1e-5,
+            max_iters=1000,
+            verbose=True,
+        )
+
+        return policy
+
     start_time = time.time()
-    policy = PolicyALiLQR(
-        dynamics=copy.deepcopy(dyn),
-        Q=Q,
-        R=R,
-        QN=QN,
-        W=W,
-        x_track=basic_state_traj,#optimal_state_history,
-        u_track=basic_hover_action,#optimal_action_history,
-        segments=20,
-        eps=1e-2,
-        max_iters=1000,
-        verbose=True,
-    )
+    # policy = al_ilqr_hover()
+    policy = al_ilqr_scp()
     end_time = time.time()
     ilqr_traj = np.copy(path_xyz_smooth)
 
@@ -241,10 +326,11 @@ if __name__ == "__main__":
         policy=policy,
         state_size=dyn.state_size(),
         action_ranges=dyn.action_ranges(),
+        zero_pad_state=None
     ) 
 
     # Create the environment
-    num_steps = np.shape(path_xyz)[0]
+    num_steps = np.shape(path_xyz_smooth)[0]
     num_seconds = dyn.dt * num_steps
     environment = Environment(
         state_initial=state_initial,
@@ -286,7 +372,7 @@ if __name__ == "__main__":
     # Close the bar
     pbar.close()
 
-    # ----------------------------------------------------------------
+    # --------------------------------------------------------------------------------------------------------------------------
 
     # Plot state errors
     # Plotting the state errors
@@ -315,11 +401,12 @@ if __name__ == "__main__":
 
     policy.cost = np.array(policy.cost)
     cost_labels = ["iLQR_terminal","AL_terminal","iLQR_tracking","AL_tracking","continuity"]
-    print(policy.cost)
 
     for i, ax in enumerate(axs.flatten()):
         if i < policy.cost.shape[1]:  # Ensure you don't exceed the number of states
             cost_data = np.where(policy.cost[:, i] > 0, policy.cost[:, i], np.nan)
+            print(str(cost_labels[i]))
+            print(cost_data)
             ax.plot(cost_data, label=f'Cost in {cost_labels[i]}')
             ax.set_xlabel("Time Step")
             ax.set_ylabel("Cost")
@@ -345,6 +432,7 @@ if __name__ == "__main__":
         os.path.join(log_folder, "a_star", "start_to_goal.npz"),
         path_xyz,
     )
+    position_history = np.copy(optimal_state_history[:,:3])
     utils.logging.save_to_npz(
         os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
         ilqr_traj#path_xyz_smooth, TODO Replace
@@ -352,10 +440,9 @@ if __name__ == "__main__":
 
     # Log the CVX path
     nominal_traj = np.copy(policy.x_bar[:,:3])
-    print(nominal_traj)
     utils.logging.save_to_npz(
         os.path.join(log_folder, "cvx", "path_xyz_cvx.npz"),
-        nominal_traj#path_xyz_smooth#position_history,
+        nominal_traj#position_history#path_xyz_smooth,
     )
 
     # Log the iLQR path
