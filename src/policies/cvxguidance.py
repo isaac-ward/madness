@@ -382,7 +382,15 @@ class SCvxSolver:
         # Add state set contraints
         # TODO add free final time constraint
         # TODO add velocity constraints
-        # TODO add angular velocity constraints
+        # v_upper = np.array([1,1,1])
+        # v_lower = -1 * w_upper
+        # constraints += [x[_k,6:9] <= w_upper for _k in range(self.N)]
+        # constraints += [x[_k,6:9] >= w_lower for _k in range(self.N)]
+        # Add angular velocity constraints TODO future proof pls
+        w_upper = np.array([0.5,0.5,0.5])
+        w_lower = -1 * w_upper
+        constraints += [x[_k,9:12] <= w_upper for _k in range(self.N)]
+        constraints += [x[_k,9:12] >= w_lower for _k in range(self.N)]
 
         # Add control set constraints
         u_upper = np.array(self.dynamics.action_ranges())[:,1]
@@ -646,7 +654,8 @@ class SCvxSolver:
             J = prob.value
 
             # Check convergence criteria
-            if (abs(J_prev - J) < self.eps) and (np.max(np.abs(nu.value)) < self.eps): # TODO don't be stupid
+            no_change = np.allclose(x.value,x_prev)
+            if ((abs(J_prev - J) < self.eps) and (np.max(np.abs(nu.value)) < self.eps)) or no_change: # TODO don't be stupid
                 converged = True
             
             # Display improvement
@@ -680,7 +689,7 @@ class SCvxSolver:
             logs_per_iter.append(log_per_iter)
 
             if plot_progress_helper is not None:
-                plot_progress_helper(x_prev,u_prev,iters)
+                plot_progress_helper(x_prev,u_prev,iters,logs_per_iter)
 
             # Add iters
             iters += 1
