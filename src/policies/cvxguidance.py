@@ -504,11 +504,13 @@ class SCvxSolver:
         # Add control effort cost
         u_upper = np.array(self.dynamics.action_ranges())[:,1]
         u_lower = np.array(self.dynamics.action_ranges())[:,0]
-        control_objective = cvx.sum([(cvx.norm2(u[_k]))**2 for _k in range(self.N - 1)])
+        control_max = np.max([np.linalg.norm(u_upper),np.linalg.norm(u_lower)])**2 * (self.N - 1)
+        control_objective = cvx.sum([(cvx.norm2(u[_k]))**2 for _k in range(self.N - 1)]) / control_max
         objective += control_objective
 
         # Add goal distance cost
-        distance_objective = cvx.sum([(cvx.norm2(x[_k] - self.x_goal))**2 for _k in range(self.N - 1)])
+        distance_max = (cvx.norm2(self.x_start - self.x_goal))**2 * (self.N - 1)
+        distance_objective = cvx.sum([(cvx.norm2(x[_k] - self.x_goal))**2 for _k in range(self.N - 1)]) / distance_max
         objective += distance_objective
 
         # Add virtual control cost
@@ -542,10 +544,11 @@ class SCvxSolver:
             η *= ηscale
             virt_max *= virt_scale
         else:
-            if λ < λmax:
-                λ *= λscale
-            η /= ηscale
-            virt_max /= virt_scale
+            # if λ < λmax:
+            #     λ *= λscale
+            if (η > 1) and (virt_max > 1):
+                η /= ηscale
+                virt_max /= virt_scale
 
         return η, λ, virt_max
 
@@ -553,6 +556,7 @@ class SCvxSolver:
     def solve(
             self,
             max_iters=30,
+            plot_progress_helper=None,
             return_information=False,
     ):
         """
@@ -584,7 +588,7 @@ class SCvxSolver:
         # Define trust region parameters
         αx = 1.
         αu = 0
-        ηinit = 10.
+        ηinit = 1.
         η = np.copy(ηinit)
         
         # Define virtual control penalty
@@ -642,7 +646,7 @@ class SCvxSolver:
             J = prob.value
 
             # Check convergence criteria
-            if (abs(J_prev - J) < self.eps):
+            if (abs(J_prev - J) < self.eps) and (np.max(np.abs(nu.value)) < self.eps): # TODO don't be stupid
                 converged = True
             
             # Display improvement
@@ -674,6 +678,9 @@ class SCvxSolver:
                             "sdf_cost":sdf_objective.value,
                             }
             logs_per_iter.append(log_per_iter)
+
+            if plot_progress_helper is not None:
+                plot_progress_helper(x_prev,u_prev,iters)
 
             # Add iters
             iters += 1
