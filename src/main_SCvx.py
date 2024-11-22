@@ -52,8 +52,8 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    # state_goal[:3] = np.array([10,5,2])
-    state_goal[:3] = 25
+    state_goal[:3] = np.array([10,5,2])
+    # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
     # state_goal[3] = 1
     # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
@@ -264,14 +264,18 @@ if __name__ == "__main__":
             x,
             u,
             indx,
+            logs_per_iter,
     ):
         """
         """
+        # Propagate control trajectory
         propagated_traj = np.zeros_like(x)
         propagated_traj[0,:] = np.copy(x[0])
         for j in range(1,K+1):
             propagated_traj[j,:] = dyn.step(propagated_traj[j-1,:], u[j-1,:])
         propagated_traj_path = propagated_traj[:,:3]
+
+        # Plot control and state trajectories
         v.plot_environment_from_objects(
             map_=map_,
             sdfs=sdfs,
@@ -282,6 +286,120 @@ if __name__ == "__main__":
             save_filename=f"environment_{indx}",
         )
 
+        # Plot cost evolution
+        # Create the figure and axis
+        plt.figure(figsize=(10, 6))
+
+        # Plot the data
+        plt.plot([lpi['u_cost'] for lpi in logs_per_iter], label="Control Cost", color="blue", linewidth=2.5, linestyle="-")
+        plt.plot([lpi['x_cost'] for lpi in logs_per_iter], label="State-Goal Cost", color="orange", linewidth=2.5, linestyle="-")
+        plt.plot([lpi['nu_cost'] for lpi in logs_per_iter], label="Virtual Control Cost", color="red", linewidth=2.5, linestyle="-")
+        plt.plot([lpi['sdf_cost'] for lpi in logs_per_iter], label="SDF Cost", color="black", linewidth=2.5, linestyle="-")
+
+        # Beautify the chart
+        plt.title("Cost Evolution over Iterations", fontsize=18, fontweight="bold", color="darkblue")
+        plt.xlabel("Iteration", fontsize=14)
+        plt.ylabel("Cost", fontsize=14)
+        plt.yscale('log')
+        plt.grid(color='gray', linestyle=':', linewidth=0.5)
+        plt.legend(fontsize=12, loc="upper right")
+        plt.tight_layout()
+
+        # Save and display the chart
+        plt.savefig(f'{log_folder}/visuals/Cost_Evolution.png', dpi=300)
+
+        # Plot the virtual control
+        virtual_controls = np.abs(logs_per_iter[indx-1]['nu'])
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(virtual_controls[:,0], marker="o", linestyle="-", linewidth=2.5, label="x")
+        plt.plot(virtual_controls[:,1], marker="o", linestyle="-", linewidth=2.5, label="y")
+        plt.plot(virtual_controls[:,2], marker="o", linestyle="-", linewidth=2.5, label="z")
+        plt.plot(virtual_controls[:,3], marker="o", linestyle="-", linewidth=2.5, label="rz")
+        plt.plot(virtual_controls[:,4], marker="o", linestyle="-", linewidth=2.5, label="ry")
+        plt.plot(virtual_controls[:,5], marker="o", linestyle="-", linewidth=2.5, label="rx")
+        plt.plot(virtual_controls[:,6], marker="o", linestyle="-", linewidth=2.5, label="dx")
+        plt.plot(virtual_controls[:,7], marker="o", linestyle="-", linewidth=2.5, label="dy")
+        plt.plot(virtual_controls[:,8], marker="o", linestyle="-", linewidth=2.5, label="dz")
+        plt.plot(virtual_controls[:,9], marker="o", linestyle="-", linewidth=2.5, label="wx")
+        plt.plot(virtual_controls[:,10], marker="o", linestyle="-", linewidth=2.5, label="wy")
+        plt.plot(virtual_controls[:,11], marker="o", linestyle="-", linewidth=2.5, label="wz")
+
+        # Beautify the plot
+        plt.title("Absolute value of Virtual Control for each Timestep", fontsize=18, fontweight="bold", color="darkblue")
+        plt.xlabel("Timestep", fontsize=14)
+        plt.ylabel("Absolute Value of Virtual control", fontsize=14)
+        plt.grid(color='gray', linestyle=':', linewidth=0.5)
+        plt.legend(fontsize=12, loc="upper left")
+        plt.tight_layout()
+
+        # Save and show
+        plt.savefig(f'{log_folder}/visuals/nu_{indx}.png', dpi=300)
+
+        # Plot velocity + angular velocity magnitudes
+        vel_mag = np.linalg.norm(logs_per_iter[indx-1]['x'][:,6:9], axis=1)
+        prop_vel_mag = np.linalg.norm(propagated_traj[:,6:9], axis=1)
+        ang_vel_mag = np.linalg.norm(logs_per_iter[indx-1]['x'][:,9:12], axis=1)
+        prop_ang_vel_mag = np.linalg.norm(propagated_traj[:,9:12], axis=1)
+
+        # Create subplots
+        plt.figure(figsize=(12, 8))
+
+        # Plot velocity magnitude
+        plt.subplot(2, 1, 1)
+        plt.plot(vel_mag, marker="o", color="green", linestyle="-", linewidth=2.5, label="SCvx Velocity")
+        plt.plot(prop_vel_mag, marker="o", color="red", linestyle="-", linewidth=2.5, label="Propagated Velocity")
+        plt.title("Magnitude of Velocity for Each Step", fontsize=16, fontweight="bold", color="darkblue")
+        plt.xlabel("Timestep", fontsize=12)
+        plt.ylabel("Velocity Magnitude", fontsize=12)
+        plt.grid(color='gray', linestyle=':', linewidth=0.5)
+        plt.legend(fontsize=12, loc="upper right")
+
+        # Plot angular velocity magnitude
+        plt.subplot(2, 1, 2)
+        plt.plot(ang_vel_mag, marker="o", color="blue", linestyle="-", linewidth=2.5, label="SCvx Angular Velocity")
+        plt.plot(prop_ang_vel_mag, marker="o", color="orange", linestyle="-", linewidth=2.5, label="Propagated Angular Velocity")
+        plt.title("Magnitude of Angular Velocity for Each Step", fontsize=16, fontweight="bold", color="darkblue")
+        plt.xlabel("Timestep", fontsize=12)
+        plt.ylabel("Angular Velocity Magnitude", fontsize=12)
+        plt.grid(color='gray', linestyle=':', linewidth=0.5)
+        plt.legend(fontsize=12, loc="upper right")
+
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(f'{log_folder}/visuals/velocity_angular_velocity_{indx}.png', dpi=300)
+
+        # Plot position + rotation differences magnitudes
+        pos_diff = np.linalg.norm(logs_per_iter[indx-1]['x'][:,1:3] - propagated_traj[:,1:3], axis=1)
+        rot_diff = np.linalg.norm(logs_per_iter[indx-1]['x'][:,3:6] - propagated_traj[:,3:6], axis=1)
+
+        # Create subplots
+        plt.figure(figsize=(12, 8))
+
+        # Plot position error magnitude
+        plt.subplot(2, 1, 1)
+        plt.plot(pos_diff, marker="o", color="green", linestyle="-", linewidth=2.5, label="Position Error")
+        plt.title("Position Error for Each Step", fontsize=16, fontweight="bold", color="darkblue")
+        plt.xlabel("Timestep", fontsize=12)
+        plt.ylabel("Position Error", fontsize=12)
+        plt.grid(color='gray', linestyle=':', linewidth=0.5)
+        plt.legend(fontsize=12, loc="upper right")
+
+        # Plot rotation error magnitude
+        plt.subplot(2, 1, 2)
+        plt.plot(rot_diff, marker="o", color="blue", linestyle="-", linewidth=2.5, label="Rotation Error")
+        plt.title("Rotation Error for Each Step", fontsize=16, fontweight="bold", color="darkblue")
+        plt.xlabel("Timestep", fontsize=12)
+        plt.ylabel("Rotation Error", fontsize=12)
+        plt.grid(color='gray', linestyle=':', linewidth=0.5)
+        plt.legend(fontsize=12, loc="upper right")
+
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(f'{log_folder}/visuals/position_rotation_error_{indx}.png', dpi=300)
+
+        plt.close()
+
     x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=30,plot_progress_helper=plot_progress_helper)
 
     path_scvx = x_scvx[:,:3]
@@ -291,28 +409,6 @@ if __name__ == "__main__":
     for i in range(1,K+1):
         propagated_traj[i,:] = dyn.step(propagated_traj[i-1,:], u_scvx[i-1,:])
     propagated_traj_path = propagated_traj[:,:3]
-
-    # Create the figure and axis
-    plt.figure(figsize=(10, 6))
-
-    # Plot the data
-    plt.plot([lpi['u_cost'] for lpi in logs_per_iter], label="Control Cost", color="blue", linewidth=2.5, linestyle="-")
-    plt.plot([lpi['x_cost'] for lpi in logs_per_iter], label="State-Goal Cost", color="orange", linewidth=2.5, linestyle="-")
-    plt.plot([lpi['nu_cost'] for lpi in logs_per_iter], label="Virtual Control Cost", color="red", linewidth=2.5, linestyle="-")
-    plt.plot([lpi['sdf_cost'] for lpi in logs_per_iter], label="SDF Cost", color="black", linewidth=2.5, linestyle="-")
-
-    # Beautify the chart
-    plt.title("Beautiful Line Chart", fontsize=18, fontweight="bold", color="darkblue")
-    plt.xlabel("X-axis (Iteration)", fontsize=14)
-    plt.ylabel("Y-axis (Cost)", fontsize=14)
-    plt.yscale('log')
-    plt.grid(color='gray', linestyle=':', linewidth=0.5)
-    plt.legend(fontsize=12, loc="upper right")
-    plt.tight_layout()
-
-    # Save and display the chart
-    plt.savefig(f'{log_folder}/beautiful_line_chart.png', dpi=300)
-    plt.show()
 
     # Create the environment
     num_steps = np.shape(path_xyz_smooth)[0]
