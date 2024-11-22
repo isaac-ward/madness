@@ -34,6 +34,7 @@ if __name__ == "__main__":
 
     # Will log everything here
     log_folder = utils.logging.make_log_folder(name="run")
+    v = Visual(log_folder)
 
     # The environment follows some true dynamics, and the agent
     # has an internal model of the environment
@@ -52,10 +53,10 @@ if __name__ == "__main__":
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
     # state_goal[:3] = np.array([10,5,2])
-    # state_goal[:3] = 25
+    state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
     # state_goal[3] = 1
-    state_goal[:3] = state_initial[:3] + np.array([5,5,20])
+    # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -259,7 +260,29 @@ if __name__ == "__main__":
         verbose=True,
     )
 
-    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=5)
+    def plot_progress_helper(
+            x,
+            u,
+            indx,
+    ):
+        """
+        """
+        propagated_traj = np.zeros_like(x)
+        propagated_traj[0,:] = np.copy(x[0])
+        for j in range(1,K+1):
+            propagated_traj[j,:] = dyn.step(propagated_traj[j-1,:], u[j-1,:])
+        propagated_traj_path = propagated_traj[:,:3]
+        v.plot_environment_from_objects(
+            map_=map_,
+            sdfs=sdfs,
+            path_xyz=path_xyz,
+            path_xyz_smooth=path_xyz_smooth,
+            path_xyz_cvx=x[:,:3],
+            path_propagated=propagated_traj_path,
+            save_filename=f"environment_{indx}",
+        )
+
+    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=30,plot_progress_helper=plot_progress_helper)
 
     path_scvx = x_scvx[:,:3]
 
@@ -282,12 +305,13 @@ if __name__ == "__main__":
     plt.title("Beautiful Line Chart", fontsize=18, fontweight="bold", color="darkblue")
     plt.xlabel("X-axis (Iteration)", fontsize=14)
     plt.ylabel("Y-axis (Cost)", fontsize=14)
+    plt.yscale('log')
     plt.grid(color='gray', linestyle=':', linewidth=0.5)
     plt.legend(fontsize=12, loc="upper right")
     plt.tight_layout()
 
     # Save and display the chart
-    plt.savefig('beautiful_line_chart.png', dpi=300)
+    plt.savefig(f'{log_folder}/beautiful_line_chart.png', dpi=300)
     plt.show()
 
     # Create the environment
@@ -332,7 +356,6 @@ if __name__ == "__main__":
     # TODO
 
     # Render visuals
-    visual = Visual(log_folder)
-    #visual.plot_histories()
-    visual.plot_environment()
-    # visual.render_video(desired_fps=25)
+    #v.plot_histories()
+    # v.plot_environment()
+    # v.render_video(desired_fps=25)
