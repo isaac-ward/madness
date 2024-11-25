@@ -53,7 +53,7 @@ if __name__ == "__main__":
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
     # state_goal[:3] = np.array([25,25,10])
-    state_goal[:3] = state_initial[:3] + np.array([5,5,20])
+    state_goal[:3] = state_initial[:3] + np.array([20,10,10])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -83,7 +83,7 @@ if __name__ == "__main__":
     g = dyn.g
     w_trim = np.sqrt(m*g/(4*k))
 
-    dyn.dt = 0.05
+    dyn.dt = 0.05*(1-0.25)
 
     # We need to formulate an initial guess for the trajectory based on the A* path and
     # finite difference methods, using an euler angle angle representation (123 scheme)
@@ -489,18 +489,18 @@ if __name__ == "__main__":
                     dynamics=copy.deepcopy(dyn),
                     sdf = sdfs,
                     trajInit=trajInit,
-                    maxiter = 40,
+                    maxiter = 20,
                     eps_dyn=1e3,
-                    eps_sdf=1e-4,
+                    eps_sdf=1e-8,
                     eps_rot=1e-1,
-                    sig = 5.,
+                    sig = 50.,
                     rho=2.,
                     slack_region=1.,
                     pull_from_cache=False)
 
     # Setup SCP iterations manually until exit condition is implemented
     state_history = state_initial
-    optimal_action_history, optimal_state_history, cvx_cost_logs, cvx_slack_log, cvx_prob = scp.solve(
+    optimal_action_history, optimal_state_history, cvx_cost_logs, cvx_slack_log, cvx_solver_log, cvx_prob = scp.solve(
         state_goal=state_goal,
         state_history=state_history[np.newaxis,:],
         return_information=True,
@@ -581,8 +581,23 @@ if __name__ == "__main__":
     plt.savefig(os.path.join(log_folder, "costs.png"))
 
     # Plot other information relating to the solve
-    solve_info_str = f"Solver: {cvx_prob.solver_stats.solver_name}\nStatus: {cvx_prob.status}"
-    utils.logging.write_string_to_text_file(os.path.join(log_folder, "solve_info.txt"), solve_info_str)
+    def log_solver_info(name, obj, attrs, iterData):
+        solver_info_str = "SCP Solver Information\n\nSolver Hyperparameters:\n"
+
+        for i,a in enumerate(attrs):
+            solver_info_str += f"{a}: {getattr(obj, a)}\n"
+
+        solver_info_str += "\nSolver and Status Logs per Iteration:\n"
+
+        for i,d in enumerate(iterData):
+            solver_info_str += f"Iteration: {i}\nSolver: {d[0]}\nStatus: {d[1]}\n"
+        
+        utils.logging.write_string_to_text_file(os.path.join(log_folder, name), solver_info_str)
+
+    log_solver_info("solver_info.txt",scp, ("maxiter", "eps_sdf", "eps_dyn", "eps_rot", "sig", "rho"), cvx_solver_log)
+
+    # solve_info_str = f"Solver: {cvx_prob.solver_stats.solver_name}\nStatus: {cvx_prob.status}"
+    # utils.logging.write_string_to_text_file(os.path.join(log_folder, "solve_info.txt"), solve_info_str)
 
     def log_slack_vars(name, slack):
         try:
