@@ -3,8 +3,10 @@ import scipy as sp
 # import control
 from scipy.integrate import odeint 
 
-from pose_estimation.dynamics.dynamics_rot import *
-from pose_estimation.meas_gen_utils import *
+# from pose_estimation.dynamics.dynamics_rot import *
+# from pose_estimation.meas_gen_utils import *
+
+from dynamics_jax import DynamicsQuadcopter3D
 
 def ssDef(x, dt):
     A = None
@@ -15,104 +17,131 @@ def ssDef(x, dt):
 
     return A, B, C, Q, R
 
-def linStateUpdate(x, u, A, B, dt):
-    xplus = A @ x + B @ u
-    return xplus
-
-def linMeasUpdate(x, C, dt):
-    y = C @ x
-    return y
+class ObservationModel:
+    def __init__(self, 
+                 h = None,
+                 C = None):
+        self.h = h
+        self.C = C
 
 class Filter:
-    def __init__(self, mu0, Sig0, Q, R,
-                 stateUpdate = linStateUpdate,
-                 measFunc = linMeasUpdate,
-                 ssMatFunc = ssDef, 
-                 dt = 1,
+    def __init__(self, mu0, Sig0, Q, R, 
+                 obs: ObservationModel,
+                 dyn: DynamicsQuadcopter3D, 
                  rng_seed = 273):
         
         self.mu = mu0
         self.Sig = Sig0
         self.Q = Q
         self.R = R
-        self.dt = dt
+        self.dyn = dyn
+        self.dt = dyn.dt
         self.rng_seed = rng_seed
-        self.ssMatFunc = ssMatFunc
-        self.stateUpdate = stateUpdate
-        self.measFunc = measFunc
 
-class MEKF(Filter):
-    def __init__(self, mu0, Sig0, Q, R, qref, 
-                 stateUpdate = linStateUpdate,
-                 measFunc = linMeasUpdate,
-                 ssMatfunc = ssDef,
-                 dt = 1,
-                 rng_seed = 273):
-        super().__init__(mu0, Sig0, Q, R, stateUpdate, measFunc, ssMatfunc, dt, rng_seed)
-        self.qref = qref
+class EKF(Filter):
+    def __init__(self, mu0, Sig0, Q, R, 
+                 obs: ObservationModel,
+                 dyn: DynamicsQuadcopter3D, 
+                 rng_seed=273):
+        super().__init__(mu0, Sig0, Q, R, obs, dyn, rng_seed)
 
-    def step(self, u, y, I, qtol = 1e-4):
-        
-        #### predict step ####
+    def predict(self, u):
+        A, _, _ = self.dyn.affinize(self.mu, u)
+        A = np.array(A)
 
-        # nonlinear quat prop
-        qw = np.concatenate([self.qref, self.mu[3:]])
-        # print("q = ", self.qref)
-        # print("w = ", self.mu[3:])
-        qw = odeint(ode_qw, qw, [0,self.dt], args=(I, np.zeros((3,1))))[1]
-        q_tplus_t = qw[:4]
+        mu_plus = self.dyn.step(self.mu, u)
+        Sig_plus = A @ self.Sig @ A.T + self.Q
+        return mu_plus, Sig_plus
 
-        # linear state mean and cov prop
-        Phi, B, C = mekf_stm(self.mu, I, self.dt) 
-        ya = np.zeros((9,))
-        ya[3:] = y[4:]
-        if np.all(y[:4] == 0):
-            # print("changing C mat")
-            C[:3, :3] = np.zeros((3,3))
-            # y[:4] = np.zeros((3,))
-            # print(C)
-        else:
-            dq = q_mul(y[:4], q_conj(q_tplus_t))
-            ya[:3] = quat_to_mrp(dq)
-        
-        mu_tplus_t = self.stateUpdate(self.mu, u, Phi, B, self.dt)
-        Sig_tplus_t = Phi @ self.Sig @ Phi.T + self.Q
+    def update(self, mu_plus, Sig_plus, ys):
+        K = Sig_plus @ self.obs.C.T @ np.linalg.inv(self.obs.C @ Sig_plus @ self.obs.C.T + self.R)
 
-        #### update step ####
+        ym = self.obs.h(mu_plus)
+        mu_plus_plus = mu_plus + K @ (ys - ym)
 
-        # kalman gain calc
-        K = Sig_tplus_t @ C.T @ np.linalg.inv(C @ Sig_tplus_t @ C.T + self.R)
-
-        # meas model
-        z = self.measFunc(mu_tplus_t, C, self.dt)
-
-        # state mean and cov update
-        mu_tplus_tplus = mu_tplus_t + K @ (ya - z)
-        self.Sig = Sig_tplus_t - K @ C @ Sig_tplus_t
-
-        #### reset step ####
-        self.qref = self.quatReset(mu_tplus_tplus, q_tplus_t)
-        self.mu = np.concatenate((np.zeros((3,)), mu_tplus_tplus[3:]))
-
-        qw = np.concatenate([self.qref, self.mu[3:]])
-
-        return mu_tplus_tplus, qw, self.Sig
+        Sig_plus_plus = Sig_plus - K @ self.obs.C @ Sig_plus
+        return mu_plus_plus, Sig_plus_plus
     
-    def quatReset(self, mu_post, q_update):
-        # slice MRP from posterior mean
-        apvec = mu_post[:3]
-        ap = np.linalg.norm(apvec)
+    def step(self, u, y):
+        mu_tplus_t, Sig_tplus_t = self.predict(u)
+        mu_tplus_tplus, Sig_tplus_tplus = self.update(mu_tplus_t, Sig_tplus_t, y)
+        self.mu = mu_tplus_tplus
+        self.Sig = Sig_tplus_tplus
+        return mu_tplus_tplus, Sig_tplus_tplus
+
+
+# class MEKF(Filter):
+#     def __init__(self, mu0, Sig0, Q, R, qref, 
+#                  stateUpdate = linStateUpdate,
+#                  measFunc = linMeasUpdate,
+#                  ssMatfunc = ssDef,
+#                  dt = 1,
+#                  rng_seed = 273):
+#         super().__init__(mu0, Sig0, Q, R, stateUpdate, measFunc, ssMatfunc, dt, rng_seed)
+#         self.qref = qref
+
+#     def step(self, u, y, I, qtol = 1e-4):
         
-        # compose delta q
-        dq = np.zeros((4))
-        dq[0] = 16 - ap**2
-        dq[1:] = 8*apvec.reshape((3,))   
-        dq *= 1/(16 + ap**2)
+#         #### predict step ####
 
-        # perform quat multiplication for reset
-        q_reset = q_mul(dq, q_update)
+#         # nonlinear quat prop
+#         qw = np.concatenate([self.qref, self.mu[3:]])
+#         # print("q = ", self.qref)
+#         # print("w = ", self.mu[3:])
+#         qw = odeint(ode_qw, qw, [0,self.dt], args=(I, np.zeros((3,1))))[1]
+#         q_tplus_t = qw[:4]
 
-        return q_reset
+#         # linear state mean and cov prop
+#         Phi, B, C = mekf_stm(self.mu, I, self.dt) 
+#         ya = np.zeros((9,))
+#         ya[3:] = y[4:]
+#         if np.all(y[:4] == 0):
+#             # print("changing C mat")
+#             C[:3, :3] = np.zeros((3,3))
+#             # y[:4] = np.zeros((3,))
+#             # print(C)
+#         else:
+#             dq = q_mul(y[:4], q_conj(q_tplus_t))
+#             ya[:3] = quat_to_mrp(dq)
+        
+#         mu_tplus_t = self.stateUpdate(self.mu, u, Phi, B, self.dt)
+#         Sig_tplus_t = Phi @ self.Sig @ Phi.T + self.Q
+
+#         #### update step ####
+
+#         # kalman gain calc
+#         K = Sig_tplus_t @ C.T @ np.linalg.inv(C @ Sig_tplus_t @ C.T + self.R)
+
+#         # meas model
+#         z = self.measFunc(mu_tplus_t, C, self.dt)
+
+#         # state mean and cov update
+#         mu_tplus_tplus = mu_tplus_t + K @ (ya - z)
+#         self.Sig = Sig_tplus_t - K @ C @ Sig_tplus_t
+
+#         #### reset step ####
+#         self.qref = self.quatReset(mu_tplus_tplus, q_tplus_t)
+#         self.mu = np.concatenate((np.zeros((3,)), mu_tplus_tplus[3:]))
+
+#         qw = np.concatenate([self.qref, self.mu[3:]])
+
+#         return mu_tplus_tplus, qw, self.Sig
+    
+#     def quatReset(self, mu_post, q_update):
+#         # slice MRP from posterior mean
+#         apvec = mu_post[:3]
+#         ap = np.linalg.norm(apvec)
+        
+#         # compose delta q
+#         dq = np.zeros((4))
+#         dq[0] = 16 - ap**2
+#         dq[1:] = 8*apvec.reshape((3,))   
+#         dq *= 1/(16 + ap**2)
+
+#         # perform quat multiplication for reset
+#         q_reset = q_mul(dq, q_update)
+
+#         return q_reset
     
     # def linquatUpdate(self, Aqq, Aqw, qw):
     #     # extract velocities from current prior
