@@ -8,63 +8,163 @@ from scipy.integrate import odeint
 
 from dynamics_jax import DynamicsQuadcopter3D
 
-def ssDef(x, dt):
-    A = None
-    B = None
-    C = None
-    Q = None
-    R = None
+# def ssDef(x, dt):
+#     A = None
+#     B = None
+#     C = None
+#     Q = None
+#     R = None
 
-    return A, B, C, Q, R
+#     return A, B, C, Q, R
 
 class ObservationModel:
+    """
+    Represents the observation model of the system.
+    
+    Attributes:
+        h (function): Nonlinear measurement function.
+        C (numpy.ndarray): Observation matrix (Jacobian of h).
+    """
     def __init__(self, 
                  h = None,
                  C = None):
+        """
+        Initialize the observation model.
+
+        Args:
+            h (function, optional): Nonlinear measurement function.
+            C (numpy.ndarray, optional): Observation matrix.
+        """
         self.h = h
         self.C = C
 
 class Filter:
+    """
+    Base class for state estimation filters.
+    
+    Attributes:
+        mu (numpy.ndarray): Mean of the state estimate.
+        Sig (numpy.ndarray): Covariance of the state estimate.
+        Q (numpy.ndarray): Process noise covariance.
+        R (numpy.ndarray): Measurement noise covariance.
+        obs (ObservationModel): Observation model of the system.
+        dyn (DynamicsQuadcopter3D): Dynamics model of the system.
+        dt (float): Time step for dynamics propagation.
+        rng_seed (int): Random seed for reproducibility.
+    """
     def __init__(self, mu0, Sig0, Q, R, 
                  obs: ObservationModel,
                  dyn: DynamicsQuadcopter3D, 
                  rng_seed = 273):
         
+        """
+        Initialize the filter.
+
+        Args:
+            mu0 (numpy.ndarray): Initial state estimate.
+            Sig0 (numpy.ndarray): Initial covariance estimate.
+            Q (numpy.ndarray): Process noise covariance.
+            R (numpy.ndarray): Measurement noise covariance.
+            obs (ObservationModel): Observation model.
+            dyn (DynamicsQuadcopter3D): Dynamics model.
+            rng_seed (int, optional): Random seed for reproducibility. Default is 273.
+        """
+        
         self.mu = mu0
         self.Sig = Sig0
         self.Q = Q
         self.R = R
+        self.obs = obs
         self.dyn = dyn
         self.dt = dyn.dt
         self.rng_seed = rng_seed
 
 class EKF(Filter):
+    """
+    Extended Kalman Filter (EKF) for state estimation.
+
+    Inherits from the base Filter class and implements the EKF-specific 
+    predict, update, and step methods.
+    """
     def __init__(self, mu0, Sig0, Q, R, 
                  obs: ObservationModel,
                  dyn: DynamicsQuadcopter3D, 
                  rng_seed=273):
+        """
+        Initialize the EKF.
+
+        Args:
+            mu0 (numpy.ndarray): Initial state estimate.
+            Sig0 (numpy.ndarray): Initial covariance estimate.
+            Q (numpy.ndarray): Process noise covariance.
+            R (numpy.ndarray): Measurement noise covariance.
+            obs (ObservationModel): Observation model.
+            dyn (DynamicsQuadcopter3D): Dynamics model.
+            rng_seed (int, optional): Random seed for reproducibility. Default is 273.
+        """
         super().__init__(mu0, Sig0, Q, R, obs, dyn, rng_seed)
 
     def predict(self, u):
+        """
+        Perform the EKF prediction step.
+
+        Args:
+            u (numpy.ndarray): Control input.
+
+        Returns:
+            tuple: Predicted state mean and covariance.
+        """
         A, _, _ = self.dyn.affinize(self.mu, u)
         A = np.array(A)
 
+        # Propagate the state mean using the nonlinear dynamics.
         mu_plus = self.dyn.step(self.mu, u)
+        # Propagate the state covariance using the linearized dynamics.
         Sig_plus = A @ self.Sig @ A.T + self.Q
         return mu_plus, Sig_plus
 
     def update(self, mu_plus, Sig_plus, ys):
+        """
+        Perform the EKF update step.
+
+        Args:
+            mu_plus (numpy.ndarray): Predicted state mean.
+            Sig_plus (numpy.ndarray): Predicted state covariance.
+            ys (numpy.ndarray): Measurement vector.
+
+        Returns:
+            tuple: Updated state mean and covariance.
+        """
+
+        # Compute the Kalman gain.
         K = Sig_plus @ self.obs.C.T @ np.linalg.inv(self.obs.C @ Sig_plus @ self.obs.C.T + self.R)
 
+        # Compute the measurement prediction and residual.
         ym = self.obs.h(mu_plus)
         mu_plus_plus = mu_plus + K @ (ys - ym)
 
+        # Update the covariance estimate.
         Sig_plus_plus = Sig_plus - K @ self.obs.C @ Sig_plus
         return mu_plus_plus, Sig_plus_plus
     
     def step(self, u, y):
+        """
+        Perform a single EKF step (predict + update).
+
+        Args:
+            u (numpy.ndarray): Control input.
+            y (numpy.ndarray): Measurement vector.
+
+        Returns:
+            tuple: Updated state mean and covariance.
+        """
+
+        # Predict step.
         mu_tplus_t, Sig_tplus_t = self.predict(u)
+        # Update step.
         mu_tplus_tplus, Sig_tplus_tplus = self.update(mu_tplus_t, Sig_tplus_t, y)
+
+        # Store the updated state and covariance.
         self.mu = mu_tplus_tplus
         self.Sig = Sig_tplus_tplus
         return mu_tplus_tplus, Sig_tplus_tplus
