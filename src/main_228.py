@@ -27,6 +27,7 @@ import policies.samplers
 import standard
 from sdf import Environment_SDF
 from policies.cvxguidance import SCPSolver, Trajectory, SCvxSolver
+from policies.filter import ObservationModel, EKF
 
 if __name__ == "__main__":
     """
@@ -397,7 +398,7 @@ if __name__ == "__main__":
     n,m = dyn.state_size(),dyn.action_size()
     Q = np.eye(n) * 10
     Q[:3] = Q[:3] * 2
-    R = np.eye(m) * 1
+    Ru = np.eye(m) * 1
     QN = np.eye(n) * 20
     QN[:3] = QN[:3] * 2
     W = np.eye(m) * 0
@@ -414,7 +415,7 @@ if __name__ == "__main__":
         policy = PolicyALiLQR(
             dynamics=copy.deepcopy(dyn),
             Q=Q,
-            R=R,
+            R=Ru,
             QN=QN,
             W=W,
             x_track=basic_state_traj,
@@ -433,9 +434,9 @@ if __name__ == "__main__":
         """
         policy = PolicyALiLQR(
             dynamics=copy.deepcopy(dyn),
-            Q=Q,
-            R=R,
-            QN=QN,
+            Q=copy.deepcopy(Q),
+            R=copy.deepcopy(Ru),
+            QN=copy.deepcopy(QN),
             W=W,
             x_track=x_scvx,
             u_track=u_scvx,
@@ -446,6 +447,22 @@ if __name__ == "__main__":
         )
 
         return policy
+    
+    # EKF --------------------------------------------------------------------------------------------------------------------
+    # initialize prior
+    mu0 = state_initial
+    Sig0 = (1e-1) * np.eye(dyn.state_size())
+
+    # intialize process and measurement noise covariance matrices
+    Qv = np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
+    assert(Q.shape[0] == dyn.state_size())
+    Rw = np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
+    # initialize measurement model object
+    h = lambda s : s[:]
+    obs = ObservationModel(h)
+    assert(h(mu0).size == dyn.state_size())
+
+    filter = EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
 
     start_time = time.time()
     # policy = al_ilqr_hover()
@@ -459,7 +476,8 @@ if __name__ == "__main__":
         policy=policy,
         state_size=dyn.state_size(),
         action_ranges=dyn.action_ranges(),
-        zero_pad_state=None
+        zero_pad_state=None,
+        filter=copy.deepcopy(filter)
     ) 
 
     # Create the environment

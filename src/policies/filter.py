@@ -1,5 +1,6 @@
 import numpy as np
 import scipy as sp
+import jax
 # import control
 from scipy.integrate import odeint 
 
@@ -23,20 +24,18 @@ class ObservationModel:
     
     Attributes:
         h (function): Nonlinear measurement function.
-        C (numpy.ndarray): Observation matrix (Jacobian of h).
+        C (function): Observation matrix (Jacobian of h).
     """
     def __init__(self, 
-                 h = None,
-                 C = None):
+                 h = None):
         """
         Initialize the observation model.
 
         Args:
             h (function, optional): Nonlinear measurement function.
-            C (numpy.ndarray, optional): Observation matrix.
         """
         self.h = h
-        self.C = C
+        self.Cfun = jax.jacobian(h)
 
 class Filter:
     """
@@ -78,6 +77,22 @@ class Filter:
         self.dyn = dyn
         self.dt = dyn.dt
         self.rng_seed = rng_seed
+
+    def observe(self, state):
+        """
+        Observe a noisy measurement of the state
+
+        Args:
+            state (numpy.ndarray): State
+
+        Returns:
+            y (numpy.ndarray): Measurement vector
+        """
+
+        z = self.obs.h(state)
+        w = sp.linalg.sqrtm(self.R) @ np.random.normal(size = z.shape)
+        y = z + w
+        return y
 
 class EKF(Filter):
     """
@@ -135,16 +150,17 @@ class EKF(Filter):
         Returns:
             tuple: Updated state mean and covariance.
         """
+        C = self.obs.Cfun(mu_plus)
 
         # Compute the Kalman gain.
-        K = Sig_plus @ self.obs.C.T @ np.linalg.inv(self.obs.C @ Sig_plus @ self.obs.C.T + self.R)
+        K = Sig_plus @ C.T @ np.linalg.inv(C @ Sig_plus @ C.T + self.R)
 
         # Compute the measurement prediction and residual.
         ym = self.obs.h(mu_plus)
         mu_plus_plus = mu_plus + K @ (ys - ym)
 
         # Update the covariance estimate.
-        Sig_plus_plus = Sig_plus - K @ self.obs.C @ Sig_plus
+        Sig_plus_plus = Sig_plus - K @ C @ Sig_plus
         return mu_plus_plus, Sig_plus_plus
     
     def filter(self, u, y):
@@ -168,10 +184,6 @@ class EKF(Filter):
         self.mu = mu_tplus_tplus
         self.Sig = Sig_tplus_tplus
         return mu_tplus_tplus, Sig_tplus_tplus
-    
-    def observe(self, state):
-        
-        return self.obs.h(state) + self.R
 
 
 # class MEKF(Filter):
