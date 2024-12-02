@@ -147,7 +147,7 @@ class EKF(Filter):
         Sig_plus_plus = Sig_plus - K @ self.obs.C @ Sig_plus
         return mu_plus_plus, Sig_plus_plus
     
-    def step(self, u, y):
+    def filter(self, u, y):
         """
         Perform a single EKF step (predict + update).
 
@@ -168,6 +168,10 @@ class EKF(Filter):
         self.mu = mu_tplus_tplus
         self.Sig = Sig_tplus_tplus
         return mu_tplus_tplus, Sig_tplus_tplus
+    
+    def observe(self, state):
+        
+        return self.obs.h(state) + self.R
 
 
 # class MEKF(Filter):
