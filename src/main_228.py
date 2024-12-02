@@ -455,12 +455,12 @@ if __name__ == "__main__":
 
     # intialize process and measurement noise covariance matrices
     Qv = np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
-    assert(Q.shape[0] == dyn.state_size())
+    assert(Qv.shape[0] == dyn.state_size())
     Rw = np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
     # initialize measurement model object
     h = lambda s : s[:]
     obs = ObservationModel(h)
-    assert(h(mu0).size == dyn.state_size())
+    assert(h(mu0).size == Rw.shape[0])
 
     filter = EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
 
