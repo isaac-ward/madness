@@ -126,6 +126,7 @@ class Visual:
         path_xyz_smooth,
         path_xyz_cvx,
         path_propagated,
+        path_al_ilqr,
         save_filename,
     ):
 
@@ -155,6 +156,7 @@ class Visual:
         path_smooth_flag = path_xyz_smooth is not None
         path_cvx_flag = path_xyz_cvx is not None
         path_propagated_flag = path_propagated is not None
+        path_al_ilqr_flag = path_al_ilqr is not None
 
         # Now get the voxel grid info for rendering
         print("Precomputing voxel information...", end="")
@@ -302,13 +304,16 @@ class Visual:
             if path_smooth_flag: plot_path(path_xyz_smooth, 'orange', '-', 'optimized A* path')
             if path_cvx_flag: plot_path(path_xyz_cvx, 'cyan', '-', 'convex optimal')
             if path_propagated_flag: plot_path(path_propagated, 'green', '-', 'convex propagated')
+            if path_al_ilqr_flag: plot_path(path_al_ilqr, 'purple', '-', 'AL-iLQR')
 
             # make a legend
             ax.legend()
 
         # Save the figure
         #plt.tight_layout()
-        fig.savefig(os.path.join(self.visuals_folder, f"{save_filename}"))   
+        fig.savefig(os.path.join(self.visuals_folder, f"{save_filename}"))  
+
+        plt.close() 
 
 
     def plot_environment(self):
@@ -367,6 +372,14 @@ class Visual:
             path_propagated_flag = True
         except:
             warnings.warn(f"No propagated cvx path found at {fp_path_propagated}")
+
+        path_al_ilqr_flag = False
+        fp_path_al_ilqr = os.path.join(self.run_folder, "al_ilqr", "al_ilqr.npz")
+        try:
+            path_al_ilqr = utils.logging.load_from_npz(fp_path_al_ilqr)
+            path_al_ilqr_flag = True
+        except:
+            warnings.warn(f"No AL-iLQR path found at {fp_path_al_ilqr}")
             
         self.plot_environment_from_objects(
             map_=map_,
@@ -375,6 +388,7 @@ class Visual:
             path_xyz_smooth=path_xyz_smooth if path_smooth_flag else None,
             path_xyz_cvx=path_xyz_cvx if path_cvx_flag else None,
             path_propagated=path_propagated if path_propagated_flag else None,
+            path_al_ilqr=path_al_ilqr if path_al_ilqr_flag else None,
             save_filename="environment.png",
         )   
 

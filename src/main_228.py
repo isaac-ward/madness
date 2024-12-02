@@ -55,10 +55,12 @@ if __name__ == "__main__":
     # Start and goal states
     state_initial = np.zeros(dyn.state_size())
     state_initial[:3] = 5
+    # state_initial[:3] = 25
     state_goal = np.zeros(dyn.state_size())
     state_goal[:3] = state_initial[:3] + np.array([5,5,20])
     # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
+    # state_goal[:3] = np.array([15,15,2.5])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -274,6 +276,7 @@ if __name__ == "__main__":
             path_xyz_smooth=path_xyz_smooth,
             path_xyz_cvx=x[:,:3],
             path_propagated=propagated_traj_path,
+            path_al_ilqr=None,
             save_filename=f"environment_{indx}",
         )
 
@@ -391,7 +394,7 @@ if __name__ == "__main__":
 
         plt.close()
 
-    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=20,plot_progress_helper=plot_progress_helper)
+    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=10,plot_progress_helper=plot_progress_helper)
 
     # iLQR --------------------------------------------------------------------------------------------------------------------
     # Create iLQR policy
@@ -523,6 +526,12 @@ if __name__ == "__main__":
     # Close the bar
     pbar.close()
 
+    # Propagate control trajectory
+    propagated_traj_cvx = np.zeros_like(x_scvx)
+    propagated_traj_cvx[0,:] = np.copy(x_scvx[0])
+    for j in range(1,K+1):
+        propagated_traj_cvx[j,:] = dyn.step(x_scvx[j-1,:], u_scvx[j-1,:])
+
     # --------------------------------------------------------------------------------------------------------------------------
 
     # Plot state errors
@@ -583,21 +592,30 @@ if __name__ == "__main__":
         os.path.join(log_folder, "a_star", "start_to_goal.npz"),
         path_xyz,
     )
-    position_history = np.copy(x_scvx[:,:3])
     utils.logging.save_to_npz(
         os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        ilqr_traj#path_xyz_smooth, TODO Replace
+        path_xyz_smooth,
     )
 
     # Log the CVX path
-    nominal_traj = np.copy(policy.x_bar[:,:3])
+    cvx_traj = np.copy(x_scvx[:,:3])
     utils.logging.save_to_npz(
         os.path.join(log_folder, "cvx", "path_xyz_cvx.npz"),
-        nominal_traj#position_history#path_xyz_smooth,
+        cvx_traj,
+    )
+
+    # Log the propagated CVX path
+    cvx_prop_traj = np.copy(propagated_traj_cvx[:,:3])
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "cvx", "propagated.npz"),
+        cvx_prop_traj,
     )
 
     # Log the iLQR path
-    # TODO
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "al_ilqr", "al_ilqr.npz"),
+        ilqr_traj,
+    )
 
     # Render visuals
     visual = Visual(log_folder)
