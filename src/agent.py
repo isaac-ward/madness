@@ -12,6 +12,7 @@ class Agent:
         state_size,
         action_ranges,
         zero_pad_state,
+        filter = None,
     ):
         """
         We'll start somewhere, and then we'll use the policy to determine
@@ -31,34 +32,47 @@ class Agent:
         # access to?
         self.lookback = 32
 
+        self.filter = filter
+
         # We'll also track the history of the states
         # Need a special zero pad item for states because quaternions can't be all zero
         self.state_history_tracker  = ItemHistoryTracker(item_shape=(self.state_size,), zero_pad_item=zero_pad_state)
         self.action_history_tracker = ItemHistoryTracker(item_shape=(self.action_size,))
+
+        # We will track the history of the belief state/state estimate
+        self.belief_history_tracker = ItemHistoryTracker(item_shape=(self.state_size,), zero_pad_item=zero_pad_state)
 
     def get_histories(self):
         num_states_desired  = self.lookback
         num_actions_desired = self.lookback - 1
         state_history = self.state_history_tracker.get_last_n_items_with_zero_pad(num_states_desired)
         action_history = self.action_history_tracker.get_last_n_items_with_zero_pad(num_actions_desired)
-        return state_history, action_history
+        belief_history = self.belief_history_tracker.get_last_n_items_with_zero_pad(num_states_desired)
+        return state_history, action_history, belief_history
 
     def act(self):
         """
         Use the policy to determine the next action to take
         """
         
-        state_history, action_history = self.get_histories()
+        state_history, action_history, belief_history = self.get_histories()
 
         # Different policies require different inputs
         # TODO: 
 
-        # Provide the policy with the history to determine an action
-        action = self.policy.act(
-            state_history,
-            action_history,
-            len(self.state_history_tracker)
-        )
+        if self.filter is None:
+            # Provide the policy with the history to determine an action
+            action = self.policy.act(
+                state_history,
+                action_history,
+                len(self.state_history_tracker)
+            )
+        else:
+            action = self.policy.act(
+                belief_history,
+                action_history,
+                len(self.belief_history_tracker)
+            )
 
         # Clip the action to the action ranges
         action = np.clip(action, self.action_ranges[:, 0], self.action_ranges[:, 1])
@@ -67,7 +81,7 @@ class Agent:
         self.action_history_tracker.append(action)
         return action
 
-    def observe(self, state):
+    def observe(self, state, action):
         """
         Observe and track the latest state
         """
@@ -75,6 +89,13 @@ class Agent:
         # The environment keeps track of the state too, because they may 
         # be different if the agent is not perfectly informed
         self.state_history_tracker.append(state)
+
+        if not(self.filter is None):
+            obs = self.filter.observe(state)
+            belief = self.filter.filter(action,obs)
+            self.belief_history_tracker.append(belief)
+
+        return belief
 
     def reset(self, state_initial, state_goal):
         """
