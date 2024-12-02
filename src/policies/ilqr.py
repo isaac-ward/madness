@@ -163,6 +163,7 @@ class PolicyALiLQR:
             pass
 
         return optimal_action
+
     
     def segmented_al_ilqr(
             self,
