@@ -183,7 +183,7 @@ class EKF(Filter):
         # Store the updated state and covariance.
         self.mu = mu_tplus_tplus
         self.Sig = Sig_tplus_tplus
-        return mu_tplus_tplus, Sig_tplus_tplus
+        return mu_tplus_tplus # , Sig_tplus_tplus
 
 
 # class MEKF(Filter):

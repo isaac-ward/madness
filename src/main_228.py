@@ -391,7 +391,7 @@ if __name__ == "__main__":
 
         plt.close()
 
-    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=30,plot_progress_helper=plot_progress_helper)
+    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=20,plot_progress_helper=plot_progress_helper)
 
     # iLQR --------------------------------------------------------------------------------------------------------------------
     # Create iLQR policy
