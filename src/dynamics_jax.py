@@ -103,7 +103,7 @@ class DynamicsQuadcopter3D:
                 jax.debug.print(f"{label}: {tracer}")
 
         _print_helper("change_in_state", change_in_state)
-
+        
         # Now we can assemble
         new_state = state + change_in_state
 
