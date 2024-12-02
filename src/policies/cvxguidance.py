@@ -34,8 +34,10 @@ class SCPSolver:
             eps_dyn = 1.,
             eps_sdf = 1e-4,
             eps_rot = 1.,
-            rho = 1.,
-            slack_region = 1.,
+            eta = 1.,
+            eta_vec = np.array([1e-3, 10]),
+            rho_vec = np.array([0, 0.1, 0.7]),
+            beta_vec = np.array([2,2]),
             pull_from_cache=False
     ):
         self.K = K
@@ -49,20 +51,42 @@ class SCPSolver:
         self.eps_dyn = eps_dyn
         self.eps_sdf = eps_sdf
         self.eps_rot = eps_rot
-        self.rho = rho
-        self.slack_region = slack_region
+        self.eta = eta
+        self.eta_vec = eta_vec
+        self.rho_vec = rho_vec
+        self.beta_vec = beta_vec
 
         self.nu = self.dynamics.action_size()
         self.nx = self.dynamics.state_size()
         self.nss = len(self.sdf.sdf_list)
 
+        E = np.eye(self.nx)
+        # E = np.diag([1e-4, 1e-4, 1e-4, 1e-2, 1e-2, 1e-2, 1, 1, 1, 1 ,1, 1])
+        self.E = E
+
         self.action = cvx.Variable((self.K,self.nu))
         self.state = cvx.Variable((self.K + 1, self.nx))
         self.slack_sdf = cvx.Variable((self.K + 1, self.nss))
         self.slack_dyn = cvx.Variable((self.K, self.nx))
-        self.slack_quat = cvx.Variable(self.K+1)
+        # self.slack_quat = cvx.Variable(self.K+1)
         self.action_prev = trajInit.action
         self.state_prev = trajInit.state
+        
+        A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
+        A, B, C = np.array(A), np.array(B), np.array(C)
+
+        propState = np.copy(trajInit.state)
+        for i in range(K):  # Runs for all actions
+            propState[i+1, :] = dynamics.step(propState[i, :], trajInit.action[i, :])
+
+        # Compute affine components
+        A_prop = np.array([A[i] @ propState[i, :] for i in range(K)])
+        B_action = np.array([B[i] @ trajInit.action[i, :] for i in range(K)])
+        residual = propState[1:, :] - (A_prop + B_action + C)
+
+        self.slack_dyn_prev = cvx.Variable(self.K, self.nss)
+        self.slack_dyn_prev.value = np.array([np.linalg.inv(self.E) @ residual[i, :] for i in range(K)])
+
         self.slack_sdf_prev = self.sdf.sdf_values(self.state_prev[:,:3])
         self.sdf = sdf
         self.constraints = []
@@ -79,21 +103,23 @@ class SCPSolver:
         A, B, C = self.dynamics.affinize(self.state_prev[:-1], self.action_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
         # E = np.eye(self.dynamics.state_size())
-        E = np.diag([1e-4, 1e-4, 1e-4, 1e-2, 1e-2, 1e-2, 1, 1, 1, 1 ,1, 1])
         # Dynamic feasibility constraints
-        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + E@self.slack_dyn[k] for k in range(self.K) ]
+        self.constraints += [ self.state[k+1] == A[k,:,:]@self.state[k] + B[k,:,:]@self.action[k] + C[k,:] + self.E@self.slack_dyn[k] for k in range(self.K) ]
         # Following two lines are for trust region constraints for state and action
-        self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
-        self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+        # self.constraints += [ cvx.norm_inf(self.state[k] - self.state_prev[k]) <= self.rho*self.rho_inc for k in range(self.K+1)]
+        # self.constraints += [ cvx.norm_inf(self.action[k] - self.action_prev[k]) <= self.rho*self.rho_inc for k in range(self.K)]
+        # self.constraints += [ cvx.norm_inf(self.slack_sdf[k] - self.slack_sdf_prev[k]) <= self.rho*self.rho_inc for k in range(self.K + 1)]
+
+        self.constraints += [ cvx.norm_inf(self.state[:-1] - self.state_prev[:-1]) + cvx.norm_inf(self.action - self.action_prev) + cvx.norm_inf(self.slack_sdf - self.slack_sdf_prev,axis=1) < self.eta ]
 
         # self.constraints += [ cvx.norm(self.state[k, 3:7]) - 1 <= self.slack_quat[k] for k in range(self.K+1) ]
 
         # bouond on dynamics slack variable
-        slack_bound = self.slack_region*self.slack_inc
+        # slack_bound = self.slack_region*self.slack_inc
         #print(slack_bound)
-        self.constraints += [ cvx.norm( self.slack_dyn, p='fro' ) <= slack_bound ]
+        # self.constraints += [ cvx.norm( self.slack_dyn, p=1 ) <= slack_bound ]
 
-        return slack_bound
+        # return slack_bound
     
     def sdf_constraints(
             self
@@ -143,11 +169,11 @@ class SCPSolver:
         
         self.constraints = []
 
-        slack_bound = self.dyn_constraints()
+        self.dyn_constraints()
         self.sdf_constraints()
         self.boundary_constraints(state_goal, state_history)
 
-        return slack_bound
+        # return slack_bound
 
     def update_objective(
         self,
@@ -162,24 +188,30 @@ class SCPSolver:
         # action_cost = cvx.sum( [ cvx.square( cvx.norm(self.action[k], p=2)/norm_fac ) for k in range(self.K) ] ) / self.K
         # action_norms = cvx.norm(self.action, p=2, axis=1)  # Compute L2 norms for each action (axis=1 for rows)
         # action_cost = cvx.sum_squares(action_norms) / (action_upper_norm * self.K)  # Sum of squared normalized actions
-        action_cost = cvx.square( cvx.norm(self.action, p='fro') ) / (action_upper_norm * self.K)
+        action_cost = cvx.square( cvx.norm(self.action, p='fro') ) / action_upper_norm
 
         # Compute cost for rotation rate
-        rotation_cost = self.eps_rot * cvx.square( cvx.norm(self.state[:,-3:], p='fro') ) / self.K
+        rotation_cost = self.eps_rot * cvx.square( cvx.norm(self.state[:,-3:], p='fro') )
 
-        # Compute the terminal cost
-        #terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 ) #+ self.eps_quat*cvx.norm( self.slack_quat, p=1 )
-        terminal_cost = -self.eps_sdf * cvx.sum(self.slack_sdf) + self.eps_dyn * cvx.norm(self.slack_dyn, p=1)
+        # Compute virtual control running cost
+        virtual_cost = self.eps_dyn * cvx.norm(self.E @ (self.slack_dyn).T, p=1)
+        # virtual_cost = self.eps_dyn * cvx.norm(self.slack_dyn, p=1)
 
         # Compute the distance cost
         # Frobenius norm for position only
         distance_cost = cvx.square( cvx.norm(state_goal[np.newaxis,:3] - self.state[:,:3], p='fro') ) # TODO position only?
+
+                # Compute the terminal cost
+        #terminal_cost =  -self.eps_sdf*cvx.sum( self.slack_sdf ) + self.eps_dyn*cvx.norm( self.slack_dyn, p=1 ) #+ self.eps_quat*cvx.norm( self.slack_quat, p=1 )
+        terminal_cost = -self.eps_sdf * cvx.sum(self.slack_sdf)
         
         # Final objective is a weighted sum of the above
-        bolza_sum = action_cost + rotation_cost # + distance_cost
-        self.objective = bolza_sum + terminal_cost
+        running_cost = action_cost + rotation_cost + virtual_cost # + distance_cost
+        bolza_cost = running_cost + terminal_cost
+        self.objective = bolza_cost
+        # self.objective = terminal_cost + virtual_cost
 
-        return terminal_cost, action_cost, distance_cost
+        return action_cost, rotation_cost, virtual_cost, distance_cost, terminal_cost, bolza_cost
 
     def solve(
             self,
@@ -202,7 +234,7 @@ class SCPSolver:
             self.sig,
             self.eps_dyn,
             self.eps_sdf,
-            self.rho,
+            self.eta,
             self.slack_region,
             "state"
         )
@@ -218,16 +250,19 @@ class SCPSolver:
             self.sig,
             self.eps_dyn,
             self.eps_sdf,
-            self.rho,
+            self.eta,
             self.slack_region,
             "action"
         )
 
-        log_total_cost = []
-        log_terminal_cost = []
         log_action_cost = []
+        log_rotation_cost = []
+        log_virtual_cost = []
         log_distance_cost = []
+        log_terminal_cost = []
+        log_bolza_cost = []
         log_slack_bound = []
+        log_solver_details = []
 
         # Add a progress bar   
         pbar = tqdm(total=self.maxiter, desc=f"Running SCP for max {self.maxiter} iterations")
@@ -248,7 +283,7 @@ class SCPSolver:
                 ii += 1
                 slack_bound = self.update_constraints(state_goal, state_history)
                 log_slack_bound.append(slack_bound)
-                terminal_cost, action_cost, distance_cost = self.update_objective(state_goal)
+                action_cost, rotation_cost, virtual_cost, distance_cost, terminal_cost, bolza_cost = self.update_objective(state_goal)
                 prob = cvx.Problem(cvx.Minimize(self.objective), self.constraints)
                 if verbose: print("Attempting to solve the problem")
                 try:
@@ -256,7 +291,7 @@ class SCPSolver:
                         "tol_rel_gap": 1e-6,
                         "tol_abs_gap": 1e-6
                     }
-                    prob.solve(solver=cvx.CLARABEL)#,**clarabel_options)
+                    prob.solve(solver=cvx.CLARABEL)# ,**clarabel_options)
                 except:
                     prob.solve(solver=cvx.SCS)
                 if verbose: print("Solver: " + str(prob.solver_stats.solver_name))
@@ -265,10 +300,13 @@ class SCPSolver:
                 cost = prob.value
 
                 # Store everything
-                log_total_cost.append(cost)
-                log_terminal_cost.append(terminal_cost.value)
                 log_action_cost.append(action_cost.value)
+                log_rotation_cost.append(rotation_cost.value)
+                log_virtual_cost.append(virtual_cost.value)
                 log_distance_cost.append(distance_cost.value)
+                log_terminal_cost.append(terminal_cost.value)
+                log_bolza_cost.append(bolza_cost.value)
+                log_solver_details.append((prob.solver_stats.solver_name, prob.status))
     
                 delta_cost = prob.value - self.cost
                 if np.abs(delta_cost) < self.cost_tol:
@@ -301,7 +339,7 @@ class SCPSolver:
             cacher_state.save(optimal_state_history)
 
         if return_information:
-            return optimal_action_history, optimal_state_history, (log_total_cost, log_terminal_cost, log_action_cost, log_distance_cost, log_slack_bound), self.slack_dyn.value
+            return optimal_action_history, optimal_state_history, (log_action_cost, log_rotation_cost, log_virtual_cost, log_distance_cost, log_terminal_cost, log_bolza_cost, log_slack_bound), self.slack_dyn_prev.value, log_solver_details, prob
         else:
             return optimal_action_history, optimal_state_history
         
