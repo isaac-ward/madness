@@ -94,8 +94,7 @@ class Agent:
             obs = self.filter.observe(state)
             belief = self.filter.filter(action,obs)
             self.belief_history_tracker.append(belief)
-
-        return belief
+            return belief
 
     def reset(self, state_initial, state_goal):
         """
