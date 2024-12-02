@@ -4,6 +4,7 @@ import pickle
 import os
 import jax.numpy as jnp
 import jax
+import scipy as sp
 from math import sqrt
 
 import utils.general as general
@@ -86,8 +87,15 @@ class DynamicsQuadcopter3D:
         self.__dict__.update(state)
         self._reload_dynamics()
 
-    def _discrete_dynamics(self, state, action):
-        change_in_state = self.dt * self.state_delta(state, action)
+    def _discrete_dynamics(self, state, action, Q = None, seed = 228):
+        state_delta = self.state_delta(state, action)
+
+        if not(Q is None):
+            key = jax.random.key(seed)
+            noise = sp.linalg.sqrtm(Q) @ jax.random.normal(key, change_in_state.shape).T
+            state_delta += noise.T
+
+        change_in_state = state_delta * self.dt
 
         def _print_helper(label, tracer):
             if False:
@@ -96,35 +104,15 @@ class DynamicsQuadcopter3D:
 
         _print_helper("change_in_state", change_in_state)
 
-        # Quaternion is the 4th element through the 8th
-        # and it must be treated differently because its
-        # a special little princess
-        original_quaternion = state[3:7]
-        change_in_quaternion = change_in_state[3:7]
-        #new_quaternion = geometric.q_mul(original_quaternion, change_in_quaternion)
-        new_quaternion = original_quaternion + change_in_quaternion # TODO choose method to propagate
-
-        _print_helper("original_quaternion", original_quaternion)
-        _print_helper("change_in_quaternion", change_in_quaternion)
-        _print_helper("new_quaternion", new_quaternion)
-
-        # Now, they BOTH should be valud quaternions but let's
-        # normalize for safety
-        new_quaternion = new_quaternion / jnp.linalg.norm(new_quaternion)
-
-        _print_helper("new_quaternion", new_quaternion)
-
         # Now we can assemble
         new_state = state + change_in_state
-        # Overwrite the special little princess
-        new_state = new_state.at[3:7].set(new_quaternion)
 
         _print_helper("new_state", new_state)
 
         return new_state
     
-    def step(self, state, action):
-        return self.discrete_dynamics(state, action)
+    def step(self, state, action, Q = None, seed = 228):
+        return self.discrete_dynamics(state, action, Q, seed)
 
     def state_size(self):
         return 12

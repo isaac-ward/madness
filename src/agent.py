@@ -83,7 +83,7 @@ class Agent:
 
     def observe(self, state, action):
         """
-        Observe and track the latest state
+        Observe and track the latest state (and belief if filter is available)
         """
         # TODO partial observability
         # The environment keeps track of the state too, because they may 
