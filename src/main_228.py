@@ -246,7 +246,7 @@ if __name__ == "__main__":
         x_start=state_initial,
         x_goal=state_goal,
         sdf=sdfs,
-        verbose=True,
+        verbose=True
     )
 
     # Setup SCP iterations manually until exit condition is implemented
@@ -492,7 +492,7 @@ if __name__ == "__main__":
             break
 
         # Make new observations
-        agent.observe(state)
+        agent.observe(state, action)
 
         # Update the pbar with the current state and action
         p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
