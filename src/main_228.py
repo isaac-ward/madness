@@ -457,15 +457,15 @@ if __name__ == "__main__":
     Sig0 = (1e-1) * np.eye(dyn.state_size())
 
     # intialize process and measurement noise covariance matrices
-    Qv = np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
+    Qv = (1e-1)*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
     assert(Qv.shape[0] == dyn.state_size())
-    Rw = np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
+    Rw = (1e-1)*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
     # initialize measurement model object
     h = lambda s : s[:]
     obs = ObservationModel(h)
     assert(h(mu0).size == Rw.shape[0])
 
-    filter = None #EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
+    filter = EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
 
     start_time = time.time()
     # policy = al_ilqr_hover()
@@ -501,7 +501,7 @@ if __name__ == "__main__":
     for i in range(num_steps):
         # Take an action (this is based on previous observations)
         action = agent.act()
-        state, done_flag, done_message = environment.step(action)
+        state, done_flag, done_message = environment.step(action, Qv)
         ilqr_traj[i+1] = state[:3]
         # print(action)
         # print(state)
@@ -533,6 +533,26 @@ if __name__ == "__main__":
         propagated_traj_cvx[j,:] = dyn.step(x_scvx[j-1,:], u_scvx[j-1,:])
 
     # --------------------------------------------------------------------------------------------------------------------------
+
+    def mean_and_estimate_plotter(x, mu, xdes = None, filename = 'belieftracking'):
+        # x, mu = np.asarray(x), np.asarray(mu)
+        fig, axs = plt.subplots(7, 2, figsize=(12,18))
+        fig.suptitle("State and Belief over Time")
+        for i, ax in enumerate(axs.flatten()):
+            if i < x.shape[1]:
+                ax.plot(x[:,i], label = f'{dyn.state_labels()[i]}')
+                ax.plot(mu[:,i], label = f'$\hat{{{dyn.state_labels()[i]}}}$')
+                if not(xdes is None):
+                    ax.plot(xdes[:,i], linestyle='--', label = f'${dyn.state_labels()[i]}^*$')
+                ax.set_xlabel("Time [s]")
+                ax.set_ylabel(f'{dyn.state_labels()[i]}')
+                ax.legend()
+            else:
+                ax.axis('off')
+        
+        plt.savefig(f'{log_folder}/visuals/{filename}.png')
+
+    mean_and_estimate_plotter(agent.state_history_tracker.get_history(), agent.belief_history_tracker.get_history(), xdes = x_scvx)
 
     # Plot state errors
     # Plotting the state errors
