@@ -150,8 +150,9 @@ def smooth_path_same_endpoints(original_path, desired_points_per_meter=50):
         optimal_path = np.array(optimal_path)
 
         # We cannot have any duplicated points, only unique ones
+        optimal_path = np.vstack([optimal_path, optimal_path[-1]])
         print(f"Optimized path has {optimal_path.shape[0]} points, ", end="")
-        optimal_path = np.unique(optimal_path, axis=0)
+        optimal_path = optimal_path[np.insert(np.any(np.diff(optimal_path, axis=0), axis=1), 0, True)]
         print(f"{optimal_path.shape[0]} are unique")
 
         if np.allclose(optimal_path, resampled_path, atol=1e-3):
