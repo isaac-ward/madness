@@ -60,7 +60,7 @@ if __name__ == "__main__":
     state_goal[:3] = state_initial[:3] + np.array([5,5,20])
     # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
-    # state_goal[:3] = np.array([15,15,2.5])
+    # state_goal[:3] = np.array([15,15,5])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -465,7 +465,7 @@ if __name__ == "__main__":
     obs = ObservationModel(h)
     assert(h(mu0).size == Rw.shape[0])
 
-    filter = EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
+    filter = None #EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
 
     start_time = time.time()
     # policy = al_ilqr_hover()
