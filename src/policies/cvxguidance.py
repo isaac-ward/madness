@@ -359,6 +359,7 @@ class SCvxSolver:
             eps=1e-3,
             eps_ss=1e-4,
             verbose=False,
+            pull_from_cache=False
     ):
         self.dynamics = dynamics
         self.x_traj_init = x_traj_init
@@ -370,6 +371,7 @@ class SCvxSolver:
         self.eps = eps
         self.eps_ss = eps_ss
         self.verbose = verbose
+        self.pull_from_cache = pull_from_cache
 
         self.N = np.shape(self.x_traj_init)[0]
         self.n = self.dynamics.state_size()
@@ -626,113 +628,158 @@ class SCvxSolver:
         - λinit
         - nu_max
         """
-        # Define previous trajectory
-        x_prev = np.copy(self.x_traj_init)
-        u_prev = np.copy(self.u_traj_init)
-        J_prev = np.inf
+        # Check if results cached for this
+        computation_inputs_state = (
+            self.x_traj_init,
+            self.u_traj_init,
+            self.x_start,
+            self.x_goal,
+            self.sdf.computation_inputs,
+            self.sig,
+            self.eps,
+            self.eps_ss,
+            max_iters,
+            "state"
+        )
+        computation_inputs_action = (
+            self.x_traj_init,
+            self.u_traj_init,
+            self.x_start,
+            self.x_goal,
+            self.sdf.computation_inputs,
+            self.sig,
+            self.eps,
+            self.eps_ss,
+            max_iters,
+            "action"
+        )
 
-        # Define trust region parameters
-        αx = 1.
-        αu = 0
-        ηinit = 1.
-        η = np.copy(ηinit)
-        
-        # Define virtual control penalty
-        λinit = 30.
-        λ = np.copy(λinit)
-        nu_max = 1.
+        # Get state and action cachers
+        cacher_state = Cacher(computation_inputs_state)
+        cacher_action = Cacher(computation_inputs_action)
 
-        # Define SCvx convergence variables
-        iters = 1
-        converged = False
-
-        # Logs
+        # Create variables for state and action histories and logging
+        optimal_action_history = None
+        optimal_state_history = None
         logs_per_iter = []
 
-        # SCvx loop
-        while (iters <= max_iters) and (not converged):
-            # Print Info
-            self._print("SCvx Iteration " + str(iters))
-            self._print("   λ: " + str(λ))
-            self._print("   η: " + str(η))
-            self._print("   nu_max: " + str(nu_max))
+        # Check if cache available
+        if self.pull_from_cache and cacher_state.exists() and cacher_action.exists():
+            optimal_action_history = cacher_action.load()
+            optimal_state_history = cacher_state.load()
+        else:
+            # Define previous trajectory
+            x_prev = np.copy(self.x_traj_init)
+            u_prev = np.copy(self.u_traj_init)
+            J_prev = np.inf
 
-            # Create convex variables
-            x = cvx.Variable((self.N,self.n))
-            u = cvx.Variable((self.N - 1,self.m))
-            nu = cvx.Variable((self.N - 1,self.n))
-            slack_sdf = cvx.Variable((self.N,self.nss))
-
-            # Get problem constraints
-            constraints = []
-            constraints += self.boundary_constraints(x)
-            # constraints += [x[0] == self.x_start]
-            # if nu_max <= 1:
-            #     constraints += [x[-1] == self.x_goal]
-            constraints += self.dynamic_constraints(x,u,nu,x_prev,u_prev,nu_max)
-            constraints += self.set_constraints(x,u)
-            constraints += self.trust_region_constraints(x,u,x_prev,u_prev,αx,αu,η)
-            constraints += self.sdf_constraints(x,x_prev,slack_sdf)
-
-            # Get problem objective
-            objective, control_objective, distance_objective, virtual_control_objective, sdf_objective = self.objective_update(x,u,slack_sdf,nu,λ)
-
-            # Solve problem
-            prob = cvx.Problem(cvx.Minimize(objective),constraints)
-            try:
-                prob.solve(solver=cvx.CLARABEL)
-            except:
-                η, λ, nu_max = self.solve_failed(η,λ,nu_max,1)
-                continue
-            if not(prob.status == cvx.OPTIMAL or prob.status == cvx.OPTIMAL_INACCURATE):
-                η, λ, nu_max = self.solve_failed(η,λ,nu_max,1)
-                continue
-            else:
-                η, λ, nu_max = self.solve_failed(η,λ,nu_max,0)
-            J = prob.value
-
-            # Check convergence criteria
-            no_change = np.allclose(x.value,x_prev)
-            if ((abs(J_prev - J) < self.eps) and (np.max(np.abs(nu.value)) < self.eps)) or no_change: # TODO don't be stupid
-                converged = True
+            # Define trust region parameters
+            αx = 1.
+            αu = 0
+            ηinit = 1.
+            η = np.copy(ηinit)
             
-            # Display improvement
-            self._print("   Cost improvement: " + str(J_prev - J))
-            self._print("   Max Virtual Control: " + str(np.max(np.abs(nu.value))))
-            self._print("   Control Objective: " + str(control_objective.value))
-            self._print("   Distance Objective: " + str(distance_objective.value))
-            self._print("   Virtual Control Objective: " + str(virtual_control_objective.value))
-            self._print("   SDF Objective: " + str(sdf_objective.value))
+            # Define virtual control penalty
+            λinit = 30.
+            λ = np.copy(λinit)
+            nu_max = 1.
 
-            # Penalize virtual control
-            # if (np.linalg.norm(nu.value,np.inf)) > self.eps and (λ < λmax):
-            #     λ *= λscale
-            #     η /= ηscale
+            # Define SCvx convergence variables
+            iters = 1
+            converged = False
 
-            # Store new previous trajectory
-            x_prev = np.copy(x.value)
-            u_prev = np.copy(u.value)
-            J_prev = np.copy(J)
+            # SCvx loop
+            while (iters <= max_iters) and (not converged):
+                # Print Info
+                self._print("SCvx Iteration " + str(iters))
+                self._print("   λ: " + str(λ))
+                self._print("   η: " + str(η))
+                self._print("   nu_max: " + str(nu_max))
 
-            # 
-            log_per_iter = {"x":x_prev,
-                            "u":u_prev,
-                            "nu":nu.value,
-                            "J":J_prev,
-                            "u_cost":control_objective.value,
-                            "x_cost":distance_objective.value,
-                            "nu_cost":virtual_control_objective.value,
-                            "sdf_cost":sdf_objective.value,
-                            }
-            logs_per_iter.append(log_per_iter)
+                # Create convex variables
+                x = cvx.Variable((self.N,self.n))
+                u = cvx.Variable((self.N - 1,self.m))
+                nu = cvx.Variable((self.N - 1,self.n))
+                slack_sdf = cvx.Variable((self.N,self.nss))
 
-            if plot_progress_helper is not None:
-                plot_progress_helper(x_prev,u_prev,iters,logs_per_iter)
+                # Get problem constraints
+                constraints = []
+                constraints += self.boundary_constraints(x)
+                # constraints += [x[0] == self.x_start]
+                # if nu_max <= 1:
+                #     constraints += [x[-1] == self.x_goal]
+                constraints += self.dynamic_constraints(x,u,nu,x_prev,u_prev,nu_max)
+                constraints += self.set_constraints(x,u)
+                constraints += self.trust_region_constraints(x,u,x_prev,u_prev,αx,αu,η)
+                constraints += self.sdf_constraints(x,x_prev,slack_sdf)
 
-            # Add iters
-            iters += 1
+                # Get problem objective
+                objective, control_objective, distance_objective, virtual_control_objective, sdf_objective = self.objective_update(x,u,slack_sdf,nu,λ)
 
-        return x.value,u.value,logs_per_iter
+                # Solve problem
+                prob = cvx.Problem(cvx.Minimize(objective),constraints)
+                try:
+                    prob.solve(solver=cvx.CLARABEL)
+                except:
+                    η, λ, nu_max = self.solve_failed(η,λ,nu_max,1)
+                    continue
+                if not(prob.status == cvx.OPTIMAL or prob.status == cvx.OPTIMAL_INACCURATE):
+                    η, λ, nu_max = self.solve_failed(η,λ,nu_max,1)
+                    continue
+                else:
+                    η, λ, nu_max = self.solve_failed(η,λ,nu_max,0)
+                J = prob.value
+
+                # Check convergence criteria
+                no_change = np.allclose(x.value,x_prev)
+                if ((abs(J_prev - J) < self.eps) and (np.max(np.abs(nu.value)) < self.eps)) or no_change: # TODO don't be stupid
+                    converged = True
+                
+                # Display improvement
+                self._print("   Cost improvement: " + str(J_prev - J))
+                self._print("   Max Virtual Control: " + str(np.max(np.abs(nu.value))))
+                self._print("   Control Objective: " + str(control_objective.value))
+                self._print("   Distance Objective: " + str(distance_objective.value))
+                self._print("   Virtual Control Objective: " + str(virtual_control_objective.value))
+                self._print("   SDF Objective: " + str(sdf_objective.value))
+
+                # Penalize virtual control
+                # if (np.linalg.norm(nu.value,np.inf)) > self.eps and (λ < λmax):
+                #     λ *= λscale
+                #     η /= ηscale
+
+                # Store new previous trajectory
+                x_prev = np.copy(x.value)
+                u_prev = np.copy(u.value)
+                J_prev = np.copy(J)
+
+                # 
+                log_per_iter = {"x":x_prev,
+                                "u":u_prev,
+                                "nu":nu.value,
+                                "J":J_prev,
+                                "u_cost":control_objective.value,
+                                "x_cost":distance_objective.value,
+                                "nu_cost":virtual_control_objective.value,
+                                "sdf_cost":sdf_objective.value,
+                                }
+                logs_per_iter.append(log_per_iter)
+
+                if plot_progress_helper is not None:
+                    plot_progress_helper(x_prev,u_prev,iters,logs_per_iter)
+
+                # Add iters
+                iters += 1
+            
+            # Save state trajectory and actions
+            optimal_state_history = np.copy(x.value)
+            optimal_action_history = np.copy(u.value)
+
+            # Cache
+            cacher_action.save(optimal_action_history)
+            cacher_state.save(optimal_state_history)
+
+        return optimal_state_history,optimal_action_history,logs_per_iter
 
 # TODO
 class PolicyConvex:

@@ -54,13 +54,13 @@ if __name__ == "__main__":
 
     # Start and goal states
     state_initial = np.zeros(dyn.state_size())
-    state_initial[:3] = 5
-    # state_initial[:3] = 25
+    # state_initial[:3] = 5
+    state_initial[:3] = 25
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = state_initial[:3] + np.array([5,5,20])
+    # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
     # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
-    # state_goal[:3] = np.array([15,15,5])
+    state_goal[:3] = np.array([15,15,5])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -249,7 +249,8 @@ if __name__ == "__main__":
         x_start=state_initial,
         x_goal=state_goal,
         sdf=sdfs,
-        verbose=True
+        verbose=True,
+        pull_from_cache=True,
     )
 
     # Setup SCP iterations manually until exit condition is implemented
