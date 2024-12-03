@@ -92,7 +92,7 @@ class DynamicsQuadcopter3D:
 
         if not(Q is None):
             key = jax.random.key(seed)
-            noise = sp.linalg.sqrtm(Q) @ jax.random.normal(key, change_in_state.shape).T
+            noise = sp.linalg.sqrtm(Q) @ jax.random.normal(key, state_delta.shape).T
             state_delta += noise.T
 
         change_in_state = state_delta * self.dt
