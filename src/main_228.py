@@ -249,7 +249,8 @@ if __name__ == "__main__":
         x_start=state_initial,
         x_goal=state_goal,
         sdf=sdfs,
-        verbose=True
+        verbose=True,
+        pull_from_cache=True,
     )
 
     # Setup SCP iterations manually until exit condition is implemented
