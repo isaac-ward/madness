@@ -54,13 +54,13 @@ if __name__ == "__main__":
 
     # Start and goal states
     state_initial = np.zeros(dyn.state_size())
-    # state_initial[:3] = 5
-    state_initial[:3] = 25
+    state_initial[:3] = 5
+    # state_initial[:3] = 25
     state_goal = np.zeros(dyn.state_size())
-    # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
+    state_goal[:3] = state_initial[:3] + np.array([5,5,20])
     # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
-    state_goal[:3] = np.array([15,15,5])
+    # state_goal[:3] = np.array([15,15,5])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
@@ -249,8 +249,7 @@ if __name__ == "__main__":
         x_start=state_initial,
         x_goal=state_goal,
         sdf=sdfs,
-        verbose=True,
-        pull_from_cache=True,
+        verbose=True
     )
 
     # Setup SCP iterations manually until exit condition is implemented
@@ -452,15 +451,50 @@ if __name__ == "__main__":
 
         return policy
     
+    def mean_and_estimate_plotter(x, mu, xdes = None, filename = 'belieftracking'):
+        # x, mu = np.asarray(x), np.asarray(mu)
+        fig, axs = plt.subplots(7, 2, figsize=(12,18))
+        fig.suptitle(f"State and Belief over Time\nQ = {np.diag(Qv)}\nR = {np.diag(Rw)}")
+        for i, ax in enumerate(axs.flatten()):
+            if i < x.shape[1]:
+                ax.plot(x[:,i], label = f'{dyn.state_labels()[i]}')
+                ax.plot(mu[:,i], label = f'$\hat{{{dyn.state_labels()[i]}}}$')
+                if not(xdes is None):
+                    ax.plot(xdes[:,i], linestyle='--', label = f'${dyn.state_labels()[i]}^*$')
+                ax.set_xlabel("Time [s]")
+                ax.set_ylabel(f'{dyn.state_labels()[i]}')
+                ax.legend()
+            else:
+                ax.axis('off')
+    
+        plt.savefig(f'{log_folder}/visuals/{filename}.png')
+
+    def control_effort_plotter(action, desired_action, filename = 'control effort plot'):
+        fig, axs = plt.subplots(2,2, figsize=(12,18))
+        fig.suptitle(f"Control Effort")
+        for i, ax in enumerate(axs.flatten()):
+            if i < action.shape[1]:
+                ax.plot(action[:,i], label = f'{dyn.action_labels()[i]}')
+                ax.plot(desired_action[:,i], linestyle = '--', label = f'${dyn.action_labels()[i]}_{{des}}$')
+                ax.set_xlabel("Time [s]")
+                ax.set_ylabel(f'{dyn.action_labels()[i]}')
+                ax.legend()
+            else:
+                ax.axis('off')
+
+        plt.savefig(f'{log_folder}/visuals/{filename}.png')
+
+    
     # EKF --------------------------------------------------------------------------------------------------------------------
     # initialize prior
     mu0 = state_initial
     Sig0 = (1e-1) * np.eye(dyn.state_size())
 
+
     # intialize process and measurement noise covariance matrices
-    Qv = (1e-1)*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
+    Qv = (1e-8)*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
     assert(Qv.shape[0] == dyn.state_size())
-    Rw = (1e-1)*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
+    Rw = (1e-8)*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
     # initialize measurement model object
     h = lambda s : s[:]
     obs = ObservationModel(h)
@@ -498,10 +532,12 @@ if __name__ == "__main__":
 
     # Run the simulation for some number of steps
     pbar = tqdm(total=num_steps, desc="Running simulation")
+    desired_action_history = []
     # print(state_initial)
     for i in range(num_steps):
         # Take an action (this is based on previous observations)
         action = agent.act()
+        desired_action_history.append(action)
         state, done_flag, done_message = environment.step(action, Qv)
         ilqr_traj[i+1] = state[:3]
         # print(action)
@@ -535,25 +571,8 @@ if __name__ == "__main__":
 
     # --------------------------------------------------------------------------------------------------------------------------
 
-    def mean_and_estimate_plotter(x, mu, xdes = None, filename = 'belieftracking'):
-        # x, mu = np.asarray(x), np.asarray(mu)
-        fig, axs = plt.subplots(7, 2, figsize=(12,18))
-        fig.suptitle("State and Belief over Time")
-        for i, ax in enumerate(axs.flatten()):
-            if i < x.shape[1]:
-                ax.plot(x[:,i], label = f'{dyn.state_labels()[i]}')
-                ax.plot(mu[:,i], label = f'$\hat{{{dyn.state_labels()[i]}}}$')
-                if not(xdes is None):
-                    ax.plot(xdes[:,i], linestyle='--', label = f'${dyn.state_labels()[i]}^*$')
-                ax.set_xlabel("Time [s]")
-                ax.set_ylabel(f'{dyn.state_labels()[i]}')
-                ax.legend()
-            else:
-                ax.axis('off')
-        
-        plt.savefig(f'{log_folder}/visuals/{filename}.png')
-
-    mean_and_estimate_plotter(agent.state_history_tracker.get_history(), agent.belief_history_tracker.get_history(), xdes = x_scvx)
+    mean_and_estimate_plotter(agent.state_history_tracker.get_history(), agent.belief_history_tracker.get_history(), xdes = policy.x_bar)
+    control_effort_plotter(agent.action_history_tracker.get_history(), np.asarray(desired_action_history))
 
     # Plot state errors
     # Plotting the state errors
