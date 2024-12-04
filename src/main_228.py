@@ -27,7 +27,7 @@ import policies.samplers
 import standard
 from sdf import Environment_SDF
 from policies.cvxguidance import SCPSolver, Trajectory, SCvxSolver
-from policies.filter import ObservationModel, EKF
+from policies.filter import ObservationModel, Filter, EKF
 
 if __name__ == "__main__":
     """
@@ -461,14 +461,15 @@ if __name__ == "__main__":
 
     # Define plotting tools for iterative noise analysis
     
-    def mean_and_estimate_plotter(x, mu, xdes = None, filename = 'belieftracking'):
+    def mean_and_estimate_plotter(x, mu = None, xdes = None, dest = 'belief', filename = 'belieftracking'):
         # x, mu = np.asarray(x), np.asarray(mu)
         fig, axs = plt.subplots(7, 2, figsize=(12,18))
         fig.suptitle(f"State and Belief over Time\nQ = {np.diag(Qv)}\nR = {np.diag(Rw)}")
         for i, ax in enumerate(axs.flatten()):
             if i < x.shape[1]:
                 ax.plot(x[:,i], label = f'{dyn.state_labels()[i]}')
-                ax.plot(mu[:,i], label = f'$\hat{{{dyn.state_labels()[i]}}}$')
+                if not(mu is None):
+                    ax.plot(mu[:,i], label = f'$\hat{{{dyn.state_labels()[i]}}}$')
                 if not(xdes is None):
                     ax.plot(xdes[:,i], linestyle='--', label = f'${dyn.state_labels()[i]}^*$')
                 ax.set_xlabel("Time [s]")
@@ -477,13 +478,13 @@ if __name__ == "__main__":
             else:
                 ax.axis('off')
 
-        destination_path = os.path.join(log_folder, 'visuals', 'belief')
+        destination_path = os.path.join(log_folder, 'visuals', dest)
         os.makedirs(destination_path, exist_ok=True)
         full_path = os.path.join(destination_path, f'{filename}.png')
     
         plt.savefig(full_path)
 
-    def control_effort_plotter(action, desired_action, filename = 'controleffort'):
+    def control_effort_plotter(action, desired_action, dest = 'belief', filename = 'controleffort'):
         fig, axs = plt.subplots(2,2, figsize=(12,18))
         fig.suptitle(f"Control Effort")
         for i, ax in enumerate(axs.flatten()):
@@ -496,7 +497,7 @@ if __name__ == "__main__":
             else:
                 ax.axis('off')
 
-        destination_path = os.path.join(log_folder, 'visuals', 'actions')
+        destination_path = os.path.join(log_folder, 'visuals', dest)
         os.makedirs(destination_path, exist_ok=True)
         full_path = os.path.join(destination_path, f'{filename}.png')
     
@@ -542,7 +543,8 @@ if __name__ == "__main__":
         obs = ObservationModel(h)
         assert(h(mu0).size == Rw.shape[0])
 
-        filter = EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
+        filterDefault = Filter(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), dyn, rng_seed=228)
+        ekf = EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), dyn, obs, rng_seed = 228)
 
         # Can now create an agent
         agentDefault = Agent(
@@ -551,6 +553,7 @@ if __name__ == "__main__":
             state_size=dyn.state_size(),
             action_ranges=dyn.action_ranges(),
             zero_pad_state=None,
+            filter=copy.deepcopy(filterDefault)
         )
 
         agentEKF = Agent(
@@ -559,7 +562,7 @@ if __name__ == "__main__":
             state_size=dyn.state_size(),
             action_ranges=dyn.action_ranges(),
             zero_pad_state=None,
-            filter=copy.deepcopy(filter)
+            filter=copy.deepcopy(ekf)
         ) 
         use_gpu_if_available = False
 
@@ -568,6 +571,40 @@ if __name__ == "__main__":
         desired_action_history = []
         # print(state_initial)
 
+
+        for i in range(num_steps):
+            # Take an action (this is based on previous observations)
+            action = agentDefault.act()
+            desired_action_history.append(action)
+            state, done_flag, done_message = environmentDef.step(action, Qv)
+            ilqr_traj[i+1] = state[:3]
+            # print(action)
+            # print(state)
+            pbar.update(1)
+
+            # If we're done exit the loop
+            if done_flag:
+                pbar.set_description(done_message)
+                break
+
+            # Make new observations
+            agentDefault.observe(state, action)
+
+            # Update the pbar with the current state and action
+            p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
+            v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
+            w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
+            a_string = ", ".join([f"{x:<4.1f}" for x in action])
+            dist_to_goal_string = f"{np.linalg.norm(state[0:3] - state_goal[0:3]):<4.1f}"
+            pbar.set_description(
+                f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
+        # Close the bar
+        pbar.close()
+
+        # Run the simulation for some number of steps
+        pbar = tqdm(total=num_steps, desc="Running simulation")
+        desired_action_history = []
+        # print(state_initial)
 
         for i in range(num_steps):
             # Take an action (this is based on previous observations)
@@ -605,6 +642,9 @@ if __name__ == "__main__":
             propagated_traj_cvx[j,:] = dyn.step(x_scvx[j-1,:], u_scvx[j-1,:])
 
         # --------------------------------------------------------------------------------------------------------------------------
+
+        mean_and_estimate_plotter(agentDefault.state_history_tracker.get_history(), agentDefault.belief_history_tracker.get_history(), xdes=policy_i.x_bar, dest = 'state', filename = f'noisystate{_k}')
+        control_effort_plotter(agentDefault.action_history_tracker.get_history(), np.asarray(desired_action_history), dest = 'state', filename=f'controleffort{_k}')
 
         mean_and_estimate_plotter(agentEKF.state_history_tracker.get_history(), agentEKF.belief_history_tracker.get_history(), xdes = policy_i.x_bar, filename = f'belieftracking{_k}')
         control_effort_plotter(agentEKF.action_history_tracker.get_history(), np.asarray(desired_action_history), filename=f'controleffort{_k}')

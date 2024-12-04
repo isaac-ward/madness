@@ -51,9 +51,9 @@ class Filter:
         dt (float): Time step for dynamics propagation.
         rng_seed (int): Random seed for reproducibility.
     """
-    def __init__(self, mu0, Sig0, Q, R, 
-                 obs: ObservationModel,
+    def __init__(self, mu0, Sig0, Q, R,
                  dyn: DynamicsQuadcopter3D, 
+                 obs: ObservationModel = ObservationModel(h=lambda x : x[:]),
                  rng_seed = 273):
         
         """
@@ -77,6 +77,9 @@ class Filter:
         self.dyn = dyn
         self.dt = dyn.dt
         self.rng_seed = rng_seed
+
+    def filter(self, u, y):
+        return y
 
     def observe(self, state):
         """
@@ -102,8 +105,8 @@ class EKF(Filter):
     predict, update, and step methods.
     """
     def __init__(self, mu0, Sig0, Q, R, 
-                 obs: ObservationModel,
                  dyn: DynamicsQuadcopter3D, 
+                 obs: ObservationModel,
                  rng_seed=273):
         """
         Initialize the EKF.
@@ -117,7 +120,7 @@ class EKF(Filter):
             dyn (DynamicsQuadcopter3D): Dynamics model.
             rng_seed (int, optional): Random seed for reproducibility. Default is 273.
         """
-        super().__init__(mu0, Sig0, Q, R, obs, dyn, rng_seed)
+        super().__init__(mu0, Sig0, Q, R, dyn, obs, rng_seed)
 
     def predict(self, u):
         """
