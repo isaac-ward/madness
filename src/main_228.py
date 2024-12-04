@@ -451,6 +451,16 @@ if __name__ == "__main__":
 
         return policy
     
+    start_time = time.time()
+    # policy = al_ilqr_hover()
+    policy = al_ilqr_scp()
+    end_time = time.time()
+    ilqr_traj = np.copy(path_xyz_smooth)
+    num_steps = np.shape(path_xyz_smooth)[0]
+    num_seconds = dyn.dt * num_steps
+
+    # Define plotting tools for iterative noise analysis
+    
     def mean_and_estimate_plotter(x, mu, xdes = None, filename = 'belieftracking'):
         # x, mu = np.asarray(x), np.asarray(mu)
         fig, axs = plt.subplots(7, 2, figsize=(12,18))
@@ -466,10 +476,14 @@ if __name__ == "__main__":
                 ax.legend()
             else:
                 ax.axis('off')
-    
-        plt.savefig(f'{log_folder}/visuals/{filename}.png')
 
-    def control_effort_plotter(action, desired_action, filename = 'control effort plot'):
+        destination_path = os.path.join(log_folder, 'visuals', 'belief')
+        os.makedirs(destination_path, exist_ok=True)
+        full_path = os.path.join(destination_path, f'{filename}.png')
+    
+        plt.savefig(full_path)
+
+    def control_effort_plotter(action, desired_action, filename = 'controleffort'):
         fig, axs = plt.subplots(2,2, figsize=(12,18))
         fig.suptitle(f"Control Effort")
         for i, ax in enumerate(axs.flatten()):
@@ -482,7 +496,12 @@ if __name__ == "__main__":
             else:
                 ax.axis('off')
 
-        plt.savefig(f'{log_folder}/visuals/{filename}.png')
+        destination_path = os.path.join(log_folder, 'visuals', 'actions')
+        os.makedirs(destination_path, exist_ok=True)
+        full_path = os.path.join(destination_path, f'{filename}.png')
+    
+        plt.savefig(full_path)
+
 
     
     # EKF --------------------------------------------------------------------------------------------------------------------
@@ -490,136 +509,158 @@ if __name__ == "__main__":
     mu0 = state_initial
     Sig0 = (1e-1) * np.eye(dyn.state_size())
 
+    Qscale = np.logspace(-8, 1, 10)
+    Rscale = np.logspace(-8, 1, 10)
+    assert(Qscale.size == Rscale.size)
 
-    # intialize process and measurement noise covariance matrices
-    Qv = (1e-8)*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
-    assert(Qv.shape[0] == dyn.state_size())
-    Rw = (1e-8)*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
-    # initialize measurement model object
-    h = lambda s : s[:]
-    obs = ObservationModel(h)
-    assert(h(mu0).size == Rw.shape[0])
+    for _k, (Qk, Rk) in enumerate(zip(Qscale, Rscale)):
+        policy_i = copy.deepcopy(policy)
 
-    filter = EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
+        # Create the environments
+        environmentDef = Environment(
+            state_initial=state_initial,
+            state_goal=state_goal,
+            dynamics=dyn,
+            map_=map_,
+            episode_length=num_steps,
+        )
 
-    start_time = time.time()
-    # policy = al_ilqr_hover()
-    policy = al_ilqr_scp()
-    end_time = time.time()
-    ilqr_traj = np.copy(path_xyz_smooth)
+        environmentEKF = Environment(
+            state_initial=state_initial,
+            state_goal=state_goal,
+            dynamics=dyn,
+            map_=map_,
+            episode_length=num_steps
+        )
 
-    # Can now create an agent
-    agent = Agent(
-        state_initial=state_initial,
-        policy=policy,
-        state_size=dyn.state_size(),
-        action_ranges=dyn.action_ranges(),
-        zero_pad_state=None,
-        filter=copy.deepcopy(filter)
-    ) 
+        # intialize process and measurement noise covariance matrices
+        Qv = Qk*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
+        assert(Qv.shape[0] == dyn.state_size())
+        Rw = Rk*np.diag([1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1])
+        # initialize measurement model object
+        h = lambda s : s[:]
+        obs = ObservationModel(h)
+        assert(h(mu0).size == Rw.shape[0])
 
-    # Create the environment
-    num_steps = np.shape(path_xyz_smooth)[0]
-    num_seconds = dyn.dt * num_steps
-    environment = Environment(
-        state_initial=state_initial,
-        state_goal=state_goal,
-        dynamics=dyn,
-        map_=map_,
-        episode_length=num_steps,
-    )
-    use_gpu_if_available = False
+        filter = EKF(mu0, Sig0, copy.deepcopy(Qv), copy.deepcopy(Rw), obs, dyn, rng_seed = 228)
 
-    # Run the simulation for some number of steps
-    pbar = tqdm(total=num_steps, desc="Running simulation")
-    desired_action_history = []
-    # print(state_initial)
-    for i in range(num_steps):
-        # Take an action (this is based on previous observations)
-        action = agent.act()
-        desired_action_history.append(action)
-        state, done_flag, done_message = environment.step(action, Qv)
-        ilqr_traj[i+1] = state[:3]
-        # print(action)
-        # print(state)
-        pbar.update(1)
+        # Can now create an agent
+        agentDefault = Agent(
+            state_initial=state_initial,
+            policy=policy_i,
+            state_size=dyn.state_size(),
+            action_ranges=dyn.action_ranges(),
+            zero_pad_state=None,
+        )
 
-        # If we're done exit the loop
-        if done_flag:
-            pbar.set_description(done_message)
-            break
+        agentEKF = Agent(
+            state_initial=state_initial,
+            policy=policy_i,
+            state_size=dyn.state_size(),
+            action_ranges=dyn.action_ranges(),
+            zero_pad_state=None,
+            filter=copy.deepcopy(filter)
+        ) 
+        use_gpu_if_available = False
 
-        # Make new observations
-        agent.observe(state, action)
+        # Run the simulation for some number of steps
+        pbar = tqdm(total=num_steps, desc="Running simulation")
+        desired_action_history = []
+        # print(state_initial)
 
-        # Update the pbar with the current state and action
-        p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
-        v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
-        w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
-        a_string = ", ".join([f"{x:<4.1f}" for x in action])
-        dist_to_goal_string = f"{np.linalg.norm(state[0:3] - state_goal[0:3]):<4.1f}"
-        pbar.set_description(
-            f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
-    # Close the bar
-    pbar.close()
 
-    # Propagate control trajectory
-    propagated_traj_cvx = np.zeros_like(x_scvx)
-    propagated_traj_cvx[0,:] = np.copy(x_scvx[0])
-    for j in range(1,K+1):
-        propagated_traj_cvx[j,:] = dyn.step(x_scvx[j-1,:], u_scvx[j-1,:])
+        for i in range(num_steps):
+            # Take an action (this is based on previous observations)
+            action = agentEKF.act()
+            desired_action_history.append(action)
+            state, done_flag, done_message = environmentEKF.step(action, Qv)
+            ilqr_traj[i+1] = state[:3]
+            # print(action)
+            # print(state)
+            pbar.update(1)
 
-    # --------------------------------------------------------------------------------------------------------------------------
+            # If we're done exit the loop
+            if done_flag:
+                pbar.set_description(done_message)
+                break
 
-    mean_and_estimate_plotter(agent.state_history_tracker.get_history(), agent.belief_history_tracker.get_history(), xdes = policy.x_bar)
-    control_effort_plotter(agent.action_history_tracker.get_history(), np.asarray(desired_action_history))
+            # Make new observations
+            agentEKF.observe(state, action)
 
-    # Plot state errors
-    # Plotting the state errors
-    # TODO plot iLQR nominal trajectory
-    fig, axs = plt.subplots(7, 2, figsize=(12, 18))
-    fig.suptitle("State Error Over Time")
+            # Update the pbar with the current state and action
+            p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
+            v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
+            w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
+            a_string = ", ".join([f"{x:<4.1f}" for x in action])
+            dist_to_goal_string = f"{np.linalg.norm(state[0:3] - state_goal[0:3]):<4.1f}"
+            pbar.set_description(
+                f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
+        # Close the bar
+        pbar.close()
 
-    policy.state_error = np.array(policy.state_error[1:])
+        # Propagate control trajectory
+        propagated_traj_cvx = np.zeros_like(x_scvx)
+        propagated_traj_cvx[0,:] = np.copy(x_scvx[0])
+        for j in range(1,K+1):
+            propagated_traj_cvx[j,:] = dyn.step(x_scvx[j-1,:], u_scvx[j-1,:])
 
-    for i, ax in enumerate(axs.flatten()):
-        if i < policy.state_error.shape[1]:  # Ensure you don't exceed the number of states
-            ax.plot(policy.state_error[:, i], label=f'Error in {dyn.state_labels()[i]}')
-            ax.set_xlabel("Time [s]")
-            ax.set_ylabel("Error")
-            ax.legend()
-        else:
-            ax.axis('off')  # Hide unused subplots
+        # --------------------------------------------------------------------------------------------------------------------------
 
-    # plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to fit title
-    plt.savefig("Debguggggggggggg.png")
+        mean_and_estimate_plotter(agentEKF.state_history_tracker.get_history(), agentEKF.belief_history_tracker.get_history(), xdes = policy_i.x_bar, filename = f'belieftracking{_k}')
+        control_effort_plotter(agentEKF.action_history_tracker.get_history(), np.asarray(desired_action_history), filename=f'controleffort{_k}')
 
-    # Plot cost
-    # Plotting the cost
-    fig, axs = plt.subplots(7, 2, figsize=(12, 18))
-    fig.suptitle("State Error Over Time")
+        # Plot state errors
+        # Plotting the state errors
+        # TODO plot iLQR nominal trajectory
+        # fig, axs = plt.subplots(7, 2, figsize=(12, 18))
+        # fig.suptitle("State Error Over Time")
 
-    policy.cost = np.array(policy.cost)
-    cost_labels = ["iLQR_terminal","AL_terminal","iLQR_tracking","AL_tracking","continuity"]
+        # policy.state_error = np.array(policy.state_error[1:])
 
-    for i, ax in enumerate(axs.flatten()):
-        if i < policy.cost.shape[1]:  # Ensure you don't exceed the number of states
-            cost_data = np.where(policy.cost[:, i] > 0, policy.cost[:, i], np.nan)
-            print(str(cost_labels[i]))
-            print(cost_data)
-            ax.plot(cost_data, label=f'Cost in {cost_labels[i]}')
-            ax.set_xlabel("Time Step")
-            ax.set_ylabel("Cost")
-            ax.set_yscale('log')
-            ax.legend()
-        else:
-            ax.axis('off')  # Hide unused subplots
+        # for i, ax in enumerate(axs.flatten()):
+        #     if i < policy.state_error.shape[1]:  # Ensure you don't exceed the number of states
+        #         ax.plot(policy.state_error[:, i], label=f'Error in {dyn.state_labels()[i]}')
+        #         ax.set_xlabel("Time [s]")
+        #         ax.set_ylabel("Error")
+        #         ax.legend()
+        #     else:
+        #         ax.axis('off')  # Hide unused subplots
 
-    # plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to fit title
-    plt.savefig("COSTDEBUG.png")
+        # # plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to fit title
+        # destination_path = os.path.join(log_folder, 'visuals', 'policy')
+        # os.makedirs(destination_path, exist_ok=True)
+        # full_path = os.path.join(destination_path, f'lqrError{_k}.png')
+        # plt.savefig(full_path)
+
+        # # Plot cost
+        # # Plotting the cost
+        # fig, axs = plt.subplots(7, 2, figsize=(12, 18))
+        # fig.suptitle("State Error Over Time")
+
+        # policy.cost = np.array(policy.cost)
+        # cost_labels = ["iLQR_terminal","AL_terminal","iLQR_tracking","AL_tracking","continuity"]
+
+        # for i, ax in enumerate(axs.flatten()):
+        #     if i < policy.cost.shape[1]:  # Ensure you don't exceed the number of states
+        #         cost_data = np.where(policy.cost[:, i] > 0, policy.cost[:, i], np.nan)
+        #         print(str(cost_labels[i]))
+        #         print(cost_data)
+        #         ax.plot(cost_data, label=f'Cost in {cost_labels[i]}')
+        #         ax.set_xlabel("Time Step")
+        #         ax.set_ylabel("Cost")
+        #         ax.set_yscale('log')
+        #         ax.legend()
+        #     else:
+        #         ax.axis('off')  # Hide unused subplots
+
+        # # plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to fit title
+        # destination_path = os.path.join(log_folder, 'visuals', 'cvx')
+        # os.makedirs(destination_path, exist_ok=True)
+        # full_path = os.path.join(destination_path, f'costs{_k}.png')
+        # plt.savefig(full_path)
 
     # Log everything of interest
-    environment.log(log_folder)
+    environmentEKF.log(log_folder)
 
     # Log the cubes
     utils.logging.pickle_to_filepath(
