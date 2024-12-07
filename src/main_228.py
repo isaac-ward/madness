@@ -34,6 +34,10 @@ if __name__ == "__main__":
     This file will run the tests required for our 228 final project. The goal for this project is to
     demonstrate the effectiveness of the Extended Kalman Filter (EKF) when dealing with belief space.
     """
+    # AL-iLQR Tracking Option
+    # 1 - Track A* path
+    # 2 - Track SCP path
+
     # Seed everything
     utils.general.random_seed(42)
 
@@ -57,8 +61,8 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     # state_initial[:3] = 25
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = state_initial[:3] + np.array([5,5,20])
-    # state_goal[:3] = 25
+    # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
+    state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
     # state_goal[:3] = np.array([15,15,5])
 
@@ -68,7 +72,7 @@ if __name__ == "__main__":
     path_xyz = np.array([xyz_initial, xyz_goal])
     path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     try:
-        path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz, desired_points_per_meter=8)
+        path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz, desired_points_per_meter=10)
     except Exception as e:
         print(e)
         path_xyz_smooth = path_xyz
@@ -394,7 +398,7 @@ if __name__ == "__main__":
 
         plt.close()
 
-    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=10,plot_progress_helper=plot_progress_helper)
+    x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=30,plot_progress_helper=plot_progress_helper)
 
     # iLQR --------------------------------------------------------------------------------------------------------------------
     # Create iLQR policy
@@ -443,7 +447,7 @@ if __name__ == "__main__":
             W=W,
             x_track=x_scvx,
             u_track=u_scvx,
-            segments=20,
+            segments=50,
             eps=1e-5,
             max_iters=1000,
             verbose=True,

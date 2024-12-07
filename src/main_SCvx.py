@@ -52,8 +52,8 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     # state_initial[3] = 1
     state_goal = np.zeros(dyn.state_size())
-    state_goal[:3] = np.array([10,5,2])
-    # state_goal[:3] = 25
+    state_goal[:3] = np.array([15,15,5])
+    state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
     # state_goal[3] = 1
     # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
@@ -258,6 +258,7 @@ if __name__ == "__main__":
         x_goal=x_goal,
         sdf=sdfs,
         verbose=True,
+        pull_from_cache=True,
     )
 
     def plot_progress_helper(
@@ -283,6 +284,7 @@ if __name__ == "__main__":
             path_xyz_smooth=path_xyz_smooth,
             path_xyz_cvx=x[:,:3],
             path_propagated=propagated_traj_path,
+            path_al_ilqr=None,
             save_filename=f"environment_{indx}",
         )
 
@@ -404,6 +406,7 @@ if __name__ == "__main__":
 
     path_scvx = x_scvx[:,:3]
 
+    # Propagate trajectory
     propagated_traj = np.zeros_like(x_scvx)
     propagated_traj[0,:] = np.copy(basic_state_traj[0])
     for i in range(1,K+1):
@@ -439,7 +442,7 @@ if __name__ == "__main__":
 
     utils.logging.save_to_npz(
         os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        propagated_traj_path#path_xyz_smooth,
+        path_xyz_smooth,
     )
 
     # Log the CVX path
@@ -448,10 +451,16 @@ if __name__ == "__main__":
         path_scvx,
     )
 
+    # Log the propagated CVX path
+    utils.logging.save_to_npz(
+        os.path.join(log_folder, "cvx", "propagated.npz"),
+        propagated_traj_path,
+    )
+
     # Log the iLQR path
     # TODO
 
     # Render visuals
     #v.plot_histories()
-    # v.plot_environment()
+    v.plot_environment()
     # v.render_video(desired_fps=25)
