@@ -493,12 +493,6 @@ class SCvxSolver:
         # Create constraint list
         constraints = []
 
-        # Propagate states with model
-        # x_prop = np.zeros_like(x_prev)
-        # x_prop[0] = np.copy(x_prev[0])
-        # for _k in range(self.N - 1):
-        #     x_prop[_k + 1] = self.dynamics.step(x_prop[_k], u_prev[_k])
-
         # Get affinized dynamics
         A, B, C = self.dynamics.affinize(x_prev[:-1],u_prev)
         A, B, C = np.array(A),np.array(B),np.array(C)
@@ -579,6 +573,7 @@ class SCvxSolver:
             failed,
     ):
         """
+        TODO update with SCvx update rule on page 75
         """
         λscale = 2.
         λmax = 1e6
@@ -621,12 +616,7 @@ class SCvxSolver:
         1. Virtual control variables (slack variables)
         2. Adaptive trust regions
 
-        TODO this shit is ass and slow as fuck need to better tune and scale (plus need better update rules)
-        - αx
-        - αu
-        - ηinit
-        - λinit
-        - nu_max
+        TODO convergence guarentee page 77
         """
         # Check if results cached for this
         computation_inputs_state = (
@@ -675,7 +665,7 @@ class SCvxSolver:
 
             # Define trust region parameters
             αx = 1.
-            αu = 0
+            αu = 1.
             ηinit = 1.
             η = np.copy(ηinit)
             
@@ -700,6 +690,9 @@ class SCvxSolver:
                 x = cvx.Variable((self.N,self.n))
                 u = cvx.Variable((self.N - 1,self.m))
                 nu = cvx.Variable((self.N - 1,self.n))
+                nu_s = cvx.Variable((self.N,self.nss))
+                nu_ic = cvx.Variable()
+                nu_tc = cvx.Variable()
                 slack_sdf = cvx.Variable((self.N,self.nss))
 
                 # Get problem constraints
@@ -730,7 +723,7 @@ class SCvxSolver:
                     η, λ, nu_max = self.solve_failed(η,λ,nu_max,0)
                 J = prob.value
 
-                # Check convergence criteria
+                # Check convergence criteria TODO implement convergence criteria from page 77
                 no_change = np.allclose(x.value,x_prev)
                 if ((abs(J_prev - J) < self.eps) and (np.max(np.abs(nu.value)) < self.eps)) or no_change: # TODO don't be stupid
                     converged = True
