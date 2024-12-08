@@ -29,7 +29,7 @@ from sdf import Environment_SDF
 from policies.cvxguidance import SCPSolver, Trajectory, SCvxSolver
 from policies.filter import ObservationModel, Filter, EKF
 
-def metrics(s_history,a_history,s_track,start_time,end_time,log_folder,dest,filename):
+def metrics(s_history,a_history,s_track,start_time,end_time,Qv,Rw,Qk,Rk,log_folder,dest,filename):
     # Timesteps
     K = s_history.shape[0] - 1
 
@@ -49,11 +49,16 @@ def metrics(s_history,a_history,s_track,start_time,end_time,log_folder,dest,file
 
     # Log these metrics
     with open(os.path.join(log_folder, 'visuals', dest, filename + '.txt'), "w") as file:
-        file.write("Total Steps Taken: " + str(s_history.shape[0]) + "/" + str(s_track.shape[0])
+        file.write("Qk: " + str(Qk)
+                   +"\nRk: " + str(Rk)
+                   + "\nQv: " + str(Qv)
+                   + "\nRw: " + str(Rw)
+                   + "\nTotal Steps Taken: " + str(s_history.shape[0]) + "/" + str(s_track.shape[0])
                    + "\nTotal Control Effort: " + str(total_control_effort) + " rads/sec"
                    + "\nTotal Path Distance: " + str(total_distance) + " meters"
                    + "\nTotal Path Deviation: " + str(total_deviation)
                    + "\nTotal Runtime: " + str(end_time - start_time) + " seconds"
+                   + "\nAverage Runtime: " + str((end_time - start_time)/K) + " seconds"
         )
 
 if __name__ == "__main__":
@@ -503,7 +508,10 @@ if __name__ == "__main__":
     def mean_and_estimate_plotter(x, mu = None, xdes = None, dest = 'belief', filename = 'belieftracking'):
         # x, mu = np.asarray(x), np.asarray(mu)
         fig, axs = plt.subplots(7, 2, figsize=(12,18))
-        fig.suptitle(f"State and Belief over Time\nQ = {np.diag(Qv)}\nR = {np.diag(Rw)}")
+        try:
+            fig.suptitle(f"State and Belief over Time\nQ = {np.diag(Qv)}\nR = {np.diag(Rw)}")
+        except:
+            fig.suptitle(f"State and Belief over Time\nQ = None\nR = None")
         for i, ax in enumerate(axs.flatten()):
             if i < x.shape[1]:
                 ax.plot(x[:,i], label = f'{dyn.state_labels()[i]}')
@@ -545,7 +553,7 @@ if __name__ == "__main__":
     # initialize prior
     mu0 = state_initial
     Sig0 = (1e-1) * np.eye(dyn.state_size())
-
+    
     Qscale = np.logspace(-8, 1, 10)
     Rscale = np.logspace(-8, 1, 10)
     assert(Qscale.size == Rscale.size)
@@ -680,17 +688,21 @@ if __name__ == "__main__":
         # --------------------------------------------------------------------------------------------------------------------------
 
         # No EKF
-        mean_and_estimate_plotter(agentDefault.state_history_tracker.get_history(), agentDefault.belief_history_tracker.get_history(), xdes=x_scvx, dest = 'state', filename = f'noisystate{_k}')
-        control_effort_plotter(agentDefault.action_history_tracker.get_history(), dest = 'state', filename=f'controleffort{_k}')
+        mean_and_estimate_plotter(agentDefault.state_history_tracker.get_history(), agentDefault.belief_history_tracker.get_history(), xdes=x_scvx, dest = 'state', filename = f'noisystate{_k+1}')
+        control_effort_plotter(agentDefault.action_history_tracker.get_history(), dest = 'state', filename=f'controleffort{_k+1}')
         metrics(
             s_history=agentDefault.state_history_tracker.get_history(),
             a_history=agentDefault.action_history_tracker.get_history(),
             s_track=x_scvx,
             start_time=start_time,
             end_time=end_time,
+            Qk=Qk,
+            Rk=Rk,
+            Qv=Qv,
+            Rw=Rw,
             log_folder=log_folder,
             dest='state',
-            filename=f'metrics{_k}',
+            filename=f'metrics{_k+1}',
         )
         v.plot_environment_from_objects(
             map_=map_,
@@ -700,21 +712,25 @@ if __name__ == "__main__":
             path_xyz_cvx=x_scvx[:,:3],
             path_propagated=None,
             path_al_ilqr=agentDefault.state_history_tracker.get_history()[:,:3],
-            save_filename=os.path.join('state',f"environment_{_k}"),
+            save_filename=os.path.join('state',f"environment_{_k+1}"),
         )
 
         # EKF
-        mean_and_estimate_plotter(agentEKF.state_history_tracker.get_history(), agentEKF.belief_history_tracker.get_history(), xdes=x_scvx, filename = f'belieftracking{_k}')
-        control_effort_plotter(agentEKF.action_history_tracker.get_history(), filename=f'controleffort{_k}')
+        mean_and_estimate_plotter(agentEKF.state_history_tracker.get_history(), agentEKF.belief_history_tracker.get_history(), xdes=x_scvx, filename = f'belieftracking{_k+1}')
+        control_effort_plotter(agentEKF.action_history_tracker.get_history(), filename=f'controleffort{_k+1}')
         metrics(
             s_history=agentEKF.state_history_tracker.get_history(),
             a_history=agentEKF.action_history_tracker.get_history(),
             s_track=x_scvx,
             start_time=start_time_EKF,
             end_time=end_time_EKF,
+            Qk=Qk,
+            Rk=Rk,
+            Qv=Qv,
+            Rw=Rw,
             log_folder=log_folder,
             dest='belief',
-            filename=f'metrics{_k}',
+            filename=f'metrics{_k+1}',
         )
         v.plot_environment_from_objects(
             map_=map_,
@@ -724,7 +740,7 @@ if __name__ == "__main__":
             path_xyz_cvx=x_scvx[:,:3],
             path_propagated=None,
             path_al_ilqr=agentEKF.state_history_tracker.get_history()[:,:3],
-            save_filename=os.path.join('belief',f"environment_{_k}"),
+            save_filename=os.path.join('belief',f"environment_{_k+1}"),
         )
 
         # Plot state errors
