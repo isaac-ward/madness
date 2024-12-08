@@ -37,10 +37,12 @@ class Agent:
         # We'll also track the history of the states
         # Need a special zero pad item for states because quaternions can't be all zero
         self.state_history_tracker  = ItemHistoryTracker(item_shape=(self.state_size,), zero_pad_item=zero_pad_state)
+        self.state_history_tracker.append(state_initial)
         self.action_history_tracker = ItemHistoryTracker(item_shape=(self.action_size,))
 
         # We will track the history of the belief state/state estimate
         self.belief_history_tracker = ItemHistoryTracker(item_shape=(self.state_size,), zero_pad_item=zero_pad_state)
+        self.belief_history_tracker.append(state_initial)
 
     def get_histories(self):
         num_states_desired  = self.lookback
@@ -65,7 +67,7 @@ class Agent:
             action = self.policy.act(
                 state_history,
                 action_history,
-                len(self.state_history_tracker)
+                len(self.state_history_tracker), # Note timesteps will start at 1
             )
         else:
             action = self.policy.act(

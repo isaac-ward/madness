@@ -136,12 +136,13 @@ class PolicyALiLQR:
         self,
         state_history:np.ndarray,
         action_history:np.ndarray,
-        timestep:int,
+        timestep_1_base:int,
     ):
         """
         Function to execute iLQR control
         """
         # Get the optimal action and other logging information
+        timestep = timestep_1_base - 1
         x = state_history[-1]
         optimal_action = self.u_bar[timestep] + self.dk[timestep] + self.Kk[timestep] @ (x - self.x_bar[timestep])
 
@@ -153,7 +154,8 @@ class PolicyALiLQR:
         u_lower = np.array(self.dynamics.action_ranges())[:,0]
         optimal_action = np.clip(optimal_action, u_lower, u_upper) # Restrict action with limits
 
-        # Print controls executed
+        # Print controls executed at what timestep
+        self._print("Timestep: " + str(timestep_1_base) + "/" + str(self.dk.shape[0]))
         self._print("u: " + str(optimal_action))
 
         # Log the state and action plans alongside the costs, 

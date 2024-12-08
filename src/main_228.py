@@ -29,6 +29,33 @@ from sdf import Environment_SDF
 from policies.cvxguidance import SCPSolver, Trajectory, SCvxSolver
 from policies.filter import ObservationModel, Filter, EKF
 
+def metrics(s_history,a_history,s_track,start_time,end_time,log_folder,dest,filename):
+    # Timesteps
+    K = s_history.shape[0] - 1
+
+    # Total control effort
+    control_effort = np.linalg.norm(a_history)
+    total_control_effort = np.sum(control_effort)
+
+    # Total path distance
+    distances = np.zeros(K)
+    for _i in range(K):
+        distances[_i] = np.linalg.norm(s_history[_i,:3] - s_history[_i+1,:3])
+    total_distance = np.sum(distances)
+
+    # Deviation from tracked trajectory
+    deviations = np.linalg.norm(s_history[:K+1] - s_track[:K+1])
+    total_deviation = np.sum(deviations)
+
+    # Log these metrics
+    with open(os.path.join(log_folder, 'visuals', dest, filename + '.txt'), "w") as file:
+        file.write("Total Steps Taken: " + str(s_history.shape[0]) + "/" + str(s_track.shape[0])
+                   + "\nTotal Control Effort: " + str(total_control_effort) + " rads/sec"
+                   + "\nTotal Path Distance: " + str(total_distance) + " meters"
+                   + "\nTotal Path Deviation: " + str(total_deviation)
+                   + "\nTotal Runtime: " + str(end_time - start_time) + " seconds"
+        )
+
 if __name__ == "__main__":
     """
     This file will run the tests required for our 228 final project. The goal for this project is to
@@ -61,8 +88,8 @@ if __name__ == "__main__":
     state_initial[:3] = 5
     # state_initial[:3] = 25
     state_goal = np.zeros(dyn.state_size())
-    # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
-    state_goal[:3] = 25
+    state_goal[:3] = state_initial[:3] + np.array([5,10,20])
+    # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
     # state_goal[:3] = np.array([15,15,5])
 
@@ -253,7 +280,8 @@ if __name__ == "__main__":
         x_start=state_initial,
         x_goal=state_goal,
         sdf=sdfs,
-        verbose=True
+        verbose=True,
+        pull_from_cache=True,
     )
 
     # Setup SCP iterations manually until exit condition is implemented
@@ -400,6 +428,13 @@ if __name__ == "__main__":
 
     x_scvx,u_scvx,logs_per_iter = scvx.solve(max_iters=30,plot_progress_helper=plot_progress_helper)
 
+    # Propagate control trajectory
+    propagated_traj = np.zeros_like(x_scvx)
+    propagated_traj[0,:] = np.copy(x_scvx[0])
+    for j in range(1,K+1):
+        propagated_traj[j,:] = dyn.step(propagated_traj[j-1,:], u_scvx[j-1,:])
+    propagated_traj_path = propagated_traj[:,:3]
+
     # iLQR --------------------------------------------------------------------------------------------------------------------
     # Create iLQR policy
     n,m = dyn.state_size(),dyn.action_size()
@@ -447,7 +482,7 @@ if __name__ == "__main__":
             W=W,
             x_track=x_scvx,
             u_track=u_scvx,
-            segments=50,
+            segments=20,
             eps=1e-5,
             max_iters=1000,
             verbose=True,
@@ -459,7 +494,7 @@ if __name__ == "__main__":
     # policy = al_ilqr_hover()
     policy = al_ilqr_scp()
     end_time = time.time()
-    ilqr_traj = np.copy(path_xyz_smooth)
+    # ilqr_traj = [path_xyz_smooth[0]]
     num_steps = np.shape(path_xyz_smooth)[0]
     num_seconds = dyn.dt * num_steps
 
@@ -488,13 +523,12 @@ if __name__ == "__main__":
     
         plt.savefig(full_path)
 
-    def control_effort_plotter(action, desired_action, dest = 'belief', filename = 'controleffort'):
+    def control_effort_plotter(action, dest = 'belief', filename = 'controleffort'):
         fig, axs = plt.subplots(2,2, figsize=(12,18))
         fig.suptitle(f"Control Effort")
         for i, ax in enumerate(axs.flatten()):
             if i < action.shape[1]:
                 ax.plot(action[:,i], label = f'{dyn.action_labels()[i]}')
-                ax.plot(desired_action[:,i], linestyle = '--', label = f'${dyn.action_labels()[i]}_{{des}}$')
                 ax.set_xlabel("Time [s]")
                 ax.set_ylabel(f'{dyn.action_labels()[i]}')
                 ax.legend()
@@ -506,8 +540,6 @@ if __name__ == "__main__":
         full_path = os.path.join(destination_path, f'{filename}.png')
     
         plt.savefig(full_path)
-
-
     
     # EKF --------------------------------------------------------------------------------------------------------------------
     # initialize prior
@@ -571,29 +603,28 @@ if __name__ == "__main__":
         use_gpu_if_available = False
 
         # Run the simulation for some number of steps
+        start_time = time.time()
         pbar = tqdm(total=num_steps, desc="Running simulation")
-        desired_action_history = []
         # print(state_initial)
 
-
+        # Without EKF
         for i in range(num_steps):
             # Take an action (this is based on previous observations)
             action = agentDefault.act()
-            desired_action_history.append(action)
             state, done_flag, done_message = environmentDef.step(action, Qv)
-            ilqr_traj[i+1] = state[:3]
+            # ilqr_traj.append(state[:3])
             # print(action)
             # print(state)
             pbar.update(1)
-
-            # If we're done exit the loop
-            if done_flag:
-                pbar.set_description(done_message)
-                break
 
             # Make new observations
             agentDefault.observe(state, action)
 
+            # If we're done exit the loop
+            if done_flag:
+                pbar.set_description(done_message)
+                break
+
             # Update the pbar with the current state and action
             p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
             v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
@@ -604,30 +635,28 @@ if __name__ == "__main__":
                 f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
         # Close the bar
         pbar.close()
+        end_time = time.time()
 
         # Run the simulation for some number of steps
+        start_time_EKF = time.time()
         pbar = tqdm(total=num_steps, desc="Running simulation")
-        desired_action_history = []
         # print(state_initial)
 
+        # With EKF
         for i in range(num_steps):
             # Take an action (this is based on previous observations)
             action = agentEKF.act()
-            desired_action_history.append(action)
             state, done_flag, done_message = environmentEKF.step(action, Qv)
-            ilqr_traj[i+1] = state[:3]
-            # print(action)
-            # print(state)
             pbar.update(1)
+
+            # Make new observations
+            agentEKF.observe(state, action)
 
             # If we're done exit the loop
             if done_flag:
                 pbar.set_description(done_message)
                 break
 
-            # Make new observations
-            agentEKF.observe(state, action)
-
             # Update the pbar with the current state and action
             p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
             v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
@@ -638,20 +667,65 @@ if __name__ == "__main__":
                 f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
         # Close the bar
         pbar.close()
+        end_time_EKF = time.time()
 
         # Propagate control trajectory
         propagated_traj_cvx = np.zeros_like(x_scvx)
         propagated_traj_cvx[0,:] = np.copy(x_scvx[0])
         for j in range(1,K+1):
             propagated_traj_cvx[j,:] = dyn.step(x_scvx[j-1,:], u_scvx[j-1,:])
+        
+        # ilqr_traj = np.array(ilqr_traj)
 
         # --------------------------------------------------------------------------------------------------------------------------
 
-        mean_and_estimate_plotter(agentDefault.state_history_tracker.get_history(), agentDefault.belief_history_tracker.get_history(), xdes=policy_i.x_bar, dest = 'state', filename = f'noisystate{_k}')
-        control_effort_plotter(agentDefault.action_history_tracker.get_history(), np.asarray(desired_action_history), dest = 'state', filename=f'controleffort{_k}')
+        # No EKF
+        mean_and_estimate_plotter(agentDefault.state_history_tracker.get_history(), agentDefault.belief_history_tracker.get_history(), xdes=x_scvx, dest = 'state', filename = f'noisystate{_k}')
+        control_effort_plotter(agentDefault.action_history_tracker.get_history(), dest = 'state', filename=f'controleffort{_k}')
+        metrics(
+            s_history=agentDefault.state_history_tracker.get_history(),
+            a_history=agentDefault.action_history_tracker.get_history(),
+            s_track=x_scvx,
+            start_time=start_time,
+            end_time=end_time,
+            log_folder=log_folder,
+            dest='state',
+            filename=f'metrics{_k}',
+        )
+        v.plot_environment_from_objects(
+            map_=map_,
+            sdfs=sdfs,
+            path_xyz=path_xyz,
+            path_xyz_smooth=path_xyz_smooth,
+            path_xyz_cvx=x_scvx[:,:3],
+            path_propagated=None,
+            path_al_ilqr=agentDefault.state_history_tracker.get_history()[:,:3],
+            save_filename=os.path.join('state',f"environment_{_k}"),
+        )
 
-        mean_and_estimate_plotter(agentEKF.state_history_tracker.get_history(), agentEKF.belief_history_tracker.get_history(), xdes = policy_i.x_bar, filename = f'belieftracking{_k}')
-        control_effort_plotter(agentEKF.action_history_tracker.get_history(), np.asarray(desired_action_history), filename=f'controleffort{_k}')
+        # EKF
+        mean_and_estimate_plotter(agentEKF.state_history_tracker.get_history(), agentEKF.belief_history_tracker.get_history(), xdes=x_scvx, filename = f'belieftracking{_k}')
+        control_effort_plotter(agentEKF.action_history_tracker.get_history(), filename=f'controleffort{_k}')
+        metrics(
+            s_history=agentEKF.state_history_tracker.get_history(),
+            a_history=agentEKF.action_history_tracker.get_history(),
+            s_track=x_scvx,
+            start_time=start_time_EKF,
+            end_time=end_time_EKF,
+            log_folder=log_folder,
+            dest='belief',
+            filename=f'metrics{_k}',
+        )
+        v.plot_environment_from_objects(
+            map_=map_,
+            sdfs=sdfs,
+            path_xyz=path_xyz,
+            path_xyz_smooth=path_xyz_smooth,
+            path_xyz_cvx=x_scvx[:,:3],
+            path_propagated=None,
+            path_al_ilqr=agentEKF.state_history_tracker.get_history()[:,:3],
+            save_filename=os.path.join('belief',f"environment_{_k}"),
+        )
 
         # Plot state errors
         # Plotting the state errors
@@ -706,45 +780,45 @@ if __name__ == "__main__":
     # Log everything of interest
     environmentEKF.log(log_folder)
 
-    # Log the cubes
-    utils.logging.pickle_to_filepath(
-        os.path.join(log_folder, "signed_distance_function.pkl"),
-        sdfs,
-    )
+    # # Log the cubes
+    # utils.logging.pickle_to_filepath(
+    #     os.path.join(log_folder, "signed_distance_function.pkl"),
+    #     sdfs,
+    # )
 
-    # Log the A* path
-    utils.logging.save_to_npz(
-        os.path.join(log_folder, "a_star", "start_to_goal.npz"),
-        path_xyz,
-    )
-    utils.logging.save_to_npz(
-        os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
-        path_xyz_smooth,
-    )
+    # # Log the A* path
+    # utils.logging.save_to_npz(
+    #     os.path.join(log_folder, "a_star", "start_to_goal.npz"),
+    #     path_xyz,
+    # )
+    # utils.logging.save_to_npz(
+    #     os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
+    #     path_xyz_smooth,
+    # )
 
-    # Log the CVX path
-    cvx_traj = np.copy(x_scvx[:,:3])
-    utils.logging.save_to_npz(
-        os.path.join(log_folder, "cvx", "path_xyz_cvx.npz"),
-        cvx_traj,
-    )
+    # # Log the CVX path
+    # cvx_traj = np.copy(x_scvx[:,:3])
+    # utils.logging.save_to_npz(
+    #     os.path.join(log_folder, "cvx", "path_xyz_cvx.npz"),
+    #     cvx_traj,
+    # )
 
-    # Log the propagated CVX path
-    cvx_prop_traj = np.copy(propagated_traj_cvx[:,:3])
-    utils.logging.save_to_npz(
-        os.path.join(log_folder, "cvx", "propagated.npz"),
-        cvx_prop_traj,
-    )
+    # # Log the propagated CVX path
+    # cvx_prop_traj = np.copy(propagated_traj_cvx[:,:3])
+    # utils.logging.save_to_npz(
+    #     os.path.join(log_folder, "cvx", "propagated.npz"),
+    #     cvx_prop_traj,
+    # )
 
-    # Log the iLQR path
-    utils.logging.save_to_npz(
-        os.path.join(log_folder, "al_ilqr", "al_ilqr.npz"),
-        ilqr_traj,
-    )
+    # # Log the iLQR path
+    # utils.logging.save_to_npz(
+    #     os.path.join(log_folder, "al_ilqr", "al_ilqr.npz"),
+    #     ilqr_traj,
+    # )
 
     # Render visuals
     visual = Visual(log_folder)
     #visual.plot_histories()
-    visual.plot_environment()
+    # visual.plot_environment()
     visual.render_video(desired_fps=25)
     print("Runtime: " + str(end_time-start_time))
