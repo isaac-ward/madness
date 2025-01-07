@@ -385,6 +385,7 @@ class PolicyFlowActionDistribution(pl.LightningModule):
         # Generate the task that this episode represents
         state_initial, state_goal = Environment.get_two_states_separated_by_distance(
             self.environment.map,
+            template=self.mppi_computer.dynamics.state_randomization_template(),
             min_distance=26,
             rng=utils.general.get_time_based_rng(),
         )

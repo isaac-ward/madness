@@ -117,6 +117,9 @@ class DynamicsQuadcopter3D:
     def state_size(self):
         return 12
     
+    def state_randomization_template(self):
+        return ["X", "Y", "Z", 0, 0, 0,   0, 0, 0,   0, 0, 0]
+    
     def action_size(self):
         return 4
     

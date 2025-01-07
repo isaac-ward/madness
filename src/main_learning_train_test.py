@@ -34,7 +34,7 @@ if __name__ == "__main__":
     load_dotenv(dotenv_path=utils.general.get_dotenv_path())
 
     # Create the standard objects needed for this paradigm
-    dyn = standard.get_standard_dynamics_quadcopter_3d()
+    dyn = standard.get_standard_dynamics_jax_quadcopter_3d()
     map_ = standard.get_standard_map()
 
     # Create the environment - the state_initial and state_goal 
@@ -69,6 +69,7 @@ if __name__ == "__main__":
         policy=policy,
         state_size=dyn.state_size(),
         action_ranges=dyn.action_ranges(),
+        zero_pad_state=None,
     ) 
 
     # Create a data module, and a trainer, and get to learnin'!
