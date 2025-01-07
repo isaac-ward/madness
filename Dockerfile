@@ -39,12 +39,17 @@ RUN /bin/bash -c "source /opt/conda/bin/activate && \
     conda activate madness && \
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
     # pip install pytorch-lightning==1.9.0 && \
-    pip install pytorch-lightning==2.1.0 && \
+    pip install pytorch-lightning==2.4.0 && \
     pip install trimesh && \
-    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy nflows torchinfo wandb jax && \
+    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy nflows torchinfo wandb && \
+    # pip install jax && \
+    pip install jax[cuda] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html && \
     conda install -c conda-forge cupy -y && \
     conda clean -ya"
-    
+
+# Explicitly use CPU jax "export JAX_PLATFORMS=cpu"
+ENV JAX_PLATFORM_NAME=cpu
+
 # Ensure the madness environment is activated by default in bash
 RUN echo "source /opt/conda/bin/activate madness" >> /root/.bashrc
 

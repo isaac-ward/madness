@@ -17,15 +17,17 @@
 - Run the following commands to perform a basic test of the MPPI guidance and control architecture
 
 ```bash
+# Build an image and start a development container
+docker compose -f .devcontainer/gpu/docker-compose.yml up -d
 # Open a shell inside that container (multiple shells can be opened in one container)
 docker exec -it madness bash
 # Execute any main script in that shell
-python /src/main_mppi.py
-python /src/main_learning_train_test.py
+python workspace/src/main_mppi.py
+python workspace/src/main_learning_train_test.py
 # Exit from the shell/container when done
 exit
 # Close the container from the host machine
-docker-compose down
+docker-compose -f .devcontainer/gpu/docker-compose.yml down
 ```
 
 This should produce a result in the ```logs``` directory. See the ```./docs/reproducibility/``` folder for screenshots showing what the installation process should look like.

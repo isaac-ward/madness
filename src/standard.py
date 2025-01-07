@@ -72,7 +72,7 @@ def get_28x28x28_at_111_with_obstacles():
     )
 
 def get_standard_flow_action_dist_policy_arguments():
-    dyn = get_standard_dynamics_quadcopter_3d()
+    dyn = get_standard_dynamics_jax_quadcopter_3d()
     map_ = get_standard_map()
     return {
         "dynamics": dyn,
