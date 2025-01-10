@@ -1,6 +1,7 @@
 # Use the official nvidia cuda image as base
 # https://hub.docker.com/r/nvidia/cuda
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
+#FROM nvidia/cuda:12.2.2-cudnn8-devel-ubuntu22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -34,10 +35,14 @@ RUN /opt/conda/bin/conda init bash
 RUN conda update -n base -c defaults conda && conda clean -ya
 
 # Create an environment called madness and install packages
+# Helpful for ensuring that lightning and pytorch work well together:
+# PyTorch previous install guides: https://pytorch.org/get-started/previous-versions/
+# PyTorch lightning compatibility matrix: https://lightning.ai/docs/pytorch/stable/versioning.html#compatibility-matrix
 RUN /bin/bash -c "source /opt/conda/bin/activate && \
     conda create -n madness python=3.10 -y && \
     conda activate madness && \
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
+    pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu118 && \
+    # pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124 && \
     # pip install pytorch-lightning==1.9.0 && \
     pip install pytorch-lightning==2.4.0 && \
     pip install trimesh && \
@@ -48,7 +53,7 @@ RUN /bin/bash -c "source /opt/conda/bin/activate && \
     conda clean -ya"
 
 # Explicitly use CPU jax "export JAX_PLATFORMS=cpu"
-ENV JAX_PLATFORM_NAME=cpu
+ENV JAX_PLATFORMS=cpu
 
 # Ensure the madness environment is activated by default in bash
 RUN echo "source /opt/conda/bin/activate madness" >> /root/.bashrc
