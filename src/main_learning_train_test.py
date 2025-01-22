@@ -9,7 +9,6 @@ from torchinfo import summary
 import utils.general
 import utils.logging
 from utils.learning import make_k1_checkpoint_callback
-import dynamics
 from learning.data_module import DummyDataModule
 from learning.models import PolicyFlowActionDistribution
 from agent import Agent
