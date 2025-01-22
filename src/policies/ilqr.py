@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 import numpy as np
-from dynamics_jax import DynamicsQuadcopter3D
+from dynamics import DynamicsQuadcopter3D
 import os
 import shutil
 

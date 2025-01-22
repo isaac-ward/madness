@@ -1,6 +1,6 @@
 import numpy as np
 from mapping import Map
-from dynamics_jax import DynamicsQuadcopter3D
+from dynamics import DynamicsQuadcopter3D
 from utils.general import Cacher
 import time
 

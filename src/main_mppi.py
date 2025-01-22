@@ -11,7 +11,6 @@ import cupy as cp
 
 import utils.general
 import utils.logging
-import dynamics
 from environment import Environment
 from mapping import Map
 from agent import Agent
@@ -38,9 +37,8 @@ if __name__ == "__main__":
 
     # The environment follows some true dynamics, and the agent
     # has an internal model of the environment
-    #dyn = standard.get_standard_dynamics_quadcopter_3d()
-    #dyn = standard.get_standard_dynamics_jax_quadcopter_3d()
-    dyn = standard.get_standard_dynamics_jax_linear_3d()
+    #dyn = standard.get_standard_dynamics()
+    dyn = standard.get_standard_dynamics_linear()
 
     # Create a map representation
     #map_ = standard.get_standard_map()
@@ -57,7 +55,7 @@ if __name__ == "__main__":
     # )
     state_initial, state_goal = np.asarray(dyn.zero_state().block_until_ready()).copy(), np.asarray(dyn.zero_state().block_until_ready()).copy()
     state_initial[0:3] = np.array([5, 5, 5])
-    state_goal[0:3]    = np.array([10, 5, 5])
+    state_goal[0:3]    = np.array([25, 5, 5])
     # print(f"Initial state: {state_initial}")
     # print(f"Goal state: {state_goal}")
 

@@ -12,7 +12,6 @@ import cupy as cp
 import utils.general
 import utils.logging
 import utils.geometric
-import dynamics
 from environment import Environment
 from mapping import Map
 from agent import Agent

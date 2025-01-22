@@ -15,7 +15,6 @@ from scipy.spatial.transform import Rotation as R
 import utils.general
 import utils.logging
 import utils.geometric
-import dynamics
 from environment import Environment
 from mapping import Map
 from agent import Agent

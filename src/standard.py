@@ -1,10 +1,9 @@
-from dynamics_jax import DynamicsQuadcopter3D as DynamicsJaxQuadcopter3D
-from dynamics_jax_linear import DynamicsLinear3D
-from dynamics import DynamicsQuadcopter3D
+from dynamics import DynamicsQuadcopter3D 
+from dynamics_linear import DynamicsQuadcopter3DLinear
 from mapping import Map
 
-def get_standard_dynamics_jax_linear_3d():
-    return DynamicsLinear3D(
+def get_standard_dynamics_linear():
+    return DynamicsQuadcopter3DLinear(
         diameter=0.2,
         mass=2.5,
         Ix=0.5,
@@ -21,8 +20,8 @@ def get_standard_dynamics_jax_linear_3d():
         dt=0.025,
     )
 
-def get_standard_dynamics_jax_quadcopter_3d():
-    return DynamicsJaxQuadcopter3D(
+def get_standard_dynamics():
+    return DynamicsQuadcopter3D(
         diameter=0.2,
         mass=2.5,
         Ix=0.5,
