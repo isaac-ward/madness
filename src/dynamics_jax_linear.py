@@ -10,19 +10,10 @@ from math import sqrt
 import utils.general as general
 import utils.geometric as geometric
 
-class DynamicsQuadcopter3D:
+class DynamicsLinear3D:
     """
-    This class computes the dynamics for a 3D quadcopter
+    This class computes the dynamics for a 3D point for linear testing
 
-    Implements the model described in:
-    https://andrew.gibiansky.com/downloads/pdf/Quadcopter%20Dynamics,%20Simulation,%20and%20Control.pdf
-
-    It's also worth looking at the state space model from page 18, section 2.6
-    https://www.kth.se/polopoly_fs/1.588039.1600688317!/Thesis%20KTH%20-%20Francesco%20Sabatino.pdf
-
-    Initialize with the constants, and then call the step function 
-    with the current state and action to get the next state
-    
     We'll use the following state representation:
     state = [x, y, z, rx, ry, rz, vx, vy, vz, p, q, r]
     Some important stuff:
@@ -88,10 +79,11 @@ class DynamicsQuadcopter3D:
         self._reload_dynamics()
 
     def _discrete_dynamics(self, state, action, Q = None, seed = 228):
-        
+
         # If the state and action is batched then we need to handle the delta
         # computation is a batch
         if state.ndim == 2 and action.ndim == 2:
+            print(action)
             state_delta = jax.vmap(self.state_delta, in_axes=(0, 0))(state, action)
         elif state.ndim == 1 and action.ndim == 1:
             state_delta = self.state_delta(state, action)
@@ -150,15 +142,8 @@ class DynamicsQuadcopter3D:
     def action_ranges(self):
         # If you're finding that state space isn't adequately explored,
         # consider increasing the size of the action space
-
-        k = self.thrust_coef
-        m = self.mass
-        g = self.g
-        w_trim = sqrt(m*g/(4*k))
-        magnitude_lo = 0
-        # magnitude_lo = -w_trim*0.95
-        magnitude_hi = 4
-        # magnitude_hi = w_trim*1.05
+        magnitude_lo = -0.001
+        magnitude_hi = +0.001
         return jnp.array([
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
@@ -170,6 +155,7 @@ class DynamicsQuadcopter3D:
         """
         Function to calculate the continuous nonlinear state derivative given a particular
         state and action. Usable with jax
+        
         Parameters
         ----------
         state: numpy.ndarray
@@ -182,53 +168,32 @@ class DynamicsQuadcopter3D:
         state_delta: jax.numpy.ndarray
             Continuous state derivative vector at given state and action. Shaped (12,)
         """
-        # For convenience
-        k = self.thrust_coef
-        b = self.drag_yaw_coef
-        kd = self.drag_force_coef # TODO Why is this here? - Mark
-        # Unwrap the state and action 
-        # position, euler angles (xyz=>φθψ), velocity, body rates (eq2.23)
+
+        # Assert that the shapes of the states and actions are correct
+        assert state.shape == (12,), f"State shape is {state.shape}, should be (12,)"
+        assert action.shape == (4,), f"Action shape is {action.shape}, should be (4,)"
+        
+        # the first three actions control the position
         x, y, z        = state[0],  state[1],  state[2]
-        rz, ry, rx     = state[3],  state[4],  state[5]
-        xd, yd, zd     = state[6],  state[7],  state[8]
-        p, q, r        = state[9],  state[10], state[11]
-        w1, w2, w3, w4 = action[0], action[1], action[2], action[3]
-        # For convenience and to match with the KTH paper
-        ψ, θ, φ = rz, ry, rx
-        # Compute sin, cos, and tan (xyz order is φ θ ψ)
-        s_ψ, c_ψ      = jnp.sin(ψ), jnp.cos(ψ)
-        s_θ, c_θ, t_θ = jnp.sin(θ), jnp.cos(θ), jnp.tan(θ)
-        s_φ, c_φ      = jnp.sin(φ), jnp.cos(φ)
-        # Compute the control vector (control force, control torques), eq2.16
-        w1_sq = w1 ** 2
-        w2_sq = w2 ** 2
-        w3_sq = w3 ** 2
-        w4_sq = w4 ** 2
-        r = self.diameter / 2
-        # This is labeled as u1, u2, u3, u4 in the paper
-        ft = k * (w1_sq + w2_sq + w3_sq + w4_sq)
-        tx = k * r * (w3_sq - w1_sq)
-        ty = k * r * (w4_sq - w2_sq)
-        tz = b * ((w2_sq + w4_sq) - (w1_sq + w3_sq))
-        # Compute the change in state (eq 2.23, 2.24, 2.25)
+        w1, w2, w3     = action[0], action[1], action[2]
+        
+        # Compute the change in state
         state_delta = jnp.zeros_like(state)
         # Positions change according to velocity
-        state_delta = state_delta.at[0].set(xd)
-        state_delta = state_delta.at[1].set(yd)
-        state_delta = state_delta.at[2].set(zd)
+        # Can move 0.004 per dt (recall we test at dt = 0.025 or 40 Hz)
+        state_delta = state_delta.at[0].set(x + w1) 
+        state_delta = state_delta.at[1].set(y + w2)
+        state_delta = state_delta.at[2].set(z + w3)
         # Euler angles change according to body rates
-        state_delta = state_delta.at[3].set(q * s_φ / c_θ + r * c_φ / c_θ)
-        state_delta = state_delta.at[4].set(q * c_φ - r * s_φ)
-        state_delta = state_delta.at[5].set(p + q * s_φ * t_θ + r * c_φ * t_θ)
-        # Velocities change according to forces and moments
-        state_delta = state_delta.at[6].set(-(ft / self.mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ))
-        state_delta = state_delta.at[7].set(-(ft / self.mass) * ( s_ψ * s_θ * c_φ - c_ψ * s_φ ))
-        state_delta = state_delta.at[8].set(self.g - (ft / self.mass) * (c_θ * c_φ))
-        # Body rates change according to moments of inertia and torques
-        state_delta = state_delta.at[9].set(((self.Iy - self.Iz) * q * r + tx) / self.Ix)
-        state_delta = state_delta.at[10].set(((self.Iz - self.Ix) * p * r + ty) / self.Iy)
-        state_delta = state_delta.at[11].set(((self.Ix - self.Iy) * p * q + tz) / self.Iz)
-        
+        state_delta = state_delta.at[3].set(0)
+        state_delta = state_delta.at[4].set(0)
+        state_delta = state_delta.at[5].set(0)
+        state_delta = state_delta.at[6].set(0)
+        state_delta = state_delta.at[7].set(0)
+        state_delta = state_delta.at[8].set(0)
+        state_delta = state_delta.at[9].set(0)
+        state_delta = state_delta.at[10].set(0)
+        state_delta = state_delta.at[11].set(0)
         return state_delta
     
     def linearize(self, states, actions):

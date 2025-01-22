@@ -1,0 +1,61 @@
+# Use a pytorch base image, we want 2.4.0 on CUDA 11.8
+# https://hub.docker.com/r/pytorch/pytorch/tags?name=2.4.0
+FROM pytorch/pytorch:2.4.0-cuda11.8-cudnn9-devel
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH /opt/conda/bin:$PATH
+
+# Install necessary dependencies
+RUN apt-get update --fix-missing && \
+    apt-get install -y wget curl bzip2 ca-certificates curl git ffmpeg build-essential \
+    libopenblas-dev liblapack-dev && \
+    apt-get clean
+    
+# Ensure git is in the PATH and that it is available
+ENV PATH /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/git/bin:$PATH
+RUN echo "Checking git version:" && git --version
+
+# # Install Miniconda based on the platform
+# RUN echo "Architecture: $(uname -m)"
+# RUN if [ "$(uname -m)" = "x86_64" ]; then \
+#         curl -s -o miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh; \
+#     elif [ "$(uname -m)" = "aarch64" ]; then \
+#         curl -s -o miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh; \
+#     else \
+#         echo "Unsupported architecture: $(uname -m)"; exit 1; \
+#     fi
+# RUN /bin/bash miniconda.sh -b -p /opt/conda && rm miniconda.sh
+
+# # Initialize conda
+# RUN /opt/conda/bin/conda init bash
+
+# # Update conda
+# RUN conda update -n base -c defaults conda && conda clean -ya
+
+# Create an environment called madness and install packages
+# Helpful for ensuring that lightning and pytorch work well together:
+# PyTorch previous install guides: https://pytorch.org/get-started/previous-versions/
+# PyTorch lightning compatibility matrix: https://lightning.ai/docs/pytorch/stable/versioning.html#compatibility-matrix
+RUN /bin/bash -c "source /opt/conda/bin/activate && \
+    conda create -n madness python=3.10 -y && \
+    conda activate madness && \
+    pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu118 && \
+    # pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124 && \
+    # pip install pytorch-lightning==1.9.0 && \
+    pip install pytorch-lightning==2.4.0 && \
+    pip install trimesh && \
+    pip install python-dotenv numpy scipy matplotlib tqdm networkx fastdtw cvxpy nflows torchinfo wandb && \
+    # pip install jax && \
+    pip install jax[cuda] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html && \
+    conda install -c conda-forge cupy -y && \
+    conda clean -ya"
+
+# Explicitly use CPU jax "export JAX_PLATFORMS=cpu"
+ENV JAX_PLATFORMS=cpu
+
+# Ensure the madness environment is activated by default in bash
+RUN echo "source /opt/conda/bin/activate madness" >> /root/.bashrc
+
+# Set the default command to run bash
+CMD ["bash"]
