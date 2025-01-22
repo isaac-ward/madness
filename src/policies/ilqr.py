@@ -3,6 +3,8 @@ import numpy as np
 from dynamics_jax import DynamicsQuadcopter3D
 import os
 import shutil
+import matplotlib.pyplot as plt
+import time
 
 class PolicyALiLQR:
     """
@@ -77,7 +79,9 @@ class PolicyALiLQR:
 
         # Internal diagnostic variables
         self.state_error = []           # State error
-        self.cost = []                  # Costs
+        self.cost = []                  # Costs - a list of lists where each list is a segment
+        self.compute_time = []          # Solve time for each segment
+        self.seg_length = []            # Numer of steps per segment
 
         # Verify inputs are valid
         if self.max_iters <= 1:
@@ -112,6 +116,7 @@ class PolicyALiLQR:
         Enable logging to a folder
         """
         self.log_folder = os.path.join(run_folder, "policy", "al_ilqr")
+        os.mkdir(self.log_folder)
 
     def delete_logs(
             self
@@ -128,9 +133,98 @@ class PolicyALiLQR:
         """
         Function to generate log files on the performance of AL-iLQR
         """
-        # TODO Cost improvement over time
+        # Get class variables
+        dyn = self.dynamics         # System dynamics
+
+        # Get state and control dimensions
+        N = np.shape(self.x_track)[0]
+        n = dyn.state_size()
+        m = dyn.action_size()
+
+        # TODO Plot iLQR nominal trajectory (each segment with different colors)
+        # v.plot_environment_from_objects(
+        #         map_=map_,
+        #         sdfs=sdfs,
+        #         path_xyz=path_xyz,
+        #         path_xyz_smooth=path_xyz_smooth,
+        #         path_xyz_cvx=x[:,:3],
+        #         path_propagated=propagated_traj_path,
+        #         path_al_ilqr=None,
+        #         save_filename=f"environment_{indx}",
+        #     )
+
+        # Plot compute time and length per segment
+        fig, axs = plt.subplots(1,2,figsize=(12, 18))
+        fig.suptitle("Solve Time for Each AL-iLQR Segment")
+        for i, ax in enumerate(axs.flatten()):
+            if i == 0:
+                ax.plot(self.compute_time)
+                ax.set_xlabel("Segment Number")
+                ax.set_ylabel("Compute Time (s)")
+                ax.grid()
+            elif i == 1:
+                ax.plot(self.seg_length)
+                ax.set_xlabel("Segment Number")
+                ax.set_ylabel("Number of Discrete Points")
+                ax.grid()
+        
+        # Adjust figure spacing
+        fig.subplots_adjust(hspace=0.4, wspace=0.3)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+        # Save state error plots
+        plt.savefig(os.path.join(self.log_folder,'segment_info.png'))
+        plt.close()
 
         # TODO Plot nominal trajectory improvement per iteration
+
+        # Plot state errors
+        state_err_rows = -(n // -2)
+        fig, axs = plt.subplots(state_err_rows, 2, figsize=(12, 18))
+        fig.suptitle("State Error with Respect to Tracked Trajectory")
+
+        state_error_array = np.array(self.state_error)
+
+        for i, ax in enumerate(axs.flatten()):
+            if i < state_error_array.shape[1]: # Ensure you don't exceed the number of states
+                ax.plot(state_error_array[:, i])
+                ax.set_xlabel("Timestep")
+                ax.set_ylabel(str(self.dynamics.state_labels()[i]) + "-State Error")
+                ax.grid()
+            else:
+                ax.axis('off') # Hide unused subplots
+        
+        # Adjust figure spacing
+        fig.subplots_adjust(hspace=0.4, wspace=0.3)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+        # Save state error plots
+        plt.savefig(os.path.join(self.log_folder,'state_error_evolution.png'))
+        plt.close()
+
+        # Plot cost evolution
+        cost_labels = ["AL-iLQR Total Cost","iLQR Terminal Cost","AL Terminal Cost","iLQR Tracking Cost","AL Tracking Cost","Continuity Cost"]
+        for _j in range(len(self.cost)):
+            cost_array = np.array(self.cost[_j])
+            cost_rows = -(len(cost_labels) // -2)
+            fig, axs = plt.subplots(cost_rows, 2, figsize=(12, 18))
+            fig.suptitle("Cost Evolution for Each AL-iLQR Iteration (Segment "+str(_j)+")")
+
+            for i, ax in enumerate(axs.flatten()):
+                if i < len(cost_labels): # Ensure you don't exceed the number of cost components
+                    ax.plot(cost_array[:, i])
+                    ax.set_xlabel("AL-iLQR Iteration")
+                    ax.set_ylabel(cost_labels[i])
+                    ax.grid()
+                else:
+                    ax.axis('off') # Hide unused subplots
+            
+            # Adjust figure spacing
+            fig.subplots_adjust(hspace=0.4, wspace=0.3)
+            plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+            plt.savefig(os.path.join(self.log_folder,'segment_'+str(_j)+'_cost_evolution.png'))
+            plt.close()
     
     def act(
         self,
@@ -147,7 +241,7 @@ class PolicyALiLQR:
         optimal_action = self.u_bar[timestep] + self.dk[timestep] + self.Kk[timestep] @ (x - self.x_bar[timestep])
 
         # Store state error
-        self.state_error.append((x - self.x_bar[timestep]))
+        self.state_error.append((x - self.x_track[timestep]))
 
         # Cap the action range
         u_upper = np.array(self.dynamics.action_ranges())[:,1]
@@ -221,13 +315,18 @@ class PolicyALiLQR:
 
         # Loop through each AL-iLQR problem segment
         for _segs in range(segments):
+            # Start timer
+            start_time = time.time()
+
             # Get start and end indices
             start_step = int(_segs * segment_size)
             end_step = int(min((start_step + segment_size), N - 1))
+            self.seg_length.append(end_step-start_step)
             
             # Populate continuity and starting state if prior segment exists
             if _segs != 0:
-                x_start = np.copy(x_track[start_step])
+                #x_start = np.copy(x_track[start_step])
+                x_start = np.copy(x_nominal[start_step]) # Start at last state of previous segment
                 #u_continuity = np.copy(u_nominal[start_step-1])
             
             # Print status if verbose
@@ -249,6 +348,10 @@ class PolicyALiLQR:
             u_nominal[start_step:end_step] = np.copy(u_nominal_seg)
             Kk[start_step:end_step] = np.copy(Kk_seg)
             dk[start_step:end_step] = np.copy(dk_seg)
+
+            # End timer
+            end_time = time.time()
+            self.compute_time.append(end_time-start_time)
         
         # Return control sequence
         return x_nominal, u_nominal, Kk, dk
@@ -357,9 +460,10 @@ class PolicyALiLQR:
         Iμ = self.update_penalty_matrix(μ,λ,x,u)                        # Penalty matrix
 
         # Create variables to store results from the previous iteration
-        x_last = np.copy(x)                                         # Last iteration trajectory
-        u_last = np.copy(u)                                         # Last iteration control inputs
-        J_last = self.cost_function(x,x_track,u,λ,Iμ,u_continuity)  # Last iteration cost
+        self.cost.append([])
+        x_last = np.copy(x)                                             # Last iteration trajectory
+        u_last = np.copy(u)                                             # Last iteration control inputs
+        J_last = self.cost_function(x,x_track,u,λ,Iμ,u_continuity,1)    # Last iteration cost
 
         # Control gains
         Kk = np.zeros((N-1,m,n))    # Feedback gain
@@ -414,6 +518,17 @@ class PolicyALiLQR:
             elif ρmult > ρmult_init:
                 # Scale down regularization multiplier
                 ρmult = ρmult / ρscaling
+            
+            # Log cost for this iteration
+            J = self.cost_function(
+                x=x,
+                x_track=x_track,
+                u=u,
+                λ=λ,
+                Iμ=Iμ,
+                u_continuity=u_continuity,
+                iter_cost=1
+            )
 
             # Check AL-iLQR convergence
             self._print("   Cost Improvement: " + str(J_last - J) + "\n")
@@ -558,7 +673,8 @@ class PolicyALiLQR:
                 Q_uu_reg = np.eye(np.shape(Q_uu)[0],np.shape(Q_uu)[1])*ρ + Q_uu
                 try:
                     # Attempt Cholesky decomposition
-                    np.linalg.cholesky(Q_uu_reg)
+                    # np.linalg.cholesky(Q_uu_reg)
+                    np.linalg.pinv(Q_uu_reg)
                     # If successful, Q_uu_reg is positive definite
                     incrementing = False
                 except np.linalg.LinAlgError:
@@ -722,7 +838,8 @@ class PolicyALiLQR:
             u:np.ndarray,
             λ:np.ndarray,
             Iμ:np.ndarray,
-            u_continuity=None
+            u_continuity=None,
+            iter_cost=0,
     ):
         """
         For the AL-iLQR tracking problem, compute the total cost.
@@ -789,7 +906,8 @@ class PolicyALiLQR:
             J += J_continuity
         
         # Add to diagnostic variables
-        self.cost.append([J_iLQR_terminal,J_AL_terminal,J_iLQR_tracking,J_AL_tracking,J_continuity])
+        if iter_cost:
+            self.cost[-1].append([J,J_iLQR_terminal,J_AL_terminal,J_iLQR_tracking,J_AL_tracking,J_continuity])
 
         return J
     
@@ -902,7 +1020,8 @@ class PolicyALiLQR:
 
         # Create constraint vector (N x i)
         # note: i = number of constraints
-        ck = np.array([[u[_k]-u_upper,u_lower-u[_k]] for _k in range(0,N-1)])
+        # ck = np.array([[u[_k]-u_upper,u_lower-u[_k]] for _k in range(0,N-1)])
+        ck = np.array([[np.zeros_like(u[_k]),np.zeros_like(u[_k])] for _k in range(0,N-1)]) # TODO revert to line above to enable AL
         cN = np.zeros(np.shape(ck[0]))
         c = np.concatenate((ck, [cN]), axis=0)
         c = c.reshape(c.shape[0], -1)
