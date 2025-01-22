@@ -9,7 +9,7 @@ from utils.general import log_softmax, gradient_log_softmax, Cacher
 import policies.costs
 import policies.samplers
 
-from dynamics_jax import DynamicsQuadcopter3D
+from dynamics import DynamicsQuadcopter3D
 from sdf import Environment_SDF, SDF_Types
 
 class Trajectory:

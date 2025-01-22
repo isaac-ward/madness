@@ -20,7 +20,6 @@
 # Build an image and start a development container
 docker compose -f .devcontainer/gpu/docker-compose.yml build --no-cache
 docker compose -f .devcontainer/gpu/docker-compose.yml up -d
-
 # Open a shell inside that container (multiple shells can be opened in one container)
 docker exec -it madness bash
 # Execute any main script in that shell
