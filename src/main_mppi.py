@@ -39,7 +39,8 @@ if __name__ == "__main__":
     # The environment follows some true dynamics, and the agent
     # has an internal model of the environment
     #dyn = standard.get_standard_dynamics_quadcopter_3d()
-    dyn = standard.get_standard_dynamics_jax_quadcopter_3d()
+    #dyn = standard.get_standard_dynamics_jax_quadcopter_3d()
+    dyn = standard.get_standard_dynamics_jax_linear_3d()
 
     # Create a map representation
     #map_ = standard.get_standard_map()
@@ -49,11 +50,14 @@ if __name__ == "__main__":
     # Start and goal states
     # NOTE: The following utility finds two random points - it doesn't check for collisions!
     # If you're using a map with invalid positions then you might need to specify the start and goal states manually
-    state_initial, state_goal = Environment.get_two_states_separated_by_distance(
-        map_, 
-        template=dyn.state_randomization_template(),
-        min_distance=26
-    )
+    # state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+    #     map_, 
+    #     template=dyn.state_randomization_template(),
+    #     min_distance=26
+    # )
+    state_initial, state_goal = np.asarray(dyn.zero_state().block_until_ready()).copy(), np.asarray(dyn.zero_state().block_until_ready()).copy()
+    state_initial[0:3] = np.array([5, 5, 5])
+    state_goal[0:3]    = np.array([10, 5, 5])
     # print(f"Initial state: {state_initial}")
     # print(f"Goal state: {state_goal}")
 
@@ -77,7 +81,7 @@ if __name__ == "__main__":
     )
 
     # Create the agent, which has an initial state and a policy
-    K = 7
+    K = 500
     H = 50 #int(0.5/dynamics.dt), # X second horizon
     #action_sampler = policies.samplers.RandomActionSampler(K, H, dyn.action_ranges())
     action_sampler = policies.samplers.RolloverGaussianActionSampler(K, H, dyn.action_ranges())
@@ -99,8 +103,9 @@ if __name__ == "__main__":
         policy=policy,
         state_size=dyn.state_size(),
         action_ranges=dyn.action_ranges(),
-        zero_pad_state=dyn.state_zero_with_quaternion_set_to_identity(),
+        zero_pad_state=dyn.zero_state(),
     ) 
+    #dyn.state_zero_with_quaternion_set_to_identity(),
 
     # ----------------------------------------------------------------
 

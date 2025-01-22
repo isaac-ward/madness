@@ -56,7 +56,7 @@ class MPPIComputer:
 
         # We'll simulate those actions using dynamics and figure
         # out the states
-        state_zero = self.dynamics.state_zero_with_quaternion_set_to_identity()
+        state_zero = self.dynamics.zero_state()
         # Repeat KxH times
         state_plans = np.tile(state_zero, (self.K, self.H, 1))
 
