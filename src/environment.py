@@ -41,8 +41,6 @@ class Environment:
     def step(
         self,
         action,
-        Q = None,
-        seed = 228
     ):
         """
         Advance the environment by one step, and return the new state, plus
@@ -50,7 +48,7 @@ class Environment:
         """
         # Get the new state
         state = self.state_history_tracker.get_last_item()
-        new_state = self.dynamics.step(state, action, Q, seed)
+        new_state = self.dynamics.step(state, action)
         # Log everything
         self.action_history_tracker.append(action)
         self.state_history_tracker.append(new_state)

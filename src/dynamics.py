@@ -1,10 +1,11 @@
 import math
-import numpy as np
-import cupy as cp
 from scipy.spatial.transform import Rotation as R
 import pickle
 import os
-import warnings
+import jax.numpy as jnp
+import jax
+import scipy as sp
+from math import sqrt
 
 import utils.general as general
 import utils.geometric as geometric
@@ -53,134 +54,238 @@ class DynamicsQuadcopter3D:
         self.drag_yaw_coef = drag_yaw_coef
         self.drag_force_coef = drag_force_coef
         self.dt = dt
+        self._reload_dynamics()
+    
+    def __getstate__(self):
+        """
+        Method when pickling. Exclude jit class variables which aren't picklable
+        """
+        # Get the object's __dict__ and make a copy
+        state = self.__dict__.copy()
+        
+        # Remove the attribute you don't want to pickle
+        if 'continuous_dynamics' in state:
+            del state['continuous_dynamics']
+        if 'discrete_dynamics' in state:
+            del state['discrete_dynamics']
+
+        return state
+    
+    def _reload_dynamics(self):
+
+        # Reinitialize the excluded variables
+        # Define continuous dynamics describing the state derivative
+        self.continuous_dynamics = jax.jit(self.state_delta)
+        self.discrete_dynamics = self._discrete_dynamics
+
+    def __setstate__(self, state):
+        """
+        Method when unpickling. Remake jit class variables which aren't picklable
+        """
+        # Restore instance attributes
+        self.__dict__.update(state)
+        self._reload_dynamics()
+
+    def _discrete_dynamics(self, state, action):
+        
+        # If the state and action is batched then we need to handle the delta
+        # computation is a batch
+        if state.ndim == 2 and action.ndim == 2:
+            state_delta = jax.vmap(self.state_delta, in_axes=(0, 0))(state, action)
+        elif state.ndim == 1 and action.ndim == 1:
+            state_delta = self.state_delta(state, action)
+        else:
+            raise ValueError(f"State and action must have the same number of dimensions. Got state dimension {state.ndim} and action dimension {action.ndim}")
+
+        new_state = state + state_delta * self.dt
+
+        # print("----")
+        # print("state", state)
+        # print("action", action)
+        # print("state_delta", state_delta)
+        # print("new_state", new_state)
+        # print("----")
+
+        return new_state
+    
+    def step(self, state, action):
+        return self.discrete_dynamics(state, action)
 
     def state_size(self):
         return 12
+    
+    def state_randomization_template(self):
+        return ["X", "Y", "Z", 0, 0, 0,   0, 0, 0,   0, 0, 0]
+    
     def action_size(self):
         return 4
+    
     def state_plot_groups(self):
         return [3, 3, 3, 3]
+    
     def action_plot_groups(self):
         return [4]
+    
     def state_labels(self):
         # x, y, z, φ, θ, ψ, xd, yd, zd, wx, wy, wz
         return ["x", "y", "z", "rz", "ry", "rx", "xd", "yd", "zd", "wx", "wy", "wz"]
+    
+    def zero_state(self):
+        return jnp.zeros(self.state_size())
+    
     def action_labels(self):
         return ["w1 (left, CW)", "w4 (forward, CCW)", "w3 (right, CW)", "w2 (rear, CCW)"]
+    
     def action_ranges(self):
         # If you're finding that state space isn't adequately explored,
         # consider increasing the size of the action space
-        # Allowing negative actions is not recommended - it tends to
-        # produce erratic results that take advantage of unrealistic
-        # and extremely rapid changes in control inputs
+
+        k = self.thrust_coef
+        m = self.mass
+        g = self.g
+        w_trim = sqrt(m*g/(4*k))
         magnitude_lo = 0
-        magnitude_hi = 2.5
-        return np.array([
+        # magnitude_lo = -w_trim*0.95
+        magnitude_hi = 4
+        # magnitude_hi = w_trim*1.05
+        return jnp.array([
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
             [-magnitude_lo, +magnitude_hi],
         ]) 
     
-    def step(self, state, action):
+    def state_delta(self, state, action):
         """
-        This function works for both single state shaped (12,) and action shaped (4,)
-        and batched states shaped (B, 12) and batched actions shaped (B, 4)
+        Function to calculate the continuous nonlinear state derivative given a particular
+        state and action. Usable with jax
+        Parameters
+        ----------
+        state: numpy.ndarray
+            State vector shaped (12,)
+        action: numpy.ndarray
+            Control vector shaped (4,)
+        
+        Returns
+        -------
+        state_delta: jax.numpy.ndarray
+            Continuous state derivative vector at given state and action. Shaped (12,)
         """
-
-        # Do we have GPU access?
-        xp = cp.get_array_module(state)
+        # For convenience
+        k = self.thrust_coef
+        b = self.drag_yaw_coef
+        kd = self.drag_force_coef # TODO Why is this here? - Mark
+        # Unwrap the state and action 
+        # position, euler angles (xyz=>φθψ), velocity, body rates (eq2.23)
+        x, y, z        = state[0],  state[1],  state[2]
+        rz, ry, rx     = state[3],  state[4],  state[5]
+        xd, yd, zd     = state[6],  state[7],  state[8]
+        p, q, r        = state[9],  state[10], state[11]
+        w1, w2, w3, w4 = action[0], action[1], action[2], action[3]
+        # For convenience and to match with the KTH paper
+        ψ, θ, φ = rz, ry, rx
+        # Compute sin, cos, and tan (xyz order is φ θ ψ)
+        s_ψ, c_ψ      = jnp.sin(ψ), jnp.cos(ψ)
+        s_θ, c_θ, t_θ = jnp.sin(θ), jnp.cos(θ), jnp.tan(θ)
+        s_φ, c_φ      = jnp.sin(φ), jnp.cos(φ)
+        # Compute the control vector (control force, control torques), eq2.16
+        w1_sq = w1 ** 2
+        w2_sq = w2 ** 2
+        w3_sq = w3 ** 2
+        w4_sq = w4 ** 2
+        r = self.diameter / 2
+        # This is labeled as u1, u2, u3, u4 in the paper
+        ft = k * (w1_sq + w2_sq + w3_sq + w4_sq)
+        tx = k * r * (w3_sq - w1_sq)
+        ty = k * r * (w4_sq - w2_sq)
+        tz = b * ((w2_sq + w4_sq) - (w1_sq + w3_sq))
+        # Compute the change in state (eq 2.23, 2.24, 2.25)
+        state_delta = jnp.zeros_like(state)
+        # Positions change according to velocity
+        state_delta = state_delta.at[0].set(xd)
+        state_delta = state_delta.at[1].set(yd)
+        state_delta = state_delta.at[2].set(zd)
+        # Euler angles change according to body rates
+        state_delta = state_delta.at[3].set(q * s_φ / c_θ + r * c_φ / c_θ)
+        state_delta = state_delta.at[4].set(q * c_φ - r * s_φ)
+        state_delta = state_delta.at[5].set(p + q * s_φ * t_θ + r * c_φ * t_θ)
+        # Velocities change according to forces and moments
+        state_delta = state_delta.at[6].set(-(ft / self.mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ))
+        state_delta = state_delta.at[7].set(-(ft / self.mass) * ( s_ψ * s_θ * c_φ - c_ψ * s_φ ))
+        state_delta = state_delta.at[8].set(self.g - (ft / self.mass) * (c_θ * c_φ))
+        # Body rates change according to moments of inertia and torques
+        state_delta = state_delta.at[9].set(((self.Iy - self.Iz) * q * r + tx) / self.Ix)
+        state_delta = state_delta.at[10].set(((self.Iz - self.Ix) * p * r + ty) / self.Iy)
+        state_delta = state_delta.at[11].set(((self.Ix - self.Iy) * p * q + tz) / self.Iz)
         
-        # If not batched then wrap in a batch
-        is_batch = len(xp.shape(state)) == 2
-        if not is_batch:
-            # Add a batch dimension
-            state = xp.expand_dims(state, axis=0)
-            action = xp.expand_dims(action, axis=0)
-
-        # Call step
-        new_states = step_batch_gpu(
-            state, action,
-            self.diameter, self.mass, self.Ix, self.Iy, self.Iz, self.g, 
-            self.thrust_coef, self.drag_yaw_coef, self.drag_force_coef, self.dt
-        )
-
-        # Unbatch if needed
-        if not is_batch:
-            new_states = new_states[0]
-        
-        # Note that if we're on GPU then these are still cupy arrays
-        return new_states
-        
-# --------------------------------------------------------- 
-
-def step_batch_gpu(states, actions, diameter, mass, Ix, Iy, Iz, g, thrust_coef, drag_yaw_coef, drag_force_coef, dt):
-    """
-    This function works for batched states shaped (B, 12) and batched actions shaped (B, 4).
-    """
-
-    # Do we have GPU access?
-    xp = cp.get_array_module(states)
+        return state_delta
     
-    # For convenience
-    k = thrust_coef
-    b = drag_yaw_coef
-    kd = drag_force_coef
+    def linearize(self, states, actions):
+        """
+        Linearize the system dynamics (self.discrete_dynamics) about the given state and action.
+        System dynamics must be written in jax. Works with batch inputs
 
-    # Unwrap the state and action 
-    # position, euler angles (xyz=>φθψ), velocity, body rates (eq2.23)
-    x, y, z        = states[:, 0],  states[:, 1],  states[:, 2]
-    rz, ry, rx     = states[:, 3],  states[:, 4],  states[:, 5]
-    xd, yd, zd     = states[:, 6],  states[:, 7],  states[:, 8]
-    p, q, r        = states[:, 9],  states[:, 10], states[:, 11]
-    w1, w2, w3, w4 = actions[:, 0], actions[:, 1], actions[:, 2], actions[:, 3]
+        Parameters
+        ----------
+        state: numpy.ndarray
+            State vector to linearize about
+        action: numpy.ndarray
+            Control vector to linearize about
 
-    # Confirm that actions are in the allowed ranges and warn if out
-    # TODO
-
-    # For convenience and to match with the KTH paper
-    ψ, θ, φ = rz, ry, rx
-
-    # Compute sin, cos, and tan (xyz order is φ θ ψ)
-    s_ψ, c_ψ      = xp.sin(ψ), xp.cos(ψ)
-    s_θ, c_θ, t_θ = xp.sin(θ), xp.cos(θ), xp.tan(θ)
-    s_φ, c_φ      = xp.sin(φ), xp.cos(φ)
-
-    # Compute the control vector (control force, control torques), eq2.16
-    w1_sq = w1 ** 2
-    w2_sq = w2 ** 2
-    w3_sq = w3 ** 2
-    w4_sq = w4 ** 2
-    r = diameter / 2
-    # This is labeled as u1, u2, u3, u4 in the paper
-    ft = k * (w1_sq + w2_sq + w3_sq + w4_sq)
-    tx = k * r * (w3_sq - w1_sq)
-    ty = k * r * (w4_sq - w2_sq)
-    tz = b * ((w2_sq + w4_sq) - (w1_sq + w3_sq))
-
-    # Compute the change in state (eq 2.23, 2.24, 2.25)
-    state_delta = xp.zeros_like(states)
-
-    # Positions change according to velocity
-    state_delta[:, 0] = xd
-    state_delta[:, 1] = yd
-    state_delta[:, 2] = zd
-
-    # Euler angles change according to body rates
-    state_delta[:, 3] = q * s_φ / c_θ + r * c_φ / c_θ
-    state_delta[:, 4] = q * c_φ - r * s_φ
-    state_delta[:, 5] = p + q * s_φ * t_θ + r * c_φ * t_θ
-
-    # Velocities change according to forces and moments
-    state_delta[:, 6] =   - (ft / mass) * (s_ψ * s_φ  +  c_ψ * s_θ * c_φ)
-    state_delta[:, 7] =   - (ft / mass) * (c_ψ * s_φ  -  s_ψ * s_θ * c_φ)
-    state_delta[:, 8] = g - (ft / mass) * (c_θ * c_φ)
-
-    # Body rates change according to moments of inertia and torques
-    state_delta[:, 9]  = ((Iy - Iz) * q * r + tx) / Ix
-    state_delta[:, 10] = ((Iz - Ix) * p * r + ty) / Iy
-    state_delta[:, 11] = ((Ix - Iy) * p * q + tz) / Iz
+        Returns
+        -------
+        A: jax.numpy.ndarray
+            Jacobian of dynamics function at provided (state, action) with respect to state
+        B: jax.numpy.ndarray
+            Jacobian of dynamics function at provided (state, action) with respect to action
+        """
+        def linearize_single(state, action):
+            # Calculate A and B 
+            A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
+            return A, B
+        
+        # Linearize the batch of states and actions
+        linearize_batch = jax.vmap(linearize_single, in_axes=(0, 0))
+        if states.ndim == 1:
+            A,B = linearize_single(states,actions)
+        else:
+            A, B = linearize_batch(states, actions)
+        
+        return A, B
     
-    # Use the Euler method to compute the new state
-    states_new = states + dt * state_delta
-    return states_new
+    def affinize(self, states, actions):
+        """
+        Affinize the system dynamics (self.discrete_dynamics) about the given state and action.
+        System dynamics must be written in jax. Works with batch inputs
+
+        Parameters
+        ----------
+        state: numpy.ndarray
+            State vector to affinize about
+        action: numpy.ndarray
+            Control vector to affinize about
+
+        Returns
+        -------
+        A: jax.numpy.ndarray
+            Jacobian of dynamics function at provided (state, action) with respect to state
+        B: jax.numpy.ndarray
+            Jacobian of dynamics function at provided (state, action) with respect to action
+        C: jax.numpy.ndarray
+            The offset term in the first-order Taylor expansion of dynamics function at 
+            provided (state, action)
+        """
+        def affinize_single(state, action):
+            # Calculate A, B, and C
+            A, B = jax.jacfwd(self.discrete_dynamics, (0, 1))(state, action)
+            C = self.discrete_dynamics(state, action) - A@state - B@action
+            return A, B, C
+        
+        # Affinize the batch of states and actions
+        affinize_batch = jax.vmap(affinize_single, in_axes=(0, 0))
+        if states.ndim == 1:
+            A, B, C = affinize_single(states, actions)
+        else:
+            A, B, C = affinize_batch(states, actions)
+        
+        return A, B, C
