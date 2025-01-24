@@ -62,10 +62,10 @@ if __name__ == "__main__":
     map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
-    state_initial = np.zeros(n)
-    state_initial[:3] = 5
+    # state_initial = np.zeros(n)
+    # state_initial[:3] = 5
     # state_initial[3] = 1
-    state_goal = np.zeros(n)
+    # state_goal = np.zeros(n)
     # state_goal[:3] = state_initial[:3] + np.array([5,10,20])
     # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
@@ -73,35 +73,23 @@ if __name__ == "__main__":
     # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
     # state_goal[:3] = state_initial[:3] + np.array([1,1,1])
 
-    # While loop infrastructure
-    def is_goal_met():
-        def is_point_in_cube(s):
-            x, y, z = s[:3]
-            return (7 < x and x < 21) and (7 < y and y < 21) and (7 < z and z < 21) 
-        def is_point_too_close(s):
-            x, y, z = s[:3]
-            return (x < 3 or x > 27) or (y < 3 or y > 27) or (z < 3 or z > 27)
-        def is_point_safe(s):
-            return (not is_point_in_cube(s)) and (not is_point_too_close(s))
-        return is_point_safe(state_initial) and is_point_safe(state_goal)
-    count = 0
-    # First guess
-    min_dist = 10#26
-    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_,dyn.state_randomization_template(),min_dist)
-    while count < 500 and not is_goal_met():
-        # Repeated guesses
-        count += 1
-        state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_,dyn.state_randomization_template(),min_dist)
+    # Start and goal states
+    state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+        map_, 
+        template=dyn.state_randomization_template(),
+        obstacle_collision_distance=10*dyn.diameter,
+        min_distance=26,
+    )
     
     # TODO Talk to Isaac about how to do this better
-    state_initial_metres = np.array(state_initial[:3])
-    state_goal_metres = np.array(state_goal[:3])
+    # state_initial_metres = np.array(state_initial[:3])
+    # state_goal_metres = np.array(state_goal[:3])
 
-    state_initial_voxel = map_.metres_to_voxel_coords(state_initial_metres)
-    state_goal_voxel = map_.metres_to_voxel_coords(state_goal_metres)
+    # state_initial_voxel = map_.metres_to_voxel_coords(state_initial_metres)
+    # state_goal_voxel = map_.metres_to_voxel_coords(state_goal_metres)
 
-    state_initial[:3] = map_.voxel_coords_to_metres(state_initial_voxel)
-    state_goal[:3] = map_.voxel_coords_to_metres(state_goal_voxel)
+    # state_initial[:3] = map_.voxel_coords_to_metres(state_initial_voxel)
+    # state_goal[:3] = map_.voxel_coords_to_metres(state_goal_voxel)
 
     print("*** Initial State: " + str(state_initial))
     print("*** Goal State: " + str(state_goal))
@@ -727,25 +715,30 @@ if __name__ == "__main__":
     )
     use_gpu_if_available = False
 
+    # ----------------------------------------------------------------
+
+    print(f"Task is to move from {np.round(xyz_initial,2)} to {np.round(xyz_goal,2)} (within {environment.close_enough_radius} m)")
+
     # Run the simulation for some number of steps
     pbar = tqdm(total=num_steps, desc="Running simulation")
-    # print(state_initial)
+    continue_after_done_secs = 0.5
+    continue_after_done_steps = int(continue_after_done_secs / dyn.dt)    
     for i in range(num_steps):
         # Take an action (this is based on previous observations)
         action = agent.act()
         state, done_flag, done_message = environment.step(action)
         ilqr_traj.append(state[:3])
-        # print(action)
-        # print(state)
         pbar.update(1)
+
+        # If we're done exit the loop in X timesteps
+        if done_flag:
+            pbar.set_description(done_message)
+            continue_after_done_steps -= 1
+        if continue_after_done_steps == 0:
+            break
 
         # Make new observations
         agent.observe(state)
-
-        # If we're done exit the loop
-        if done_flag:
-            pbar.set_description(done_message)
-            break
 
         # Update the pbar with the current state and action
         p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
@@ -757,6 +750,9 @@ if __name__ == "__main__":
             f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
     # Close the bar
     pbar.close()
+
+    # ----------------------------------------------------------------
+
     print(ilqr_traj[-1])
     print(path_xyz_smooth[-1])
     print(ilqr_traj[-2])
