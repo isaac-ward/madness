@@ -72,6 +72,7 @@ class Environment:
         map_,
         template,
         min_distance,
+        obstacle_collision_distance,
         rng=None,
     ):
         """
@@ -79,6 +80,9 @@ class Environment:
 
         Template is a list of items, the letter R denotes randomize, letter X Y Z
         denotes positional randomization, and the rest are fixed values
+
+        obstacle_collision_distance is the distance at which a point should be
+        considered in collision with an obstacle
         
         Extents is a list of 3 tuples of (min, max) for each dimension
         """
@@ -103,15 +107,21 @@ class Environment:
                     state[i] = item
             return state
         
-        state_initial = get_random_state(extents)
-        
         # Get a random goal state that is at least min_distance away
-        state_goal = state_initial
+        def _far_apart_enough(state_goal, state_initial, min_distance):
+            return np.linalg.norm(state_goal[0:3] - state_initial[0:3]) > min_distance
+        def _in_collision(state):
+            return map_.is_not_valid(state[0:3], collision_radius=obstacle_collision_distance)
+        def _satisfied(state_goal, state_initial, min_distance):
+            return _far_apart_enough(state_goal, state_initial, min_distance) and not _in_collision(state_initial) and not _in_collision(state_goal)
         attempts = 1000
-        while np.linalg.norm(state_goal[0:3] - state_initial[0:3]) < min_distance and attempts > 0:
+        state_initial = get_random_state(extents)
+        state_goal = get_random_state(extents)
+        while attempts > 0 and not _satisfied(state_goal, state_initial, min_distance):
+            state_initial = get_random_state(extents)
             state_goal = get_random_state(extents)
             attempts -= 1
-        
+
         return state_initial, state_goal
     
     def reset(

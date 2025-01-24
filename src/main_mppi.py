@@ -37,27 +37,25 @@ if __name__ == "__main__":
 
     # The environment follows some true dynamics, and the agent
     # has an internal model of the environment
-    #dyn = standard.get_standard_dynamics()
-    dyn = standard.get_standard_dynamics_linear()
+    dyn = standard.get_standard_dynamics()
+    #dyn = standard.get_standard_dynamics_linear()
 
     # Create a map representation
-    #map_ = standard.get_standard_map()
-    map_ = standard.get_28x28x28_at_111()
-    #map_ = standard.get_28x28x28_at_111_with_obstacles()
+    #map_ = standard.get_28x28x28_at_111()
+    map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
-    # NOTE: The following utility finds two random points - it doesn't check for collisions!
-    # If you're using a map with invalid positions then you might need to specify the start and goal states manually
-    # state_initial, state_goal = Environment.get_two_states_separated_by_distance(
-    #     map_, 
-    #     template=dyn.state_randomization_template(),
-    #     min_distance=26
-    # )
-    state_initial, state_goal = np.asarray(dyn.zero_state().block_until_ready()).copy(), np.asarray(dyn.zero_state().block_until_ready()).copy()
-    state_initial[0:3] = np.array([5, 5, 5])
-    state_goal[0:3]    = np.array([25, 5, 5])
-    # print(f"Initial state: {state_initial}")
-    # print(f"Goal state: {state_goal}")
+    state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+        map_, 
+        template=dyn.state_randomization_template(),
+        obstacle_collision_distance=dyn.diameter,
+        min_distance=26,
+    )
+    # state_initial, state_goal = np.asarray(dyn.zero_state().block_until_ready()).copy(), np.asarray(dyn.zero_state().block_until_ready()).copy()
+    # state_initial[0:3] = np.array([5, 5, 5])
+    # state_goal[0:3]    = np.array([25, 5, 5])
+    print(f"Initial state: {state_initial}")
+    print(f"Goal state: {state_goal}")
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
