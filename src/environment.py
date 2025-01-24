@@ -31,7 +31,10 @@ class Environment:
         # dynamics model, we'll keep it separate for clarity
 
         # If we're this close to an obstacle or the goal, we're done
-        self.close_enough_radius = self.dynamics.diameter / 2
+        self.close_enough_position = self.dynamics.diameter / 2
+        self.close_enough_orientation = 0.2 # radians
+        self.close_enough_velocity = 0.1 # m/s
+        self.close_enough_angular_velocity = 0.1 # rad/s
 
         # Keep track of the history of states and actions
         self.state_history_tracker  = ItemHistoryTracker(item_shape=(self.dynamics.state_size(),))
@@ -52,6 +55,18 @@ class Environment:
         # Log everything
         self.action_history_tracker.append(action)
         self.state_history_tracker.append(new_state)
+
+        def is_goal_met(new_state):
+            # Is position close enough?
+            is_position_goal_met = np.linalg.norm(new_state[0:3] - self.state_goal[0:3]) < self.close_enough_position
+            # Is orientation close enough?
+            is_orientation_goal_met = np.linalg.norm(new_state[3:6] - self.state_goal[3:6]) < self.close_enough_orientation 
+            # Is velocity close enough?
+            is_velocity_goal_met = np.linalg.norm(new_state[6:9] - self.state_goal[6:9]) < self.close_enough_velocity
+            # Is angular velocity close enough?
+            is_angular_velocity_goal_met = np.linalg.norm(new_state[9:12] - self.state_goal[9:12]) < self.close_enough_angular_velocity
+            return is_position_goal_met and is_orientation_goal_met and is_velocity_goal_met and is_angular_velocity_goal_met
+
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
         done_message = ""
@@ -60,11 +75,14 @@ class Environment:
             done_message = "Ran out of steps"
         elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_radius):
             done_flag = True
-            done_message = "Entered an invalid state (OOB) or collided with an obstacle"
-        elif np.linalg.norm(new_state[0:3] - self.state_goal[0:3]) < self.close_enough_radius:
-            # TODO should this be a full state comparison?
+            done_message = f"Entered an invalid state (OOB) or collided with an obstacle to within {self.close_enough_radius} m"
+        elif is_goal_met(new_state):
             done_flag = True
-            done_message = "Reached the goal position"
+            done_message = f"Reached the goal state to within:\n"
+            done_message += f"\t-position {self.close_enough_position} m\n"
+            done_message += f"\t-orientation {self.close_enough_orientation} rad\n"
+            done_message += f"\t-velocity {self.close_enough_velocity} m/s\n"
+            done_message += f"\t-angular velocity {self.close_enough_angular_velocity} rad/s"
         return new_state, done_flag, done_message
 
     @staticmethod
@@ -72,6 +90,7 @@ class Environment:
         map_,
         template,
         min_distance,
+        obstacle_collision_distance,
         rng=None,
     ):
         """
@@ -79,6 +98,9 @@ class Environment:
 
         Template is a list of items, the letter R denotes randomize, letter X Y Z
         denotes positional randomization, and the rest are fixed values
+
+        obstacle_collision_distance is the distance at which a point should be
+        considered in collision with an obstacle
         
         Extents is a list of 3 tuples of (min, max) for each dimension
         """
@@ -103,15 +125,21 @@ class Environment:
                     state[i] = item
             return state
         
-        state_initial = get_random_state(extents)
-        
         # Get a random goal state that is at least min_distance away
-        state_goal = state_initial
+        def _far_apart_enough(state_goal, state_initial, min_distance):
+            return np.linalg.norm(state_goal[0:3] - state_initial[0:3]) > min_distance
+        def _in_collision(state):
+            return map_.is_not_valid(state[0:3], collision_radius=obstacle_collision_distance)
+        def _satisfied(state_goal, state_initial, min_distance):
+            return _far_apart_enough(state_goal, state_initial, min_distance) and not _in_collision(state_initial) and not _in_collision(state_goal)
         attempts = 1000
-        while np.linalg.norm(state_goal[0:3] - state_initial[0:3]) < min_distance and attempts > 0:
+        state_initial = get_random_state(extents)
+        state_goal = get_random_state(extents)
+        while attempts > 0 and not _satisfied(state_goal, state_initial, min_distance):
+            state_initial = get_random_state(extents)
             state_goal = get_random_state(extents)
             attempts -= 1
-        
+
         return state_initial, state_goal
     
     def reset(
