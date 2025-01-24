@@ -48,7 +48,6 @@ if __name__ == "__main__":
     state_initial, state_goal = Environment.get_two_states_separated_by_distance(
         map_, 
         template=dyn.state_randomization_template(),
-        obstacle_collision_distance=dyn.diameter,
         min_distance=26,
     )
     # state_initial, state_goal = np.asarray(dyn.zero_state().block_until_ready()).copy(), np.asarray(dyn.zero_state().block_until_ready()).copy()
@@ -59,7 +58,7 @@ if __name__ == "__main__":
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
-    #path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the environment
@@ -102,7 +101,7 @@ if __name__ == "__main__":
 
     # ----------------------------------------------------------------
 
-    print(f"Task is to move from {np.round(xyz_initial,2)} to {np.round(xyz_goal,2)} (within {environment.close_enough_radius} m)")
+    print(f"Task is to move from {np.round(xyz_initial,2)} to {np.round(xyz_goal,2)}")
 
     # Run the simulation for some number of steps
     pbar = tqdm(total=num_steps, desc="Running simulation")
