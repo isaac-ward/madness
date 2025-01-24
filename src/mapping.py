@@ -11,6 +11,9 @@ import trimesh
 from utils.general import Cacher
 import utils.logging
 import warnings
+import os
+import matplotlib.pyplot as plt
+
 
 def test_nothing():
     return np.zeros((1,3))
@@ -128,10 +131,31 @@ class Map:
                     print(f"Point {point} or voxel {i, j, k} is out of bounds")
                 continue
             else:
+                # If it's inside the grid, set the voxel containing this
+                # point to 1 (occupied)
                 self.voxel_grid[i, j, k] = 1
 
         # Compute a kd tree for fast collision checking
         self.kd_tree = scipy.spatial.cKDTree(self.points)
+
+        # Load the corresponding .in file (has the same name as the .obj file)
+        # and extract the 'inside free space' point if it exists
+        filepath_without_obj = os.path.splitext(map_filepath)[0]
+        filepath_inside_freespace = filepath_without_obj + ".in"
+        print(f"Looking for 'inside free space' file at: {filepath_inside_freespace}")
+        try:
+            with open(filepath_inside_freespace, "r") as f:
+                lines = f.readlines()
+                # The file has one line in it with a 3d point, i.e.
+                # "5, 5, 5"
+                point = [float(x) for x in lines[0].strip().split(",")]
+                print(f"Found 'inside free space' point: {point}")
+                inside_freespace_point = point
+        except:
+            print(f"No 'inside free space' file found at: {filepath_inside_freespace}, all unoccupied voxels are considered free space")
+        
+        if inside_freespace_point is not None:
+            self._mark_only_navigable_space_as_unoccupied(self.metres_to_voxel_coords(inside_freespace_point))
 
         print("Map loaded")
         print(f"\t-map_filepath: {self.map_filepath}")
@@ -142,6 +166,80 @@ class Map:
         print(f"\t-voxel_grid (total): {np.prod(self.voxel_grid.shape):.0f}")
         print(f"\t-voxel_grid (occupied): {np.sum(self.voxel_grid):.0f}")
         print(f"\t-voxel_grid (occupied %): {np.sum(self.voxel_grid) / np.prod(self.voxel_grid.shape) * 100:.6f} %")
+
+    def _mark_only_navigable_space_as_unoccupied(self, start_voxel, verbose=False):
+        """
+        Marks connected free voxels in the voxel grid starting from the given voxel coordinates
+        using a numpy-based approach
+
+        Args:
+            start_voxel (list or tuple): Starting voxel coordinates as [i, j, k].
+        """
+        if not self.voxel_coord_in_bounds(start_voxel):
+            raise ValueError(f"Start voxel {start_voxel} is out of bounds.")
+
+        # Check if the starting voxel is free space
+        i, j, k = start_voxel
+        if self.voxel_grid[i, j, k] != 0:
+            raise ValueError(f"Start voxel {start_voxel} is not in free space (value={self.voxel_grid[i, j, k]}).")
+        else:
+            print(f"Marking only navigable space as unoccupied starting from voxel {start_voxel}...")
+
+        # Define the structure for 6-connectivity
+        structure = np.array([[[0, 0, 0],
+                               [0, 1, 0],
+                               [0, 0, 0]],
+                              [[0, 1, 0],
+                               [1, 1, 1],
+                               [0, 1, 0]],
+                              [[0, 0, 0],
+                               [0, 1, 0],
+                               [0, 0, 0]]], dtype=int)
+
+        # Identify all connected components of free space (value=0)
+        # The input argument: 
+        # "An array-like object to be labeled. Any non-zero values in input are
+        # counted as features and zero values are considered the background"
+        # Our voxel grid is zero where it is unoccupied and one where it is occupied,
+        # so we need to invert it
+        labeled_array, num_features = scipy.ndimage.label(self.voxel_grid == 0, structure=structure)
+
+        # # For debugging
+        # halfway_index = labeled_array.shape[0] // 2
+        # slice_ = labeled_array[halfway_index, :, :]
+        # plt.figure(figsize=(10, 10))
+        # plt.imshow(slice_)
+        # plt.title("Slice of labeled array")
+        # plt.colorbar()
+        # # Save the plot
+        # plt.savefig("slice_of_labeled_array.png")
+
+        # This essentially does segmentation, and gives each connected space
+        # a label
+        if verbose:
+            print(f"Distinct regions/segment labels in voxel map: {np.unique(labeled_array)}")
+
+        # How many of each label are found?
+        if verbose:
+            for label in np.unique(labeled_array):
+                print(f"\t- Label {label} has {np.sum(labeled_array == label)} voxels")
+
+        # Find the label of the connected component containing the start voxel
+        start_label = labeled_array[i, j, k]
+        print(f"Start voxel label: {start_label}")
+
+        # Count how much space was marked as navigable
+        total_voxels = np.prod(self.voxel_grid.shape)
+
+        unoccupied_voxels = np.sum(self.voxel_grid == 0)
+        print(f"{unoccupied_voxels} / {total_voxels} voxels are unoccupied ({100*unoccupied_voxels / total_voxels:.4f} %)")
+        navigable_voxels = np.sum(labeled_array == start_label)
+        print(f"{navigable_voxels} / {total_voxels} voxels are navigable ({100*navigable_voxels / total_voxels:.4f} %)")
+
+        # Mark all voxels NOT in the same connected component as the start
+        # label / 'inside free space voxel' as occupied
+        #self.voxel_grid[labeled_array == start_label] = 0
+        self.voxel_grid[labeled_array != start_label] = 1
     
     # ----------------------------------------------------------------
         
@@ -426,6 +524,12 @@ class Map:
                 print(f"done")
                 # Convert path nodes back to coordinates in metres
                 path_metres = [self.voxel_coords_to_metres(np.array([x, y, z])) for x, y, z in path_coords]
+
+                # But the first and last points will be munged into integers because they went
+                # metres (unrounded) -> voxels -> metres (rounded)
+                # So we need to reset those to exact
+                path_metres[0] = a_coord_metres
+                path_metres[-1] = b_coord_metres
 
             except nx.NetworkXNoPath:
                 raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape})")
