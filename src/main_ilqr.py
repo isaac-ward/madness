@@ -51,7 +51,8 @@ if __name__ == "__main__":
 
     # The environment follows some true dynamics, and the agent
     # has an internal model of the environment
-    dyn = standard.get_standard_dynamics_jax_quadcopter_3d()
+    dyn = standard.get_standard_dynamics()
+    # dyn = standard.get_standard_dynamics_linear()
     n = dyn.state_size()
     m = dyn.action_size()
 
@@ -70,7 +71,7 @@ if __name__ == "__main__":
     # state_goal[:3] = np.array([25,25,5])
     # state_goal[3] = 1
     # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
-    state_goal[:3] = state_initial[:3] + np.array([1,1,1])
+    # state_goal[:3] = state_initial[:3] + np.array([1,1,1])
 
     # While loop infrastructure
     def is_goal_met():
@@ -85,11 +86,22 @@ if __name__ == "__main__":
         return is_point_safe(state_initial) and is_point_safe(state_goal)
     count = 0
     # First guess
-    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_,dyn.state_randomization_template(),26)
+    min_dist = 10#26
+    state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_,dyn.state_randomization_template(),min_dist)
     while count < 500 and not is_goal_met():
         # Repeated guesses
         count += 1
-        state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_,dyn.state_randomization_template(),26)
+        state_initial, state_goal = Environment.get_two_states_separated_by_distance(map_,dyn.state_randomization_template(),min_dist)
+    
+    # TODO Talk to Isaac about how to do this better
+    state_initial_metres = np.array(state_initial[:3])
+    state_goal_metres = np.array(state_goal[:3])
+
+    state_initial_voxel = map_.metres_to_voxel_coords(state_initial_metres)
+    state_goal_voxel = map_.metres_to_voxel_coords(state_goal_metres)
+
+    state_initial[:3] = map_.voxel_coords_to_metres(state_initial_voxel)
+    state_goal[:3] = map_.voxel_coords_to_metres(state_goal_voxel)
 
     print("*** Initial State: " + str(state_initial))
     print("*** Goal State: " + str(state_goal))
@@ -456,13 +468,9 @@ if __name__ == "__main__":
     Q = np.eye(n) * 1
     Q[:3] = Q[:3] * 5
     R_cost = np.eye(m) * 1
-    QN = np.eye(n) * 1
+    QN = np.eye(n) * 10
     QN[:3] = QN[:3] * 10
-    W = np.eye(m) * 0
-    print("*** Q:\n" + str(Q))
-    print("*** R:\n" + str(R_cost))
-    print("*** QN:\n" + str(QN))
-    print("*** W:\n" + str(W))
+    W = np.eye(m) * 0#100
     
     def al_ilqr_hover():
         """
@@ -485,8 +493,8 @@ if __name__ == "__main__":
             x_track=basic_state_traj,
             u_track=basic_hover_action,
             segments=segs,
-            eps=1e-2,
-            max_iters=1000,
+            eps=1e-1,
+            max_iters=300,
             verbose=True,
             run_folder=log_folder,
         )
@@ -696,7 +704,7 @@ if __name__ == "__main__":
     elif track_option == 2:
         policy = al_ilqr_scp()
     end_time = time.time()
-    ilqr_traj = []
+    ilqr_traj = [state_initial[:3]]
 
     # Can now create an agent
     agent = Agent(
@@ -732,7 +740,7 @@ if __name__ == "__main__":
         pbar.update(1)
 
         # Make new observations
-        agent.observe(state,action)
+        agent.observe(state)
 
         # If we're done exit the loop
         if done_flag:
@@ -749,6 +757,12 @@ if __name__ == "__main__":
             f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
     # Close the bar
     pbar.close()
+    print(ilqr_traj[-1])
+    print(path_xyz_smooth[-1])
+    print(ilqr_traj[-2])
+    print(path_xyz_smooth[-2])
+    print(ilqr_traj[-3])
+    print(path_xyz_smooth[-3])
 
     ilqr_traj = np.array(ilqr_traj)
 
@@ -791,12 +805,12 @@ if __name__ == "__main__":
         ilqr_traj,
     )
 
-    # TODO DELETE THIS
-    # Log the propagated CVX path
-    utils.logging.save_to_npz(
-        os.path.join(log_folder, "cvx", "propagated.npz"),
-        policy.x_bar[:,:3],#trajInit.state[:,:3]
-    )
+    # # TODO DELETE THIS
+    # # Log the propagated CVX path
+    # utils.logging.save_to_npz(
+    #     os.path.join(log_folder, "cvx", "propagated.npz"),
+    #     policy.x_bar[:,:3],#trajInit.state[:,:3]
+    # )
 
     # Generate AL-iLQR logs
     policy.generate_logs()
