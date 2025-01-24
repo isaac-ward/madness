@@ -167,7 +167,7 @@ class Map:
         print(f"\t-voxel_grid (occupied): {np.sum(self.voxel_grid):.0f}")
         print(f"\t-voxel_grid (occupied %): {np.sum(self.voxel_grid) / np.prod(self.voxel_grid.shape) * 100:.6f} %")
 
-    def _mark_only_navigable_space_as_unoccupied(self, start_voxel):
+    def _mark_only_navigable_space_as_unoccupied(self, start_voxel, verbose=False):
         """
         Marks connected free voxels in the voxel grid starting from the given voxel coordinates
         using a numpy-based approach
@@ -216,11 +216,13 @@ class Map:
 
         # This essentially does segmentation, and gives each connected space
         # a label
-        print(f"Distinct regions/segment labels in voxel map: {np.unique(labeled_array)}")
+        if verbose:
+            print(f"Distinct regions/segment labels in voxel map: {np.unique(labeled_array)}")
 
         # How many of each label are found?
-        for label in np.unique(labeled_array):
-            print(f"\t- Label {label} has {np.sum(labeled_array == label)} voxels")
+        if verbose:
+            for label in np.unique(labeled_array):
+                print(f"\t- Label {label} has {np.sum(labeled_array == label)} voxels")
 
         # Find the label of the connected component containing the start voxel
         start_label = labeled_array[i, j, k]
@@ -522,6 +524,12 @@ class Map:
                 print(f"done")
                 # Convert path nodes back to coordinates in metres
                 path_metres = [self.voxel_coords_to_metres(np.array([x, y, z])) for x, y, z in path_coords]
+
+                # But the first and last points will be munged into integers because they went
+                # metres (unrounded) -> voxels -> metres (rounded)
+                # So we need to reset those to exact
+                path_metres[0] = a_coord_metres
+                path_metres[-1] = b_coord_metres
 
             except nx.NetworkXNoPath:
                 raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape})")
