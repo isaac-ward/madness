@@ -240,7 +240,10 @@ class PolicyALiLQR:
         # Get the optimal action and other logging information
         timestep = timestep_1_base - 1
         x = state_history[-1]
-        optimal_action = self.u_bar[timestep] + self.dk[timestep] + self.Kk[timestep] @ (x - self.x_bar[timestep])
+        try:
+            optimal_action = self.u_bar[timestep] + self.dk[timestep] + self.Kk[timestep] @ (x - self.x_bar[timestep])
+        except:
+            optimal_action = self.u_bar[-1] + self.dk[-1] + self.Kk[-1] @ (x - self.x_bar[-1])
 
         # Store state error
         self.state_error.append((x - self.x_track[timestep]))
