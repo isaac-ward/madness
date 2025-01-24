@@ -31,7 +31,10 @@ class Environment:
         # dynamics model, we'll keep it separate for clarity
 
         # If we're this close to an obstacle or the goal, we're done
-        self.close_enough_radius = self.dynamics.diameter / 2
+        self.close_enough_position = self.dynamics.diameter / 2
+        self.close_enough_orientation = 0.2 # radians
+        self.close_enough_velocity = 0.1 # m/s
+        self.close_enough_angular_velocity = 0.1 # rad/s
 
         # Keep track of the history of states and actions
         self.state_history_tracker  = ItemHistoryTracker(item_shape=(self.dynamics.state_size(),))
@@ -52,6 +55,18 @@ class Environment:
         # Log everything
         self.action_history_tracker.append(action)
         self.state_history_tracker.append(new_state)
+
+        def is_goal_met(new_state):
+            # Is position close enough?
+            is_position_goal_met = np.linalg.norm(new_state[0:3] - self.state_goal[0:3]) < self.close_enough_position
+            # Is orientation close enough?
+            is_orientation_goal_met = np.linalg.norm(new_state[3:6] - self.state_goal[3:6]) < self.close_enough_orientation 
+            # Is velocity close enough?
+            is_velocity_goal_met = np.linalg.norm(new_state[6:9] - self.state_goal[6:9]) < self.close_enough_velocity
+            # Is angular velocity close enough?
+            is_angular_velocity_goal_met = np.linalg.norm(new_state[9:12] - self.state_goal[9:12]) < self.close_enough_angular_velocity
+            return is_position_goal_met and is_orientation_goal_met and is_velocity_goal_met and is_angular_velocity_goal_met
+
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
         done_message = ""
@@ -60,11 +75,14 @@ class Environment:
             done_message = "Ran out of steps"
         elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_radius):
             done_flag = True
-            done_message = "Entered an invalid state (OOB) or collided with an obstacle"
-        elif np.linalg.norm(new_state[0:3] - self.state_goal[0:3]) < self.close_enough_radius:
-            # TODO should this be a full state comparison?
+            done_message = f"Entered an invalid state (OOB) or collided with an obstacle to within {self.close_enough_radius} m"
+        elif is_goal_met(new_state):
             done_flag = True
-            done_message = "Reached the goal position"
+            done_message = f"Reached the goal state to within:\n"
+            done_message += f"\t-position {self.close_enough_position} m\n"
+            done_message += f"\t-orientation {self.close_enough_orientation} rad\n"
+            done_message += f"\t-velocity {self.close_enough_velocity} m/s\n"
+            done_message += f"\t-angular velocity {self.close_enough_angular_velocity} rad/s"
         return new_state, done_flag, done_message
 
     @staticmethod

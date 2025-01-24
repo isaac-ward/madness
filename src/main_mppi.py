@@ -54,13 +54,10 @@ if __name__ == "__main__":
     # state_initial, state_goal = np.asarray(dyn.zero_state().block_until_ready()).copy(), np.asarray(dyn.zero_state().block_until_ready()).copy()
     # state_initial[0:3] = np.array([5, 5, 5])
     # state_goal[0:3]    = np.array([25, 5, 5])
-    print(f"Initial state: {state_initial}")
-    print(f"Goal state: {state_goal}")
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
-    print(f"Task is to move from {np.round(xyz_initial,2)} to {np.round(xyz_goal,2)}")
     path_xyz = np.array([xyz_initial, xyz_goal])
     #path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
     #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
@@ -105,17 +102,23 @@ if __name__ == "__main__":
 
     # ----------------------------------------------------------------
 
+    print(f"Task is to move from {np.round(xyz_initial,2)} to {np.round(xyz_goal,2)} (within {environment.close_enough_radius} m)")
+
     # Run the simulation for some number of steps
     pbar = tqdm(total=num_steps, desc="Running simulation")
+    continue_after_done_secs = 0.5
+    continue_after_done_steps = int(continue_after_done_secs / dyn.dt)    
     for i in range(num_steps):
         # Take an action (this is based on previous observations)
         action = agent.act()
         state, done_flag, done_message = environment.step(action)
         pbar.update(1)
 
-        # If we're done exit the loop
+        # If we're done exit the loop in X timesteps
         if done_flag:
             pbar.set_description(done_message)
+            continue_after_done_steps -= 1
+        if continue_after_done_steps == 0:
             break
 
         # Make new observations
