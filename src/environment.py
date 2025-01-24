@@ -73,7 +73,7 @@ class Environment:
         if len(self.state_history_tracker) == (self.episode_length):
             done_flag = True
             done_message = "Ran out of steps"
-        elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_radius):
+        elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_position):
             done_flag = True
             done_message = f"Entered an invalid state (OOB) or collided with an obstacle to within {self.close_enough_radius} m"
         elif is_goal_met(new_state):
@@ -90,7 +90,6 @@ class Environment:
         map_,
         template,
         min_distance,
-        obstacle_collision_distance,
         rng=None,
     ):
         """
@@ -110,6 +109,9 @@ class Environment:
             rng = np.random.default_rng()            
 
         extents = map_.extents_metres_xyz
+
+        # Has to be larger than the voxelization by 2 (nyquist)
+        obstacle_collision_distance = map_.voxel_per_x_metres * 2
         
         # Get a random state
         def get_random_state(extents):
