@@ -532,7 +532,27 @@ class Map:
                 path_metres[-1] = b_coord_metres
 
             except nx.NetworkXNoPath:
-                raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape})")
+                
+                # Visualize the voxel map and the start and goal points
+                # as slices from z=0 to z=max
+                for z in range(self.voxel_grid.shape[2]):
+                    slice_ = self.voxel_grid[:,:,z]
+                    if z == a_voxel_coord[2]:
+                        slice_[a_voxel_coord[0], a_voxel_coord[1]] = 5
+                    if z == b_voxel_coord[2]:
+                        slice_[b_voxel_coord[0], b_voxel_coord[1]] = 10
+                    plt.figure(figsize=(10, 10))
+                    plt.imshow(slice_)
+                    plt.title(f"Slice at z={z}")
+                    # colorbar range 0-10
+                    plt.colorbar()
+                    # Save the plot
+                    plt.savefig(f"slice_at_z_{z}.png")
+                    plt.close()
+
+
+
+                raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape}). As voxels: {a_voxel_coord} -> {b_voxel_coord}")
             
             outputs = np.array(path_metres)
             cacher.save(outputs)
