@@ -5,6 +5,7 @@ import os
 import shutil
 import matplotlib.pyplot as plt
 import time
+from tqdm import tqdm
 
 class PolicyALiLQR:
     """
@@ -82,6 +83,7 @@ class PolicyALiLQR:
         self.cost = []                  # Costs - a list of lists where each list is a segment
         self.compute_time = []          # Solve time for each segment
         self.seg_length = []            # Numer of steps per segment
+        self.constraint_violations = [] # Constraint violations
 
         # Verify inputs are valid
         if self.max_iters <= 1:
@@ -243,14 +245,20 @@ class PolicyALiLQR:
         # Store state error
         self.state_error.append((x - self.x_track[timestep]))
 
+        # Store constraint violations
+        # c = self.constraints(x,optimal_action) # Need one-off constraint checking
+        # self.constraint_violations.append()
+
         # Cap the action range
         u_upper = np.array(self.dynamics.action_ranges())[:,1]
         u_lower = np.array(self.dynamics.action_ranges())[:,0]
         optimal_action = np.clip(optimal_action, u_lower, u_upper) # Restrict action with limits
 
+        # TODO Save constraint violations
+
         # Print controls executed at what timestep
-        self._print("Timestep: " + str(timestep_1_base) + "/" + str(self.dk.shape[0]))
-        self._print("u: " + str(optimal_action))
+        # self._print("Timestep: " + str(timestep_1_base) + "/" + str(self.dk.shape[0]))
+        # self._print("u: " + str(optimal_action))
 
         # Log the state and action plans alongside the costs, 
         # if we're logging
@@ -356,55 +364,6 @@ class PolicyALiLQR:
         # Return control sequence
         return x_nominal, u_nominal, Kk, dk
     
-    def _segmented_al_ilqr(
-        self,
-        x_track: np.ndarray,
-        u_track: np.ndarray,
-        segments=1,
-    ):
-        """
-        Compute closed loop control policy using AL-iLQR to track a given trajectory, solving independently over segments.
-        """
-        # Get class variables
-        dyn = self.dynamics
-
-        # Get state and control dimensions
-        N = x_track.shape[0]
-        n, m = dyn.state_size(), dyn.action_size()
-
-        # Preallocate variables
-        x_nominal = np.zeros_like(x_track)
-        u_nominal = np.zeros_like(u_track)
-        Kk = np.zeros((N-1, m, n))
-        dk = np.zeros((N-1, m))
-
-        # Calculate segment size and boundaries
-        segment_size = N // segments
-        segment_indices = [
-            (int(seg * segment_size), int(min((seg + 1) * segment_size, N - 1)))
-            for seg in range(segments)
-        ]
-
-        # Run AL-iLQR independently for each segment
-        results = [
-            self.al_ilqr(
-                x_start=x_track[start_step],
-                x_track=x_track[start_step:end_step + 1],
-                u_track=u_track[start_step:end_step]
-            )
-            for start_step, end_step in segment_indices
-        ]
-
-        # Merge results from all segments
-        for seg, (start_step, end_step) in enumerate(segment_indices):
-            x_nominal_seg, u_nominal_seg, Kk_seg, dk_seg = results[seg]
-            x_nominal[start_step:end_step + 1] = x_nominal_seg
-            u_nominal[start_step:end_step] = u_nominal_seg
-            Kk[start_step:end_step] = Kk_seg
-            dk[start_step:end_step] = dk_seg
-
-        return x_nominal, u_nominal, Kk, dk
-    
     def al_ilqr(
             self,
             x_start:np.ndarray,
@@ -478,11 +437,15 @@ class PolicyALiLQR:
         converged = False   # Convergence variable
         iters = 1           # Current iteration
         forward_err = 0     # Line search convergence failure
+
+        pbar = tqdm(range(max_iters), desc="Backward/forward pass", total=max_iters)
         
         # AL-iLQR loop
         while (not converged) and (iters < max_iters):
+            pbar.update(1)
+
             # Execute backward Pass
-            self._print("Backward Pass: " + str(iters) + "/" + str(max_iters))
+            #self._print("Backward Pass: " + str(iters) + "/" + str(max_iters))
             Kk, dk, deltaV = self.al_ilqr_backpass(
                 x=x,
                 x_track=x_track,
@@ -494,7 +457,7 @@ class PolicyALiLQR:
             )
 
             # Execute forward Pass
-            self._print("Forward Pass: " + str(iters) + "/" + str(max_iters))
+            #self._print("Forward Pass: " + str(iters) + "/" + str(max_iters))
             forward_err = 0
             x, u, J, forward_err = self.al_ilqr_forwardpass(
                 x_last=x_last,
@@ -531,8 +494,12 @@ class PolicyALiLQR:
             )
 
             # Check AL-iLQR convergence
-            self._print("   Cost Improvement: " + str(J_last - J) + "\n")
-            if (J_last - J < eps) and (J_last - J >= 0):
+            #self._print("   Cost Improvement: " + str(J_last - J) + "\n")
+            change_in_cost = J - J_last
+            cost_improvement = -change_in_cost
+            pbar.set_description(f"Backward/forward pass | cost_improvement={cost_improvement:.4f} | J_last={J_last:.4f} -> J={J:.4f}")
+   
+            if ((cost_improvement < eps) and (cost_improvement >= 0)):# or (cost_improvement < 0):
                 x_last = np.copy(x)
                 u_last = np.copy(u)
                 converged = True
@@ -548,6 +515,8 @@ class PolicyALiLQR:
 
             # Increment iteration variable
             iters += 1
+
+        pbar.close()
         
         return x_last, u_last, Kk, dk
     
@@ -627,7 +596,8 @@ class PolicyALiLQR:
         # Regularization factor
         ρmax = 1e4          # Maximum regularization
         ρinc = 2            # Regularization scaling factor
-        ρ = max(ρmult * (1e-9),(1e-9))  # Regularization factor
+        ρinit = 1e-9
+        ρ = max(ρmult * ρinit,ρinit)  # Regularization factor
 
         # Verify regularization is ok
         if ρ > ρmax:
@@ -785,10 +755,13 @@ class PolicyALiLQR:
         u_upper = np.array(dyn.action_ranges())[:,1]
         u_lower = np.array(dyn.action_ranges())[:,0]
 
+        pbar = tqdm(range(max_iters), desc="Optimizing alpha", total=max_iters, leave=False)
+
         # Perform line search
         while not break_line_search:
             # Increment iteration
             iteration_count += 1
+            pbar.update(1)
 
             # Propagate trajectory with new control gains
             for _k in range(0,N-1):
@@ -797,9 +770,9 @@ class PolicyALiLQR:
                 du[_k] = α * dk[_k] + Kk[_k] @ dx[_k]   # Control deviation
 
                 # Calc new control and next state
-                u[_k] = u_last[_k] + du[_k]             # New control
-                u[_k] = np.clip(u[_k], u_lower, u_upper)
-                x[_k+1] = dyn.step(x[_k],u[_k])         # Next state
+                u[_k] = u_last[_k] + du[_k]                 # New control
+                u[_k] = np.clip(u[_k], u_lower, u_upper)    # Clip control to feasible range (prevents dynamics from blowing up)
+                x[_k+1] = dyn.step(x[_k],u[_k])             # Next state
 
                 # Debugging assert
                 assert not np.any(np.isnan(x[_k+1])), "NaN detected in x["+str(_k+1)+"] x=" + str(x[_k]) + " u=" + str(u[_k])
@@ -818,7 +791,7 @@ class PolicyALiLQR:
             z = (J_last - J) / (-1 * np.sum([α * deltaV[_k,0] + (α**2) * deltaV[_k,1] for _k in range(0,N-1)]))
 
             # Evaluate line search
-            if (z >= β1) and (z <= β2):
+            if 1:#(z >= β1) and (z <= β2):
                 break_line_search = True
             else:
                 # If values not within line search range, increment alpha and loop
@@ -828,6 +801,8 @@ class PolicyALiLQR:
                     self._print("**Warning** Max iterations reached for iLQR Forward Pass (z = " + str(z) + ")")
                     forward_err = 1
                     break_line_search = True
+
+        pbar.close()
 
         return x, u, J, forward_err
     
@@ -1020,8 +995,7 @@ class PolicyALiLQR:
 
         # Create constraint vector (N x i)
         # note: i = number of constraints
-        # ck = np.array([[u[_k]-u_upper,u_lower-u[_k]] for _k in range(0,N-1)])
-        ck = np.array([[np.zeros_like(u[_k]),np.zeros_like(u[_k])] for _k in range(0,N-1)]) # TODO revert to line above to enable AL
+        ck = np.array([[u[_k]-u_upper,u_lower-u[_k]] for _k in range(0,N-1)])
         cN = np.zeros(np.shape(ck[0]))
         c = np.concatenate((ck, [cN]), axis=0)
         c = c.reshape(c.shape[0], -1)
