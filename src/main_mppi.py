@@ -104,9 +104,11 @@ if __name__ == "__main__":
     print(f"Task is to move from {np.round(xyz_initial,2)} to {np.round(xyz_goal,2)}")
 
     # Run the simulation for some number of steps
-    pbar = tqdm(total=num_steps, desc="Running simulation")
     continue_after_done_secs = 0.5
     continue_after_done_steps = int(continue_after_done_secs / dyn.dt)    
+    print(f"Will run for {num_seconds} seconds ({num_steps} steps) and continue for {continue_after_done_secs} seconds ({continue_after_done_steps} steps) after reaching goal")
+    
+    pbar = tqdm(total=num_steps, desc="Running simulation")
     for i in range(num_steps):
         # Take an action (this is based on previous observations)
         action = agent.act()
@@ -115,7 +117,6 @@ if __name__ == "__main__":
 
         # If we're done exit the loop in X timesteps
         if done_flag:
-            pbar.set_description(done_message)
             continue_after_done_steps -= 1
         if continue_after_done_steps == 0:
             break
@@ -126,11 +127,11 @@ if __name__ == "__main__":
         # Update the pbar with the current state and action
         p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
         v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
-        w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
+        w_string = f"{np.linalg.norm(state[9:12]):<4.1f}"
         a_string = ", ".join([f"{x:<4.1f}" for x in action])
         dist_to_goal_string = f"{np.linalg.norm(state[0:3] - state_goal[0:3]):<4.1f}"
         pbar.set_description(
-            f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
+            f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | done={'y' if done_flag else 'n'} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w={w_string} | a=[{a_string}] | gpu={'y' if use_gpu_if_available else 'n'}")
     # Close the bar
     pbar.close()
 
