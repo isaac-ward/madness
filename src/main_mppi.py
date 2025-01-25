@@ -58,7 +58,7 @@ if __name__ == "__main__":
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*4) # Ultra safe
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter)
     #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the environment
