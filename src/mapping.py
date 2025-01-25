@@ -501,10 +501,14 @@ class Map:
                     # Check if the neighbour is out of bounds
                     if not self.voxel_coord_in_bounds(neighbour):
                         continue
-                    if self.is_voxel_occupied(node, voxel_grid=voxel_grid_expanded) or self.is_voxel_occupied(neighbour, voxel_grid=voxel_grid_expanded):
-                        continue
-                    else:
+
+                    # If the node and the neighbor are both unoccupied, add the edge
+                    if  not self.is_voxel_occupied(node,      voxel_grid=voxel_grid_expanded) and \
+                        not self.is_voxel_occupied(neighbour, voxel_grid=voxel_grid_expanded):
+                        # This means we only end up with edges between unoccupied voxels, so 
+                        # A* can only be solved through unoccupied space
                         edges_to_add.append((node, neighbour))
+
             print("Graph constructing...", end="")
             graph.add_edges_from(edges_to_add, weight=1)
             print("done")
@@ -533,24 +537,22 @@ class Map:
 
             except nx.NetworkXNoPath:
                 
-                # Visualize the voxel map and the start and goal points
-                # as slices from z=0 to z=max
-                for z in range(self.voxel_grid.shape[2]):
-                    slice_ = self.voxel_grid[:,:,z]
-                    if z == a_voxel_coord[2]:
-                        slice_[a_voxel_coord[0], a_voxel_coord[1]] = 5
-                    if z == b_voxel_coord[2]:
-                        slice_[b_voxel_coord[0], b_voxel_coord[1]] = 10
-                    plt.figure(figsize=(10, 10))
-                    plt.imshow(slice_)
-                    plt.title(f"Slice at z={z}")
-                    # colorbar range 0-10
-                    plt.colorbar()
-                    # Save the plot
-                    plt.savefig(f"slice_at_z_{z}.png")
-                    plt.close()
-
-
+                # # Visualize the voxel map and the start and goal points
+                # # as slices from z=0 to z=max
+                # for z in range(self.voxel_grid.shape[2]):
+                #     slice_ = self.voxel_grid[:,:,z]
+                #     if z == a_voxel_coord[2]:
+                #         slice_[a_voxel_coord[0], a_voxel_coord[1]] = 5
+                #     if z == b_voxel_coord[2]:
+                #         slice_[b_voxel_coord[0], b_voxel_coord[1]] = 10
+                #     plt.figure(figsize=(10, 10))
+                #     plt.imshow(slice_)
+                #     plt.title(f"Slice at z={z}")
+                #     # colorbar range 0-10
+                #     plt.colorbar()
+                #     # Save the plot
+                #     plt.savefig(f"slice_at_z_{z}.png")
+                #     plt.close()
 
                 raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape}). As voxels: {a_voxel_coord} -> {b_voxel_coord}")
             
