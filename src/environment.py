@@ -60,12 +60,13 @@ class Environment:
             # Is position close enough?
             is_position_goal_met = np.linalg.norm(new_state[0:3] - self.state_goal[0:3]) < self.close_enough_position
             # Is orientation close enough?
-            is_orientation_goal_met = np.linalg.norm(new_state[3:6] - self.state_goal[3:6]) < self.close_enough_orientation 
+            # is_orientation_goal_met = np.linalg.norm(new_state[3:6] - self.state_goal[3:6]) < self.close_enough_orientation 
             # Is velocity close enough?
             is_velocity_goal_met = np.linalg.norm(new_state[6:9] - self.state_goal[6:9]) < self.close_enough_velocity
             # Is angular velocity close enough?
-            is_angular_velocity_goal_met = np.linalg.norm(new_state[9:12] - self.state_goal[9:12]) < self.close_enough_angular_velocity
-            return is_position_goal_met and is_orientation_goal_met and is_velocity_goal_met and is_angular_velocity_goal_met
+            # is_angular_velocity_goal_met = np.linalg.norm(new_state[9:12] - self.state_goal[9:12]) < self.close_enough_angular_velocity
+            # return is_position_goal_met and is_orientation_goal_met and is_velocity_goal_met and is_angular_velocity_goal_met
+            return is_position_goal_met and is_velocity_goal_met
 
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
@@ -75,7 +76,7 @@ class Environment:
             done_message = "Ran out of steps"
         elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_position):
             done_flag = True
-            done_message = f"Entered an invalid state (OOB) or collided with an obstacle to within {self.close_enough_radius} m"
+            done_message = f"Entered an invalid state (OOB) or collided with an obstacle to within {self.close_enough_position} m"
         elif is_goal_met(new_state):
             done_flag = True
             done_message = f"Reached the goal state to within:\n"
