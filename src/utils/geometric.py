@@ -138,7 +138,7 @@ def smooth_path_same_endpoints(original_path, desired_points_per_meter=50):
     # Objective function: trade-off between smoothness and closeness
     # Weight for smoothness (higher is smoother, but less close to original path)
     # we find that tan alpha ~ 10 works well
-    alpha = 100
+    alpha = 500
     objective = cp.Minimize(closeness_penalty + alpha * smoothness_penalty)
     
     # Solve the problem

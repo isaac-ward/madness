@@ -62,24 +62,23 @@ if __name__ == "__main__":
     map_ = standard.get_28x28x28_at_111_with_obstacles()
 
     # Start and goal states
-    # state_initial = np.zeros(n)
-    # state_initial[:3] = 5
+    state_initial = np.zeros(n)
+    state_initial[:3] = 5
     # state_initial[3] = 1
-    # state_goal = np.zeros(n)
+    state_goal = np.zeros(n)
     # state_goal[:3] = state_initial[:3] + np.array([5,10,20])
     # state_goal[:3] = 25
     # state_goal[:3] = np.array([25,25,5])
     # state_goal[3] = 1
     # state_goal[:3] = state_initial[:3] + np.array([5,5,20])
-    # state_goal[:3] = state_initial[:3] + np.array([1,1,1])
+    state_goal[:3] = state_initial[:3] + np.array([1,1,1])
 
     # Start and goal states
-    state_initial, state_goal = Environment.get_two_states_separated_by_distance(
-        map_, 
-        template=dyn.state_randomization_template(),
-        obstacle_collision_distance=10*dyn.diameter,
-        min_distance=26,
-    )
+    # state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+    #     map_, 
+    #     template=dyn.state_randomization_template(),
+    #     min_distance=5,
+    # )
     
     # TODO Talk to Isaac about how to do this better
     # state_initial_metres = np.array(state_initial[:3])
@@ -98,24 +97,29 @@ if __name__ == "__main__":
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*10) # Ultra safe
+    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter) # Ultra safe
     try:
         path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz, desired_points_per_meter=20)
     except Exception as e:
         print(e)
         path_xyz_smooth = path_xyz
+
+    last_entry_duplicated = np.tile(path_xyz_smooth[-1], (200, 1))
+
+    # Append the duplicated rows to the original array
+    path_xyz_smooth = np.vstack([path_xyz_smooth, last_entry_duplicated])
     K = path_xyz_smooth.shape[0] - 1
 
     # SDFs --------------------------------------------------------------------------------------------------------------------
-    sdfs = Environment_SDF(dyn)
-    sdfs.characterize_env_with_spheres_perturbations(
-        start_point_meters=xyz_initial,
-        end_point_meters=xyz_goal,
-        path_xyz=path_xyz_smooth,
-        map_env=map_,
-        max_spheres=500,
-        randomness_deg=45
-    )
+    # sdfs = Environment_SDF(dyn)
+    # sdfs.characterize_env_with_spheres_perturbations(
+    #     start_point_meters=xyz_initial,
+    #     end_point_meters=xyz_goal,
+    #     path_xyz=path_xyz_smooth,
+    #     map_env=map_,
+    #     max_spheres=500,
+    #     randomness_deg=45
+    # )
 
     # SCP --------------------------------------------------------------------------------------------------------------------
     if track_option == 2:
@@ -704,8 +708,8 @@ if __name__ == "__main__":
     ) 
 
     # Create the environment
-    num_steps = np.shape(path_xyz_smooth)[0]
-    num_seconds = dyn.dt * num_steps
+    num_seconds = 10
+    num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=state_initial,
         state_goal=state_goal,
@@ -717,11 +721,9 @@ if __name__ == "__main__":
 
     # ----------------------------------------------------------------
 
-    print(f"Task is to move from {np.round(xyz_initial,2)} to {np.round(xyz_goal,2)} (within {environment.close_enough_radius} m)")
-
     # Run the simulation for some number of steps
     pbar = tqdm(total=num_steps, desc="Running simulation")
-    continue_after_done_secs = 0.5
+    continue_after_done_secs = 0
     continue_after_done_steps = int(continue_after_done_secs / dyn.dt)    
     for i in range(num_steps):
         # Take an action (this is based on previous observations)
@@ -730,12 +732,12 @@ if __name__ == "__main__":
         ilqr_traj.append(state[:3])
         pbar.update(1)
 
-        # If we're done exit the loop in X timesteps
-        if done_flag:
-            pbar.set_description(done_message)
-            continue_after_done_steps -= 1
-        if continue_after_done_steps == 0:
-            break
+        # # If we're done exit the loop in X timesteps
+        # if done_flag:
+        # #     pbar.set_description(done_message)
+        # #     continue_after_done_steps -= 1
+        # # if continue_after_done_steps == 0:
+        #     break
 
         # Make new observations
         agent.observe(state)
@@ -767,10 +769,10 @@ if __name__ == "__main__":
     environment.log(log_folder)
 
     # Log the cubes
-    utils.logging.pickle_to_filepath(
-        os.path.join(log_folder, "signed_distance_function.pkl"),
-        sdfs,
-    )
+    # utils.logging.pickle_to_filepath(
+    #     os.path.join(log_folder, "signed_distance_function.pkl"),
+    #     sdfs,
+    # )
 
     # Log the A* path
     utils.logging.save_to_npz(
