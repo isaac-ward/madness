@@ -31,8 +31,8 @@ class Environment:
         # dynamics model, we'll keep it separate for clarity
 
         # If we're this close to an obstacle or the goal, we're done
-        self.close_enough_position = self.dynamics.diameter / 2
-        self.close_enough_orientation = 0.2 # radians
+        self.close_enough_position = self.dynamics.diameter # m
+        self.close_enough_orientation = 10000 # radians
         self.close_enough_velocity = 5 # m/s
         self.close_enough_angular_velocity = 10000 # rad/s
 
@@ -75,7 +75,7 @@ class Environment:
             done_message = "Ran out of steps"
         elif self.map.is_not_valid(new_state[0:3], collision_radius=self.close_enough_position):
             done_flag = True
-            done_message = f"Entered an invalid state (OOB) or collided with an obstacle to within {self.close_enough_radius} m"
+            done_message = f"Entered an invalid state (OOB) or collided with an obstacle to within {self.close_enough_position} m"
         elif is_goal_met(new_state):
             done_flag = True
             done_message = f"Reached the goal state to within:\n"
