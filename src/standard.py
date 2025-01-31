@@ -59,6 +59,28 @@ def get_28x28x28_at_111_with_obstacles():
         ],
     )
 
+def get_tunnels():
+    return Map(
+        map_filepath="/workspace/assets/maps/tunnels.obj",
+        voxel_per_x_metres=0.25,
+        extents_metres_xyz=[
+            [0, 35], 
+            [0, 60], 
+            [0, 5]
+        ],
+    )
+
+def get_chamber():
+    return Map(
+        map_filepath="/workspace/assets/maps/chamber.obj",
+        voxel_per_x_metres=2    ,
+        extents_metres_xyz=[
+            [0, 45], 
+            [0, 70], 
+            [0, 12]
+        ],
+    )   
+
 def get_standard_flow_action_dist_policy_arguments():
     dyn = get_standard_dynamics()
     map_ = get_standard_map()
