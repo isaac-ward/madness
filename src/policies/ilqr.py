@@ -418,11 +418,11 @@ class PolicyALiLQR:
             x[_k+1] = dyn.step(x[_k],u[_k])
 
         # Get constraints
-        c = self.constraints(x,u)
+        c,_,_ = self.constraints(x,u)
 
         # Create penalty matrix and lagrange multiplier
         μ = 1e-4                                                        # Initial penalty
-        φμ = 1.1                                                        # Penalty scaling
+        φμ = 2.                                                         # Penalty scaling
         λ = self.update_lagrange_multiplier(μ,np.zeros_like(c),x,u)     # Lagrange multipler
         Iμ = self.update_penalty_matrix(μ,λ,x,u)                        # Penalty matrix
 
@@ -517,9 +517,17 @@ class PolicyALiLQR:
                 J_last = np.copy(J)
             
             # Update AL variables
-            μ += φμ*μ
+            c,_,_ = self.constraints(x,u)
+            if np.max(c > 0):
+                μ = φμ*μ
             λ = self.update_lagrange_multiplier(μ,λ,x,u)
             Iμ = self.update_penalty_matrix(μ,λ,x,u)
+            for _i in range(c.shape[0]):
+                if (λ[_i] + 0.5*c[_i].T @ Iμ[_i]).T @ c[_i] < 0:
+                    print("------------------")
+                    print("λ: \n" + str(λ[_i]))
+                    print("c: \n" + str(c[_i]))
+                    print("Iμ: \n" + str(Iμ[_i]))
 
             # Increment iteration variable
             iters += 1
@@ -594,12 +602,11 @@ class PolicyALiLQR:
         lN_xx = QN                          # Terminal iLQR cost (dxdx)
 
         # Build constraint gradients / Hessians at N
-        c = self.constraints(x,u)       # Constraints
-        cN_x = np.zeros_like(c[-1])     # Constraints (dx)
+        c, c_x, c_u = self.constraints(x,u)       # Constraints
 
         # Calc cost to go at N
-        p = lN_x + cN_x.T @ (λ[-1] + Iμ[-1] @ c[-1])
-        P = lN_xx + cN_x.T @ Iμ[-1] @ cN_x
+        p = lN_x + c_x[-1].T @ (λ[-1] + Iμ[-1] @ c[-1])
+        P = lN_xx + c_x[-1].T @ Iμ[-1] @ c_x[-1]
 
         # Regularization factor
         ρmax = 1e4          # Maximum regularization
@@ -629,21 +636,17 @@ class PolicyALiLQR:
                 lk_u += W @ (u_continuity - u[0])
                 lk_uu += W
 
-            # Build constraint gradients / Hessians at kth step
-            ck_x = np.zeros_like(c[_k])             # Constraints at k (dx)
-            ck_u = np.array([1,1,1,1,-1,-1,-1,-1])  # Constraints at k (du)
-
             # Get A, B jacobians at k
             A = np.copy(A_total[_k]) 
             B = np.copy(B_total[_k]) 
 
             # Build gradients / Hessians of action value function
-            Q_xx = lk_xx + A.T @ P @ A + ck_x.T @ Iμ[_k] @ ck_x
-            Q_uu = lk_uu + B.T @ P @ B + ck_u.T @ Iμ[_k] @ ck_u
-            Q_ux = lk_ux + B.T @ P @ A + ck_u.T @ Iμ[_k] @ ck_x
+            Q_xx = lk_xx + A.T @ P @ A + c_x[_k].T @ Iμ[_k] @ c_x[_k]
+            Q_uu = lk_uu + B.T @ P @ B + c_u[_k].T @ Iμ[_k] @ c_u[_k]
+            Q_ux = lk_ux + B.T @ P @ A + c_u[_k].T @ Iμ[_k] @ c_x[_k]
             Q_xu = np.copy(Q_ux.T)
-            Q_x = lk_x + A.T @ p + ck_x.T @ (λ[_k] + Iμ[_k] @ c[_k])
-            Q_u = lk_u + B.T @ p + ck_u.T @ (λ[_k] + Iμ[_k] @ c[_k])
+            Q_x = lk_x + A.T @ p + c_x[_k].T @ (λ[_k] + Iμ[_k] @ c[_k])
+            Q_u = lk_u + B.T @ p + c_u[_k].T @ (λ[_k] + Iμ[_k] @ c[_k])
 
             # Check Q_uu positive definite
             incrementing = True
@@ -760,8 +763,8 @@ class PolicyALiLQR:
         forward_err = 0             # 1 if line search fails to converge
 
         # Upper and Lower control bounds
-        u_upper = np.array(dyn.action_ranges())[:,1]
-        u_lower = np.array(dyn.action_ranges())[:,0]
+        u_upper = np.array(dyn.action_ranges())[:,1]*5
+        u_lower = np.array(dyn.action_ranges())[:,0]*5
 
         pbar = tqdm(range(max_iters), desc="Optimizing alpha", total=max_iters, leave=False)
 
@@ -857,7 +860,7 @@ class PolicyALiLQR:
         N = np.shape(x_track)[0] # timesteps
 
         # Get AL constraint costs
-        c = self.constraints(x,u)
+        c,_,_ = self.constraints(x,u)
 
         # Create total cost function
         J = 0
@@ -876,17 +879,17 @@ class PolicyALiLQR:
         for _k in range(0,N-1):
             # iLQR cost
             J_iLQR_tracking += 0.5*((x[_k] - x_track[_k]).T @ Q @ (x[_k] - x_track[_k]) + u[_k].T @ R @ u[_k])
-            J += J_iLQR_tracking
-
+            
             # AL cost
             J_AL_tracking += (λ[_k] + 0.5*c[_k].T @ Iμ[_k]).T @ c[_k]
-            J += J_AL_tracking
+        J += J_iLQR_tracking
+        J += J_AL_tracking
         
         # Add continuity cost
         J_continuity = 0
         if u_continuity is not None and u_continuity.any():
             J_continuity = 0.5 * (u_continuity - u[0]).T @ W @  (u_continuity - u[0])
-            J += J_continuity
+        J += J_continuity
         
         # Add to diagnostic variables
         if iter_cost:
@@ -918,13 +921,13 @@ class PolicyALiLQR:
         Returns
         -------
         λ: np.ndarray
-            Lagrange multipliers
+            Lagrange multipliers (timesteps) x (number of constraints)
         """
         # Get constraints
-        c = self.constraints(x,u)
+        c,_,_ = self.constraints(x,u)
         
         # Update lagrange multiplier (λ)
-        λ += np.maximum(0,λ+μ*c)
+        λ = np.maximum(0,λ+μ*c)
         
         return λ
     
@@ -955,7 +958,7 @@ class PolicyALiLQR:
             Penalty matrix at each timestep
         """
         # Get constraints
-        c = self.constraints(x,u)
+        c,_,_ = self.constraints(x,u)
 
         # Create penalty matrix
         Iμ_vect = (c > 0) * μ
@@ -989,7 +992,11 @@ class PolicyALiLQR:
         Returns
         -------
         c: np.ndarray
-            Constraint vector at each timestep
+            Constraint vector at each timestep (timestep) x (number of constraints)
+        c_x: np.ndarray
+            Constraint vector gradient wrt state at each timestep (timestep) x (number of constraints)
+        c_u: np.ndarray
+            Constraint vector gradient wrt control at each timestep (timestep) x (number of constraints)
         """
         # Get class variables
         dyn = self.dynamics # System dynamics
@@ -1008,338 +1015,16 @@ class PolicyALiLQR:
         c = np.concatenate((ck, [cN]), axis=0)
         c = c.reshape(c.shape[0], -1)
 
-        # TODO derivatives computed here, not in backpass (dx,du,dxx,duu,dxu)
+        # Calculate first derivative of constraints wrt x
+        ck_x = np.array([np.zeros_like(ck[0]) for _k in range(0,N-1)])
+        cN_x = np.zeros(np.shape(ck_x[0]))
+        c_x = np.concatenate((ck_x, [cN_x]), axis=0)
+        c_x = c_x.reshape(c_x.shape[0], -1)
 
-        return c
+        # Calculate first derivative of constraints wrt u
+        ck_u = np.array([[[1,1,1,1],[-1,-1,-1,-1]] for _k in range(0,N-1)])
+        cN_u = np.zeros(np.shape(ck_u[0]))
+        c_u = np.concatenate((ck_u, [cN_u]), axis=0)
+        c_u = c_u.reshape(c_u.shape[0], -1)
 
-class PolicyiLQR:
-    """
-    Class that solves for and executes an iLQR trajectory tracking policy.
-
-    Parameters
-    ----------
-    dynamics: DynamicsQuadcopter3D
-        Class describing the nonlinear dynamics of a system
-    Q: np.ndarray
-        The state cost matrix (real, symmetric, positive semi-definite matrix) dimensions n x n
-    R: np.ndarray
-        The control cost matrix (real, symmetric, positive-definite matrix) dimensions m x m
-    QN: np.ndarray
-        The terminal state cost matrix (real, symmetric, positive semi-definite matrix) dimensions n x n
-    W: np.ndarray
-        The continuity cost matrix dimensions m x m
-    x_track: np.ndarray
-        An array of discrete points making up a state trajectory we wish to track
-    u_track: np.ndarray
-        An array of discrete controls which is our "best guess" for executing the x_track trajectory
-    segments: int
-        Number of segments to divide the AL-iLQR problem into, default is a single segment (aka solving 1 problem)
-    eps: float
-        The convergence criteria for AL-iLQR. If the cost improvement is less than this threshold for any iteration,
-        consider it converged. Default is 1e-2
-    max_iters: int
-        The maximum number of iterations for the AL-iLQR solver
-    verbose: boolean
-        Print status messages to terminal while solving tracking problem
-    """
-    def __init__(
-        self,
-        dynamics:DynamicsQuadcopter3D,
-        Q:np.ndarray,
-        R:np.ndarray,
-        QN:np.ndarray,
-        W:np.ndarray,
-        x_track:np.ndarray,
-        u_track:np.ndarray,
-        segments=1,
-        eps=1e-2,
-        max_iters=1000,
-        verbose=False
-    ):
-        """
-        Initialization function for PolicyiLQR class
-        """
-        # Store system dynamics
-        self.dynamics = dynamics    # System dynamics
-
-        # Store trajectory to track
-        self.x_track = x_track      # State trajectory to track
-        self.u_track = u_track      # Open loop control inputs for x_track
-
-        # Store iLQR cost matrices
-        self.Q = Q                  # State cost matrix
-        self.R = R                  # Control cost matrix
-        self.QN = QN                # Terminal state cost matrix
-        self.W = W                  # Continuity cost matrix
-        
-        # AL-iLQR parameters
-        self.eps = eps              # Convergence criteria
-        self.max_iters = max_iters  # Maximum allowable iterations
-        self.segments = segments    # Segments for AL-iLQR problem
-
-        # Class variables
-        self.log_folder = None      # Log folder for logging
-        self.verbose = verbose      # Verbose option for class operations
-
-        # Internal diagnostic variables
-        self.state_error = []       # State error
-        self.cost = []              # Costs
-
-        # Verify inputs are valid
-        if self.max_iters <= 1:
-            raise ValueError("Argument `max_iters` must be at least 1")
-
-        # Solve segmented AL-iLQR
-        self.x_bar,self.u_bar,self.Y,self.y = self.segmented_al_ilqr(
-            x_track=self.x_track,
-            u_track=self.u_track,
-            dyn=self.dynamics,
-            Q=self.Q,
-            R=self.R,
-            QN=self.QN,
-            segments=self.segments,
-            eps=self.eps,
-            max_iters=self.max_iters,
-        )
-    
-    def _print(
-            self, 
-            *args
-    ):
-        """
-        Function to print messages to terminal when verbose option is enabled
-        """
-        if self.verbose:
-            print(*args)
-
-    def enable_logging(
-        self,
-        run_folder,
-    ):
-        """
-        Enable logging to a folder
-        """
-        self.log_folder = os.path.join(run_folder, "policy", "ilqr")
-
-    def delete_logs(
-            self
-    ):
-        """
-        Function to delete all logs
-        """
-        if self.log_folder is not None:
-            shutil.rmtree(self.log_folder)
-    
-    def act(
-        self,
-        state_history:np.ndarray,
-        action_history:np.ndarray,
-        timestep:int,
-    ):
-        """
-        Function to execute iLQR control
-        """
-        # Get the optimal action and other logging information
-        x = state_history[-1]
-        optimal_action = self.u_bar[timestep] + self.y[timestep] + self.Y[timestep] @ (x - self.x_bar[timestep])
-
-        # Store state error
-        self.state_error.append((x - self.x_bar[timestep]))
-
-        # Cap the action range
-        u_upper = np.array(self.dynamics.action_ranges())[:,1]
-        u_lower = np.array(self.dynamics.action_ranges())[:,0]
-        optimal_action = np.clip(optimal_action, u_lower, u_upper) # Restrict action with limits
-
-        # Print controls executed
-        self._print("u: " + str(optimal_action))
-
-        # Log the state and action plans alongside the costs, 
-        # if we're logging
-        # TODO
-        if self.log_folder is not None:
-            pass
-
-        return optimal_action
-
-    # ----------------------------------------------------------------
-    
-    def ilqr(self,x_track,u_track,quadrotor:DynamicsQuadcopter3D,Q,R,QN,eps=1e-3,max_iters=1000):
-        """
-        Compute controls to track a given trajectory with iLQR. The iLQR tracking control law is described by
-        the formula: u = u_bar + y + Y * (x - x_bar).
-        This code is based on resources from Stanford AA203.
-        Useful course notes can be found here: https://github.com/StanfordASL/AA203-Notes/blob/master/notes.pdf
-        TODO Fix
-
-        Parameters
-        ----------
-        x_track: numpy.ndarray
-            Discrete state trajectory to track (dimensions N x n)
-        u_track: numpy.ndarray
-            Discrete initial control inputs to track trajectory (dimensions N x m)
-        quadrotor: DynamicsQuadcopter3D
-            Quadrotor dynamics object
-        Q: numpy.ndarray
-            The state cost matrix
-        R: numpy.ndarray
-            The control cost matrix
-        QN: numpy.ndarray
-            The terminal state cost matrix 
-        eps: float
-            Optional, convergence tolerance. Default 1e-3
-        max_iters: int
-            Optional, maximum allowable iterations of iLQR loop for convergence
-        
-        Returns
-        -------
-        x_bar: numpy.ndarray
-            Discrete nominal state trajectory (dimensions N x n)
-        u_bar: numpy.ndarray
-            Discrete nominal control trajectory (dimensions N x m)
-        Y: numpy.ndarray
-            Discrete control gains for control law (dimensions N x m x n)
-        y: numpy.ndarray
-            Discrete control offset for control law (dimensions N x m)
-        """
-        u_upper = np.array(self.dynamics.action_ranges())[:,1]
-        u_lower = np.array(self.dynamics.action_ranges())[:,0]
-
-        # Check for a valid setup
-        if max_iters <= 1:
-            raise ValueError("Argument `max_iters` must be at least 1.")
-
-        # Get state and control dimensions
-        n = quadrotor.state_size()  # state dimension
-        m = quadrotor.action_size()  # control dimension
-
-        # Get total number of discrete control points on trajectory
-        N = np.shape(u_track)[0]
-
-        # Initialize control gains Y and offsets y
-        Kk = np.zeros((N, m, n))
-        dk = np.zeros((N, m))
-
-        # Initialize the nominal trajectory deviations dx and du
-        dx = np.zeros((N + 1, n))
-        du = np.zeros((N, m))
-
-        # Initialize the nominal trajectory x_bar and u_bar
-        x_bar = np.zeros_like(x_track)
-        x_bar[0] = np.copy(x_track[0])
-        u_bar = np.copy(u_track)
-
-        # Step through each discrete point and create a dynamically feasible trajectory
-        for _k in range(N):
-            x_bar[_k+1] = np.array(quadrotor.step(x_bar[_k], u_bar[_k]))
-        print("x_bar: " + str(x_bar))
-        # x_bar = np.copy(x_track)
-
-        # Last cost
-        J_last =  np.inf
-        J = self.cost_function(x_bar,x_track,u_bar)
-
-        # Regularization factor
-        ρinit = 0
-        ρ = ρinit
-        ρmax = 1e-6
-        ρinc = 1e-7
-
-        # Get linearized jacobians
-        A_total,B_total = quadrotor.linearize(x_bar[:-1],u_bar)
-        A_total,B_total = np.array(A_total),np.array(B_total)
-
-        assert not np.any(np.isnan(A_total)), "A contains NaN values from tracked trajectory"
-        assert not np.any(np.isnan(B_total)), "B contains NaN values from tracked trajectory"
-        assert not np.any(np.isinf(A_total)), "A contains inf values from tracked trajectory"
-        assert not np.any(np.isinf(B_total)), "B contains inf values from tracked trajectory"
-
-        ## iLQR loop
-        # Create variable to exit loop given convergence achieved
-        converged = False
-
-        # Limit iterations with max_iters
-        for _i in range(max_iters):
-            # Backwards Pass: 
-            # Build cost function gradients / Hessians at N
-            lN_x = QN @ (x_bar[-1] - x_track[-1])
-            lN_xx = np.copy(QN)
-
-            # Calc cost to go at N
-            p = np.copy(lN_x)
-            P = np.copy(lN_xx)
-
-            for _k in range(N-1,-1,-1):
-                # Build cost function gradients / Hessians at kth step
-                lk_x = Q @ (x_bar[_k] - x_track[_k])
-                lk_u = R @ u_bar[_k]
-                lk_xx = np.copy(Q)
-                lk_uu = np.copy(R)
-                lk_ux = 0
-
-                # Get A, B
-                A = np.copy(A_total[_k])
-                B = np.copy(B_total[_k])
-
-                # Build gradients / Hessians of action value function
-                Q_xx = lk_xx + A.T @ P @ A
-                Q_uu = lk_uu + B.T @ P @ B
-                Q_ux = lk_ux + B.T @ P @ A
-                Q_xu = np.copy(Q_ux.T)
-                Q_x = lk_x + A.T @ p
-                Q_u = lk_u + B.T @ p
-
-                # Check if positive definite
-                incrementing = True
-                # Q_uu_reg = np.eye(np.shape(Q_uu)[0])*ρmax + Q_uu
-                while incrementing:
-                    Q_uu_reg = np.eye(np.shape(Q_uu)[0])*ρ + Q_uu
-                    print("k: " + str(_k) + " / " + str(N-1))
-                    print("Q_uu: " + str(Q_uu_reg))
-                    print("eigs: " + str(np.linalg.eigvals(Q_uu_reg)))
-                    print("A: " + str(A))
-                    print("B: " + str(B))
-                    if not np.all(np.linalg.eigvals(Q_uu_reg) > 0):
-                        ρ += ρinc
-                        if ρ > ρmax:
-                            raise Exception("Hit maximum limit for regularization ρ = " + str(ρ))
-                    else:
-                        incrementing = False
-                
-                # Calc control gains
-                inv_gain = -np.linalg.pinv(Q_uu_reg)
-                Kk[_k] = inv_gain @ Q_ux
-                dk[_k] = inv_gain @ Q_u
-                P = Q_xx + Kk[_k].T @ Q_uu @ Kk[_k] + Kk[_k].T @ Q_ux + Q_xu @ Kk[_k]
-                p = Q_x + Kk[_k].T @ Q_uu @ dk[_k] + Kk[_k].T @ Q_u + Q_xu @ dk[_k]
-
-            # Forwards Pass
-            u = np.zeros((N, m))
-            x = np.zeros((N + 1, n))
-            x[0] = np.copy(x_track[0])
-            for _k in range(N):
-                dx[_k] = x[_k] - x_bar[_k]
-                du[_k] = dk[_k] + Kk[_k] @ dx[_k] 
-                u[_k] = u_bar[_k] + du[_k]
-                u[_k] = np.clip(u[_k], u_lower, u_upper) # Restrict action with limits
-                x[_k + 1] = np.array(quadrotor.step(x[_k],u[_k]))
-            x_bar = np.copy(x)
-            u_bar = np.copy(u)
-            # New cost
-            J_last = np.copy(J)
-            J = self.cost_function(x_bar,x_track,u_bar)
-            improve = abs(J_last - J)
-
-            print("iLQR iteration: " + str(_i) + "\nCost Improvement: " + str(J_last - J))
-            print("J = " + str(J))
-            print("J_last = " + str(J_last))
-
-            if improve < eps and _i > 2:
-                converged = True
-                break
-
-        # Verify solution found
-        if not converged:
-            raise RuntimeError("iLQR did not converge!")
-        
-        return x_bar, u_bar, Kk, dk
+        return c, c_x, c_u
