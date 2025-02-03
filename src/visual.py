@@ -284,9 +284,12 @@ class Visual:
                 ax.plot_surface(x, y, z, color='purple', alpha=0.15)
 
             # In 3D, plot the SDFs
-            for sdf in sdfs.sdf_list:
-                # Plot the sphere
-                plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
+            try:
+                for sdf in sdfs.sdf_list:
+                    # Plot the sphere
+                    plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
+            except:
+                None
 
             # In 3D, plot the path and smooth paths in 
             def plot_path(path, color, style, label=None):
@@ -339,7 +342,10 @@ class Visual:
 
         # Load the map and the signed distance function data
         map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
-        sdfs = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "signed_distance_function.pkl"))
+        try:
+            sdfs = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "signed_distance_function.pkl"))
+        except:
+            sdfs = []
         
         # We also want the a* (not policy) path, if it exists
         path_flag = False
