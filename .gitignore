@@ -1,6 +1,8 @@
 logs/*
 caches/*
 !.gitkeep
+assets/blender/subt_final_event_ground_truth.blend
+assets/blender/subt_final_event_ground_truth.blend1
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
