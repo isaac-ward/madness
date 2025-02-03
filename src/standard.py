@@ -62,7 +62,7 @@ def get_28x28x28_at_111_with_obstacles():
 def get_tunnels():
     return Map(
         map_filepath="/workspace/assets/maps/tunnels.obj",
-        voxel_per_x_metres=0.2,
+        voxel_per_x_metres=0.05,
         extents_metres_xyz=[
             [0, 60], 
             [0, 35], 

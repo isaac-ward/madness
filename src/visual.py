@@ -10,6 +10,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from itertools import product, combinations
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+from scipy.ndimage import distance_transform_edt
 import math
 
 import warnings
@@ -258,7 +259,7 @@ class Visual:
                 [v[2] for v in voxel_occupied_centers],
                 color='red',
                 marker='x',
-                alpha=0.1,
+                alpha=0.05,
             )
 
             # This is for plotting spherical sdfs
@@ -283,10 +284,9 @@ class Visual:
                 ax.plot_surface(x, y, z, color='purple', alpha=0.15)
 
             # In 3D, plot the SDFs
-            if sdfs is not None:
-                for sdf in sdfs.sdf_list:
-                    # Plot the sphere
-                    plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
+            for sdf in sdfs.sdf_list:
+                # Plot the sphere
+                plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
 
             # In 3D, plot the path and smooth paths in 
             def plot_path(path, color, style, label=None):
@@ -339,8 +339,7 @@ class Visual:
 
         # Load the map and the signed distance function data
         map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
-        #sdfs = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "signed_distance_function.pkl"))
-        sdfs = None
+        sdfs = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "signed_distance_function.pkl"))
         
         # We also want the a* (not policy) path, if it exists
         path_flag = False
@@ -445,11 +444,25 @@ class Visual:
         map_ = utils.logging.unpickle_from_filepath(os.path.join(self.run_folder, "environment", "map.pkl"))
 
         print("done")
-        print("Precomputing voxel information...", end="")
+        print("Precomputing voxel information...") #, end="")
 
         # Precompute the voxel representation stuff 
-        voxel_occupied_centers = np.argwhere(map_.voxel_grid == 1)
-        voxel_occupied_centers = [ map_.voxel_coords_to_metres(v) for v in voxel_occupied_centers ]
+        # We don't actually want to render every voxel otherwise it will be hard to see, only the ones
+        # within x metres of the free space. So we need the indices of the occupied voxels (1) x units from
+        # an unoccupied voxel (0). We want to do this fast in numpy buy calculating at every voxel
+        # the distance to the nearest unoccupied voxel
+        mask_occupied = map_.voxel_grid == 1
+        print(f"Found {np.sum(mask_occupied)} occupied voxels")
+        distances = distance_transform_edt(map_.voxel_grid)
+        #print(np.unique(distances))
+        distance_metres = map_.voxel_per_x_metres # 100
+        # 10 voxels every 1 metre = 0.1 voxel per metres, and means that a 1 metre distance should be 10 voxels
+        distance_voxels = distance_metres / map_.voxel_per_x_metres
+        mask_distance = distances <= distance_voxels
+        print(f"Found {np.sum(mask_distance)} voxels within {distance_metres} metres (or {distance_voxels} voxels) of free space")
+        desired_voxel_indices = np.argwhere(mask_occupied & mask_distance)
+        print(f"Found {len(desired_voxel_indices)} occupied voxels within {distance_metres} metres of free space (only these will be rendered)")
+        voxel_occupied_centers = [ map_.voxel_coords_to_metres(v) for v in desired_voxel_indices ]
 
         print("done")
         print("Loading optional visual data...", end="")
@@ -798,6 +811,19 @@ class Visual:
                         linestyle=':',
                         alpha=0.8,
                     )
+                if path_flag and axes_name in ["main", "x", "y", "z"]:
+                    # Plot the start point and end point big, and on top of everything
+                    point_start = path_xyz[0]
+                    point_end = path_xyz[-1]
+                    ax.scatter(
+                        [point_start[0], point_end[0]],
+                        [point_start[1], point_end[1]],
+                        [point_start[2], point_end[2]],
+                        color='black',
+                        s=32*4,
+                        zorder=1000,
+                        marker='x',
+                    )
                 if path_smooth_flag and axes_name in ["main", "x", "y", "z", "closeup"]:
                     ax.plot(
                         path_xyz_smooth[:, 0],
@@ -817,8 +843,13 @@ class Visual:
                         [v[2] for v in voxel_occupied_centers],
                         color='red',
                         marker='x',
-                        alpha=0.1,
+                        alpha=0.05,
                     )
+
+                    # Plot this point with a big green X: [6.0, 14.6, 1.4]
+                    # TESTING INSIDE FREE POINT FOR TUNNELS MAP
+                    #ax.scatter([6.0], [14.6], [1.4], color='green', marker='x', s=300, zorder=1000)
+                    # ax.scatter([24.1622], [13.6267], [1.5], color='green', marker='x', s=300, zorder=1000)
                 
                 # If we have access to MPPI data, then render it to some plots too
                 if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:

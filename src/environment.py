@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import warnings 
+from tqdm import tqdm
 
 import utils.logging
 from utils.general import ItemHistoryTracker
@@ -60,13 +61,12 @@ class Environment:
             # Is position close enough?
             is_position_goal_met = np.linalg.norm(new_state[0:3] - self.state_goal[0:3]) < self.close_enough_position
             # Is orientation close enough?
-            # is_orientation_goal_met = np.linalg.norm(new_state[3:6] - self.state_goal[3:6]) < self.close_enough_orientation 
+            is_orientation_goal_met = np.linalg.norm(new_state[3:6] - self.state_goal[3:6]) < self.close_enough_orientation 
             # Is velocity close enough?
             is_velocity_goal_met = np.linalg.norm(new_state[6:9] - self.state_goal[6:9]) < self.close_enough_velocity
             # Is angular velocity close enough?
-            # is_angular_velocity_goal_met = np.linalg.norm(new_state[9:12] - self.state_goal[9:12]) < self.close_enough_angular_velocity
-            # return is_position_goal_met and is_orientation_goal_met and is_velocity_goal_met and is_angular_velocity_goal_met
-            return is_position_goal_met and is_velocity_goal_met
+            is_angular_velocity_goal_met = np.linalg.norm(new_state[9:12] - self.state_goal[9:12]) < self.close_enough_angular_velocity
+            return is_position_goal_met and is_orientation_goal_met and is_velocity_goal_met and is_angular_velocity_goal_met
 
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
@@ -118,6 +118,7 @@ class Environment:
         def get_random_state(extents):
             state = np.zeros(len(template))
             for i, item in enumerate(template):
+                # This gets the numbers in metres
                 if item == "X":
                     state[i] = rng.uniform(low=extents[i][0], high=extents[i][1])
                 elif item == "Y":
@@ -128,20 +129,48 @@ class Environment:
                     state[i] = item
             return state
         
+        allowed_attempts = 1000
+        pbar = tqdm(total=allowed_attempts, desc="Finding start and goal states")
+        
         # Get a random goal state that is at least min_distance away
         def _far_apart_enough(state_goal, state_initial, min_distance):
             return np.linalg.norm(state_goal[0:3] - state_initial[0:3]) > min_distance
         def _in_collision(state):
-            return map_.is_not_valid(state[0:3], collision_radius=obstacle_collision_distance)
+            # not valid = in collision
+            #return map_.is_not_valid(state[0:3], collision_radius=obstacle_collision_distance)
+            #return map_.batch_is_collision_metres_xyz(state[0:3], collision_radius=obstacle_collision_distance)
+            # Convert to voxel units
+            vc = map_.metres_to_voxel_coords(state[0:3])
+            # print(vc)
+            # print(map_.voxel_grid[vc[0], vc[1], vc[2]])
+            return map_.voxel_grid[vc[0], vc[1], vc[2]] != 0
         def _satisfied(state_goal, state_initial, min_distance):
-            return _far_apart_enough(state_goal, state_initial, min_distance) and not _in_collision(state_initial) and not _in_collision(state_goal)
-        attempts = 1000
+            # Go through all checks and determine failure reason
+            failure_messages = []
+            satisfied = True
+            if _in_collision(state_initial):
+                failure_messages.append(f"start collision ({state_initial[0]:.1f}, {state_initial[1]:.1f}, {state_initial[2]:.1f})")
+                satisfied = False
+            if _in_collision(state_goal):
+                failure_messages.append(f"goal collision ({state_goal[0]:.1f}, {state_goal[1]:.1f}, {state_goal[2]:.1f})")
+                satisfied = False
+            if not _far_apart_enough(state_goal, state_initial, min_distance):
+                failure_messages.append(f"too close ({np.linalg.norm(state_goal[0:3] - state_initial[0:3]):.2f} m)")
+                satisfied = False
+            if satisfied:
+                desc_string = "Start points satisfied"
+            else:
+                desc_string = ", ".join(failure_messages)
+            pbar.set_description(desc_string)
+            return satisfied               
+        
+        # Keep trying until we get it
         state_initial = get_random_state(extents)
         state_goal = get_random_state(extents)
-        while attempts > 0 and not _satisfied(state_goal, state_initial, min_distance):
+        while not _satisfied(state_goal, state_initial, min_distance) and pbar.n < allowed_attempts:
             state_initial = get_random_state(extents)
             state_goal = get_random_state(extents)
-            attempts -= 1
+            pbar.update(1)
 
         return state_initial, state_goal
     

@@ -43,8 +43,8 @@ if __name__ == "__main__":
     # Create a map representation
     #map_ = standard.get_28x28x28_at_111()
     #map_ = standard.get_28x28x28_at_111_with_obstacles()
-    #map_ = standard.get_tunnels()
-    map_ = standard.get_chamber()
+    map_ = standard.get_tunnels()
+    #map_ = standard.get_chamber()
 
     # Start and goal states
     state_initial, state_goal = Environment.get_two_states_separated_by_distance(
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the environment
-    num_seconds = 0.2
+    num_seconds = 0.05
     num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=state_initial,
