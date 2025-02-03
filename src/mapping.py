@@ -231,15 +231,21 @@ class Map:
         # Count how much space was marked as navigable
         total_voxels = np.prod(self.voxel_grid.shape)
 
+        # Print some statistics
+        connected_to_start_voxels = np.sum(labeled_array == start_label)
+        print(f"{connected_to_start_voxels} / {total_voxels} voxels found connected to the provided start voxel ({100*connected_to_start_voxels / total_voxels:.4f} %)")
         unoccupied_voxels = np.sum(self.voxel_grid == 0)
-        print(f"{unoccupied_voxels} / {total_voxels} voxels are unoccupied ({100*unoccupied_voxels / total_voxels:.4f} %)")
-        navigable_voxels = np.sum(labeled_array == start_label)
-        print(f"{navigable_voxels} / {total_voxels} voxels are navigable ({100*navigable_voxels / total_voxels:.4f} %)")
-
+        print(f"{unoccupied_voxels} / {total_voxels} voxels were unoccupied (previously=0) ({100*unoccupied_voxels / total_voxels:.4f} %)")
+        
         # Mark all voxels NOT in the same connected component as the start
         # label / 'inside free space voxel' as occupied
-        #self.voxel_grid[labeled_array == start_label] = 0
         self.voxel_grid[labeled_array != start_label] = 1
+        # Mark the start voxel region as unoccupied
+        self.voxel_grid[labeled_array == start_label] = 0
+
+        navigable_voxels = np.sum(labeled_array == start_label)
+        print(f"{navigable_voxels} / {total_voxels} voxels are navigable (now=0) ({100*navigable_voxels / total_voxels:.4f} %)")
+
     
     # ----------------------------------------------------------------
         
