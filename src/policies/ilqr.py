@@ -227,6 +227,9 @@ class PolicyALiLQR:
 
             plt.savefig(os.path.join(self.log_folder,'segment_'+str(_j)+'_cost_evolution.png'))
             plt.close()
+
+            # Save cost evolution data to csv
+            np.savetxt(os.path.join(self.log_folder,'segment_'+str(_j)+'_cost_evolution.csv'), cost_array, delimiter=",", fmt="%.6f", header=",".join(cost_labels), comments="")
     
     def act(
         self,
@@ -763,8 +766,8 @@ class PolicyALiLQR:
         forward_err = 0             # 1 if line search fails to converge
 
         # Upper and Lower control bounds
-        u_upper = np.array(dyn.action_ranges())[:,1]*5
-        u_lower = np.array(dyn.action_ranges())[:,0]*5
+        u_upper = np.array(dyn.action_ranges())[:,1]#*5
+        u_lower = np.array(dyn.action_ranges())[:,0]#*5
 
         pbar = tqdm(range(max_iters), desc="Optimizing alpha", total=max_iters, leave=False)
 

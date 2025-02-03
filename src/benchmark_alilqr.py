@@ -55,8 +55,8 @@ if __name__ == "__main__":
             # Create a map representation
             # map_ = standard.get_standard_map()
             # map_ = standard.get_28x28x28_at_111()
-            # map_ = standard.get_28x28x28_at_111_with_obstacles()
-            map_ = standard.get_chamber()
+            map_ = standard.get_28x28x28_at_111_with_obstacles()
+            # map_ = standard.get_chamber()
 
             # Start and goal states
             state_initial, state_goal = Environment.get_two_states_separated_by_distance(
