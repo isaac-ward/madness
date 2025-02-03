@@ -64,7 +64,7 @@ if __name__ == "__main__":
     #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the environment
-    num_seconds = 6
+    num_seconds = 0.05
     num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=state_initial,

@@ -455,7 +455,7 @@ class Visual:
         print(f"Found {np.sum(mask_occupied)} occupied voxels")
         distances = distance_transform_edt(map_.voxel_grid)
         #print(np.unique(distances))
-        distance_metres = map_.voxel_per_x_metres # 100
+        distance_metres = 200 #map_.voxel_per_x_metres # 100
         # 10 voxels every 1 metre = 0.1 voxel per metres, and means that a 1 metre distance should be 10 voxels
         distance_voxels = distance_metres / map_.voxel_per_x_metres
         mask_distance = distances <= distance_voxels
@@ -843,8 +843,13 @@ class Visual:
                         [v[2] for v in voxel_occupied_centers],
                         color='red',
                         marker='x',
-                        alpha=0.01,
+                        alpha=0.05,
                     )
+
+                    # Plot this point with a big green X: [6.0, 14.6, 1.4]
+                    # TESTING INSIDE FREE POINT FOR TUNNELS MAP
+                    #ax.scatter([6.0], [14.6], [1.4], color='green', marker='x', s=300, zorder=1000)
+                    ax.scatter([24.1622], [13.6267], [1.5], color='green', marker='x', s=300, zorder=1000)
                 
                 # If we have access to MPPI data, then render it to some plots too
                 if mppi_flag and axes_name in ["main", "x", "y", "z", "closeup"]:

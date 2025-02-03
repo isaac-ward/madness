@@ -141,7 +141,9 @@ class Environment:
             #return map_.batch_is_collision_metres_xyz(state[0:3], collision_radius=obstacle_collision_distance)
             # Convert to voxel units
             vc = map_.metres_to_voxel_coords(state[0:3])
-            return map_.voxel_grid[vc[0], vc[1], vc[2]] == 1
+            # print(vc)
+            # print(map_.voxel_grid[vc[0], vc[1], vc[2]])
+            return map_.voxel_grid[vc[0], vc[1], vc[2]] != 0
         def _satisfied(state_goal, state_initial, min_distance):
             # Go through all checks and determine failure reason
             failure_messages = []
@@ -150,10 +152,10 @@ class Environment:
                 failure_messages.append(f"start collision ({state_initial[0]:.1f}, {state_initial[1]:.1f}, {state_initial[2]:.1f})")
                 satisfied = False
             if _in_collision(state_goal):
-                failure_messages += f"goal collision ({state_goal[0]:.1f}, {state_goal[1]:.1f}, {state_goal[2]:.1f})"
+                failure_messages.append(f"goal collision ({state_goal[0]:.1f}, {state_goal[1]:.1f}, {state_goal[2]:.1f})")
                 satisfied = False
             if not _far_apart_enough(state_goal, state_initial, min_distance):
-                failure_messages += f"too close ({np.linalg.norm(state_goal[0:3] - state_initial[0:3]):.2f} m)"
+                failure_messages.append(f"too close ({np.linalg.norm(state_goal[0:3] - state_initial[0:3]):.2f} m)")
                 satisfied = False
             if satisfied:
                 desc_string = "Start points satisfied"
