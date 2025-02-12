@@ -4,6 +4,11 @@ caches/*
 assets/blender/subt_final_event_ground_truth.blend
 assets/blender/subt_final_event_ground_truth.blend1
 
+src/plotting/plotter.ipynb
+src/plotting/.ipynb_checkpoints/*
+src/plotting/plots/*
+!src/plotting/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

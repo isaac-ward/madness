@@ -144,3 +144,26 @@ class ItemHistoryTracker:
 
     def __len__(self):
         return len(self.history)
+    
+class Timer:
+    def __init__(self):
+        self.start_time = None
+        self.elapsed = 0.0
+
+    def start(self):
+        if self.start_time is None:
+            self.start_time = time.time()
+
+    def stop(self):
+        if self.start_time is not None:
+            self.elapsed += time.time() - self.start_time
+            self.start_time = None
+
+    def reset(self):
+        self.start_time = None
+        self.elapsed = 0.0
+
+    def elapsed_time(self):
+        if self.start_time is not None:
+            return self.elapsed + (time.time() - self.start_time)
+        return self.elapsed

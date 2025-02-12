@@ -4,20 +4,21 @@ import pickle
 import warnings
 from utils.general import get_logs_dir, get_timestamp
 
-def make_log_folder(name="run"):
+def make_log_folder(name="run", make_handy_subfolders=True):
     folder_name = f"{name}_{get_timestamp()}"
     log_folder = os.path.join(get_logs_dir(), folder_name)
     os.makedirs(log_folder)
 
     # We then need to make the following subfolders
-    subfolders = [
-        "agent",
-        "environment",
-        "visuals",
-        "policy",
-    ]
-    for subfolder in subfolders:
-        ensure_log_subfolder_exists(log_folder, subfolder)
+    if make_handy_subfolders:
+        subfolders = [
+            "agent",
+            "environment",
+            "visuals",
+            "policy",
+        ]
+        for subfolder in subfolders:
+            ensure_log_subfolder_exists(log_folder, subfolder)
 
     return log_folder
 
@@ -30,6 +31,9 @@ def pickle_to_filepath(filepath, object, verbose=False):
     """
     Pickle an object to a folder
     """
+
+    # Ensure the folderpath exists
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
     # Warn if the file already exists
     if os.path.exists(filepath) and verbose:
@@ -69,6 +73,8 @@ def write_shape_to_text_file(filepath, array):
     """
     Write the shape of an array to a text file
     """
+    # Make sure the folder exists
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w") as f:
         f.write(str(array.shape))
 
@@ -76,12 +82,16 @@ def write_preview_to_text_file(filepath, array, num_entries=4):
     """
     Write a preview of an array to a text file
     """
+    # Make sure the folder exists
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w") as f:
         f.write(str(array[:num_entries]))
         f.write("\n...\n")
         f.write(str(array[-num_entries:]))
 
 def write_string_to_text_file(filepath, s):
+    # Make sure the folder exists
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w") as f:
         f.write(s)
 
@@ -97,6 +107,9 @@ def save_state_and_action_trajectories(
     """
 
     if suffix != "": suffix = f"_{suffix}"
+
+    # Make sure the folder exists
+    os.makedirs(folder_save, exist_ok=True)
 
     # For debugging purposes save the shapes to text files
     write_shape_to_text_file(os.path.join(folder_save, f"state_trajectories_shape{suffix}.txt"), state_trajectories)
