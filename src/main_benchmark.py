@@ -30,7 +30,7 @@ if __name__ == "__main__":
 
     # Create a map representation
     maps = [
-        standard.get_chamber(),
+        #standard.get_chamber(),
         standard.get_tunnels(),
         #standard.get_28x28x28_at_111(),
         #standard.get_28x28x28_at_111_with_obstacles(),
@@ -58,11 +58,17 @@ if __name__ == "__main__":
         # Set it up on this environment (will be repeatedly reset)
         benchmarker = Benchmarker(
             environment=environment,
-            num_episodes=15,
+            num_episodes=1,
             log_folder=utils.logging.make_log_folder(name=f"benchmark-{map_.map_name}", make_handy_subfolders=False),
         )
 
         # Run the benchmark (parallelization will be used)
         benchmarker.benchmark(
+            agent_functions=[
+                Benchmarker.get_mppi_agent,
+                # Benchmarker.get_alilqr_agent,
+                # Benchmarker.get_flowmppi_agent,
+                # Benchmarker.get_flowmppi_alilqr_agent,
+            ],
             render_videos=True
         )

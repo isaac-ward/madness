@@ -319,7 +319,7 @@ class Benchmarker:
         except Exception as e:
             print(f"Error in episode {i}: {e}")
 
-    def benchmark(self, render_videos=False):
+    def benchmark(self, agent_functions, render_videos=False):
         """Benchmark all the policies on the environment in parallel over episodes."""
 
         print("\nStarting benchmarking!!!\n")
@@ -327,12 +327,9 @@ class Benchmarker:
         if render_videos:
             warnings.warn("Rendering videos will slow down the benchmarking process")
 
-        agent_functions = [
-            Benchmarker.get_mppi_agent,
-            Benchmarker.get_alilqr_agent,
-            # Benchmarker.get_flowmppi_agent,
-            # Benchmarker.get_flowmppi_alilqr_agent,
-        ]
+        print(f"Benchmarking the following agents consistently over {self.num_episodes} episodes:")
+        for af in agent_functions:
+            print(f"  {af.__name__}")
 
         # Determine number of parallel workers (half of available CPU cores)
         max_workers = os.cpu_count() // 2 if os.cpu_count() else 2  # Fallback to 2 if unknown

@@ -103,18 +103,34 @@ class Map:
         self.map_name = os.path.basename(map_filepath)
         self.voxel_per_x_metres = voxel_per_x_metres
         self.extents_metres_xyz = extents_metres_xyz
+
+        def _load_helper(filepath):
+            # Use trimesh to load the obj file
+            mesh = trimesh.load(filepath)
+            self.points = np.array(mesh.vertices)
+            print(f"Loaded map file at: {filepath}, found {len(self.points)} points")
         
         # Load the map file as an occupancy grid, if the file exists
         try:
-            # Use trimesh to load the obj file
-            mesh = trimesh.load(map_filepath)
-            self.points = np.array(mesh.vertices)
-            print(f"Loaded map file at: {map_filepath}, found {len(self.points)} points")
+            _load_helper(map_filepath)
             
         except Exception as e:
-            warnings.warn(f"Error loading map file at: {map_filepath} ({e}), using 'nothing' test map")
-            #self.points = test_columns()
-            self.points = test_nothing()
+            # If we can't find the ob file try unzipping the .zip file of it
+            folder_path = os.path.dirname(map_filepath)
+            filepath_no_extension = f"{folder_path}/{self.map_name.split('.')[0]}"
+            filepath_zip = filepath_no_extension + ".zip"
+            if os.path.exists(filepath_zip):
+                print(f"Found a .zip file instead of .obj file at: {filepath_zip}, unzipping (this only needs to be done the first time)")
+                # Unzip the file to that location
+                import zipfile
+                with zipfile.ZipFile(filepath_zip, 'r') as zip_ref:
+                    zip_ref.extractall(folder_path)
+                # Try loading the obj file again
+                _load_helper(map_filepath)
+            else:
+                warnings.warn(f"Error loading map file at: {map_filepath} ({e}), using 'nothing' test map")
+                #self.points = test_columns()
+                self.points = test_nothing()
 
         # Create a voxel grid representation of the map
         num_voxels_per_axis = [
@@ -157,7 +173,7 @@ class Map:
         # and extract the 'inside free space' point if it exists
         filepath_without_obj = os.path.splitext(map_filepath)[0]
         filepath_inside_freespace = filepath_without_obj + ".in"
-        print(f"Looking for 'inside free space' file at: {filepath_inside_freespace}")
+        print(f"Looking for 'inside free space' file at: {filepath_inside_freespace}, which determines which connected space in the map is the navigable space")
         try:
             with open(filepath_inside_freespace, "r") as f:
                 lines = f.readlines()

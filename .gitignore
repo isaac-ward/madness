@@ -3,6 +3,9 @@ caches/*
 !.gitkeep
 assets/blender/subt_final_event_ground_truth.blend
 assets/blender/subt_final_event_ground_truth.blend1
+assets/maps/tunnels.obj
+assets/maps/tunnels2.obj
+
 
 src/plotting/plotter.ipynb
 src/plotting/.ipynb_checkpoints/*
