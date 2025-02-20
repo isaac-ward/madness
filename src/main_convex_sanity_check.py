@@ -7,6 +7,7 @@ from scipy.ndimage import binary_dilation
 from scipy.interpolate import interp1d
 from utils.general import gradient_log_softmax, log_softmax
 import cvxpy as cp
+from dynamics_tiny import DynamicsTiny
 
 class World:
     def __init__(self, side_length, middle_obstacle_side_length, agent_radius):
@@ -248,17 +249,20 @@ path = interp1d(np.arange(num_points_original), path, axis=0)(np.linspace(0, num
     
 # This is where we get convex with it
 
-def sdf_values(path,circles):
-        
+# Lets have some dynamics
+dynamics = DynamicsTiny(dt=0.1)
+
+def sdf_values(path, circles):
+    # If it's 1 point long make it 2d
     if len(path.shape) == 1:
         path = path[np.newaxis, :]
-    
+    # (num points in path, num circles)
     d = np.zeros((path.shape[0], len(circles)))
-
-    for i in range(len(circles)):
-        for j in range(len(path)):
-            d[j,i] = circles[i].sdf_value(*path[j])
-    
+    # Each row is the sdf value of the circle at that point 
+    # ('how in each circle is the ith path point')
+    for i in range(len(path)):
+        for j in range(len(circles)):
+            d[i,j] = circles[j].sdf_value(*path[i])
     return d
 
 def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol=1e-3):
@@ -282,14 +286,23 @@ def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol
     X_prev = np.copy(path)  # Initial guess (previous iteration's solution)
 
     for iter in tqdm(range(max_iters), desc="SCP Iteration"):
+
         # Define optimization variables (x, y coordinates for each path point)
         X = cp.Variable((num_points, 2))
         slack_sdf = cp.Variable((num_points,num_circles))
 
+        # ----------------------------------------------------------------
+
         # Constraints
         constraints = []
+
+        # ~~~~ Start and end constraints ~~~~
+
+        # Start and end
         constraints.append(X[0] == path[0])  # Fix start
         constraints.append(X[-1] == path[-1])  # Fix goal
+
+        # ~~~~ SDF constraints ~~~~
 
         # slack sdf prev is going to be a matrix (num_timesteps, num_sdfs)
         slack_sdf_prev = sdf_values(X_prev[:,:2],circles)
@@ -300,18 +313,49 @@ def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol
         # # affine part of the assembled matrix form of the constraints
         L0 = log_softmax(sig, slack_sdf_prev)
         
+        # The SDF constraints
+        # This set of constraints ensures that the slack continues to minimize
         constraints += [cp.diag( G @ (slack_sdf - slack_sdf_prev).T) + L0 >= 0]
-
+        # This set of constraints ensures that the slack is always less than the true sdf values
         for i in range(num_circles):
             constraints += [slack_sdf[k,i] <= 1 - (1/circles[i].radius)*cp.norm2(X[k] - np.array([circles[i].x,circles[i].y])) for k in range(num_points)]
 
-        # Solve the convex subproblem
+        # ~~~~ Dynamics constraints ~~~~
+            
+        # # Get affinized dynamics about the current point. We do this
+        # # in a batch so we actually have multiple A's and B's and C's\
+        # # here
+        # A, B, C = dynamics.affinize(X_prev[:-1], U_prev)
+        # A, B, C = np.array(A),np.array(B),np.array(C)
+
+        # # Create virtual control term (recommended to be identity matrix)
+        # E = np.eye(2)
+
+        # # From the prior solution
+        # nu_max = 1
+
+        # # Construct the dynamic feasibility constraint
+        # constraints += [x[k+1] == A[k] @ x[k] + B[k] @ u[k] + C[k] + E @ nu[k] for k in range(self.N - 1)]
+
+        # constraints += [cp.max(cp.abs(nu)) <= nu_max]
+
+        # ----------------------------------------------------------------
+
+        # Formulate the objective
         objective = 0
+
+        # The distance objective is the sum of the squared distances between consecutive points (normalized)
         distance_max = (cp.norm2(path[0] - path[-1]))**2 * (num_points - 1)
         distance_objective = cp.sum([(cp.norm2(X[_k] - path[-1]))**2 for _k in range(num_points - 1)]) / distance_max
         objective += distance_objective
+
+        # The SDF objective attempts to minimize the slack
         sdf_objective = -eps_ss * cp.sum(slack_sdf)
         objective += sdf_objective
+
+        # ----------------------------------------------------------------
+
+        # Solve it
         problem = cp.Problem(cp.Minimize(objective), constraints)
         problem.solve()
 
