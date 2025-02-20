@@ -105,7 +105,9 @@ class Circle:
     def get_largest_possible_circle(world, x, y):
         # Start at the largest possible circle and work our way down
         reverse_size_list = list(range(world.side_length))[::-1]
-        for radius in tqdm(reverse_size_list, desc=f"Finding largest possible radius for circle centered at ({x}, {y})"):
+        pbar = tqdm(reverse_size_list)
+        for radius in pbar:
+            pbar.set_description(f"Trying radius {radius}")
             circle = Circle(x, y, radius)
             if circle.is_valid(world):
                 return circle
@@ -116,8 +118,10 @@ class Circle:
         # Go through all intertnal points and check if they are free
         for x in range(self.x - self.radius, self.x + self.radius + 1):
             for y in range(self.y - self.radius, self.y + self.radius + 1):
+                # Don't want every point in the square but in the radius
                 if np.linalg.norm([x - self.x, y - self.y]) <= self.radius:
                     if not world.is_free(x, y):
+                        print(f"Point ({x}, {y}) is not free")
                         return False
                     
     def is_point_inside(self, x, y):
@@ -155,8 +159,8 @@ class Plotter:
             plt.axvline(i - 0.5, color="black", linewidth=0.5)
 
         # Plot the start and goal positions
-        plt.scatter(*world.start[::-1], color="red", label="Start")
-        plt.scatter(*world.goal[::-1], color="green", label="Goal")
+        plt.scatter(*world.start[::-1], color="red", label=f"Start {world.start}")
+        plt.scatter(*world.goal[::-1], color="green", label=f"Goal {world.goal}")
         # Plot the path an orange line
         path = np.array(path)
         plt.plot(path[:, 1], path[:, 0], color="orange", label="Path")
@@ -166,6 +170,9 @@ class Plotter:
             circle_plot = plt.Circle((circle.y, circle.x), circle.radius, color="purple", fill=False, label="Circle")
             plt.gca().add_artist(circle_plot)
         plt.legend()
+
+        # Title exaplins the 0,0 bottom left
+        plt.title("origin bottom left, x^, y->")
 
         # Cut it off at the world size
         plt.xlim(-0.5, world.side_length - 0.5)
@@ -182,7 +189,11 @@ class Plotter:
 world = World(side_length=40, middle_obstacle_side_length=20, agent_radius=2)
 path = world.a_star(world.start, world.goal)
 # Create a circle at the start
-circles = [Circle.get_largest_possible_circle(world, *world.start)]
+try:
+    circles = [Circle.get_largest_possible_circle(world, *world.start)]
+except ValueError:
+    print("Start is not valid")
+    circles = []
 # # Get the furthest circle along the path until we contain the goal
 # attempts = 1000
 # for _ in range(attempts):
