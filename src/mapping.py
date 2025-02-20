@@ -4,6 +4,7 @@ from PIL import Image
 import scipy
 import scipy.ndimage
 import scipy.spatial    
+from scipy.ndimage import distance_transform_edt
 import networkx as nx
 from tqdm import tqdm
 import copy
@@ -99,20 +100,37 @@ class Map:
         
         # Load the occupancy grid 
         self.map_filepath = map_filepath
+        self.map_name = os.path.basename(map_filepath)
         self.voxel_per_x_metres = voxel_per_x_metres
         self.extents_metres_xyz = extents_metres_xyz
+
+        def _load_helper(filepath):
+            # Use trimesh to load the obj file
+            mesh = trimesh.load(filepath)
+            self.points = np.array(mesh.vertices)
+            print(f"Loaded map file at: {filepath}, found {len(self.points)} points")
         
         # Load the map file as an occupancy grid, if the file exists
         try:
-            # Use trimesh to load the obj file
-            mesh = trimesh.load(map_filepath)
-            self.points = np.array(mesh.vertices)
-            print(f"Loaded map file at: {map_filepath}, found {len(self.points)} points")
+            _load_helper(map_filepath)
             
-        except:
-            warnings.warn(f"Error loading map file at: {map_filepath}, using 'nothing' test map")
-            #self.points = test_columns()
-            self.points = test_nothing()
+        except Exception as e:
+            # If we can't find the ob file try unzipping the .zip file of it
+            folder_path = os.path.dirname(map_filepath)
+            filepath_no_extension = f"{folder_path}/{self.map_name.split('.')[0]}"
+            filepath_zip = filepath_no_extension + ".zip"
+            if os.path.exists(filepath_zip):
+                print(f"Found a .zip file instead of .obj file at: {filepath_zip}, unzipping (this only needs to be done the first time)")
+                # Unzip the file to that location
+                import zipfile
+                with zipfile.ZipFile(filepath_zip, 'r') as zip_ref:
+                    zip_ref.extractall(folder_path)
+                # Try loading the obj file again
+                _load_helper(map_filepath)
+            else:
+                warnings.warn(f"Error loading map file at: {map_filepath} ({e}), using 'nothing' test map")
+                #self.points = test_columns()
+                self.points = test_nothing()
 
         # Create a voxel grid representation of the map
         num_voxels_per_axis = [
@@ -122,7 +140,8 @@ class Map:
         self.voxel_grid = np.zeros(num_voxels_per_axis)
 
         # Fill in the voxel grid
-        for point in tqdm(self.points, desc="Loading point cloud into voxel grid"):
+        points_used = 0
+        for point in tqdm(self.points, desc=f"Loading point cloud into voxel grid ({len(self.points)} points)"):
             x, y, z = point
             i, j, k = self.metres_to_voxel_coords([x, y, z])
             # If it's outside the grid, skip
@@ -133,16 +152,28 @@ class Map:
             else:
                 # If it's inside the grid, set the voxel containing this
                 # point to 1 (occupied)
+                points_used += 1
                 self.voxel_grid[i, j, k] = 1
+        print(f"Loaded {points_used} points into voxel grid (remaining were out of provided bounds {self.extents_metres_xyz})")
 
-        # Compute a kd tree for fast collision checking
+        # NOTE we're not actually using the KD tree for collisions currently
+        # We want a kd tree for fast collision checking, but we only need 
+        # enough points so that the points/m^3 is never too high
+        def compute_points_per_m3(points, extents_metres_xyz):
+            # Compute the volume of the bounding box
+            volume = np.prod([extents_metres_xyz[i][1] - extents_metres_xyz[i][0] for i in range(3)])
+            return len(points) / volume
+        print(f"Points per m^3: {compute_points_per_m3(self.points, self.extents_metres_xyz):.4f}")
+        desired_points_per_m3 = 30
+        density_downsample_ratio = desired_points_per_m3 / compute_points_per_m3(self.points, self.extents_metres_xyz)
+
         self.kd_tree = scipy.spatial.cKDTree(self.points)
 
         # Load the corresponding .in file (has the same name as the .obj file)
         # and extract the 'inside free space' point if it exists
         filepath_without_obj = os.path.splitext(map_filepath)[0]
         filepath_inside_freespace = filepath_without_obj + ".in"
-        print(f"Looking for 'inside free space' file at: {filepath_inside_freespace}")
+        print(f"Looking for 'inside free space' file at: {filepath_inside_freespace}, which determines which connected space in the map is the navigable space")
         try:
             with open(filepath_inside_freespace, "r") as f:
                 lines = f.readlines()
@@ -167,7 +198,7 @@ class Map:
         print(f"\t-voxel_grid (occupied): {np.sum(self.voxel_grid):.0f}")
         print(f"\t-voxel_grid (occupied %): {np.sum(self.voxel_grid) / np.prod(self.voxel_grid.shape) * 100:.6f} %")
 
-    def _mark_only_navigable_space_as_unoccupied(self, start_voxel, verbose=False):
+    def _mark_only_navigable_space_as_unoccupied(self, start_voxel, verbose=True):
         """
         Marks connected free voxels in the voxel grid starting from the given voxel coordinates
         using a numpy-based approach
@@ -231,15 +262,21 @@ class Map:
         # Count how much space was marked as navigable
         total_voxels = np.prod(self.voxel_grid.shape)
 
+        # Print some statistics
+        connected_to_start_voxels = np.sum(labeled_array == start_label)
+        print(f"{connected_to_start_voxels} / {total_voxels} voxels found connected to the provided start voxel ({100*connected_to_start_voxels / total_voxels:.4f} %)")
         unoccupied_voxels = np.sum(self.voxel_grid == 0)
-        print(f"{unoccupied_voxels} / {total_voxels} voxels are unoccupied ({100*unoccupied_voxels / total_voxels:.4f} %)")
-        navigable_voxels = np.sum(labeled_array == start_label)
-        print(f"{navigable_voxels} / {total_voxels} voxels are navigable ({100*navigable_voxels / total_voxels:.4f} %)")
-
+        print(f"{unoccupied_voxels} / {total_voxels} voxels were unoccupied (previously=0) ({100*unoccupied_voxels / total_voxels:.4f} %)")
+        
         # Mark all voxels NOT in the same connected component as the start
         # label / 'inside free space voxel' as occupied
-        #self.voxel_grid[labeled_array == start_label] = 0
         self.voxel_grid[labeled_array != start_label] = 1
+        # Mark the start voxel region as unoccupied
+        self.voxel_grid[labeled_array == start_label] = 0
+
+        navigable_voxels = np.sum(self.voxel_grid == 0)
+        print(f"{navigable_voxels} / {total_voxels} voxels are navigable (now=0) ({100*navigable_voxels / total_voxels:.4f} %)")
+
     
     # ----------------------------------------------------------------
         
@@ -312,6 +349,9 @@ class Map:
         # (we may sometimes use a processed version of the grid)
         if voxel_grid is None:
             voxel_grid = self.voxel_grid
+        # If its out of bounds we consider it occupied
+        if not self.voxel_coord_in_bounds(voxel_coords):
+            return True
         return voxel_grid[tuple(voxel_coords)] == 1
     
     # ----------------------------------------------------------------
@@ -326,18 +366,23 @@ class Map:
         """
             
         # Query kdtree for closest occupied point
-        distances, indices = self.kd_tree.query(batch_metres_xyzs)
-        return distances < collision_radius
+        # distances, indices = self.kd_tree.query(batch_metres_xyzs)
+        # return distances < collision_radius
+        # Convert to voxels and check if they are occupied
+        batch_voxel_coords = [self.metres_to_voxel_coords(metres_xyz) for metres_xyz in batch_metres_xyzs]
+        return self.batch_is_collision_voxel_coords(batch_voxel_coords, collision_radius)
     
     def batch_is_collision_voxel_coords(
         self,
         batch_voxel_coords,
         collision_radius_voxels,
     ):
-        # Convert to metres
-        batch_metres_xyzs = self.batch_voxel_coords_to_metres(batch_voxel_coords)
-        collision_radius_metres = collision_radius_voxels * self.voxel_per_x_metres
-        return self.batch_is_collision_metres_xyz(batch_metres_xyzs, collision_radius_metres)
+        # Given a batch of voxel coordinates, check if they are in collision with the map
+        # by checking if the voxel at that coordinate is occupied
+        return np.array([
+            self.is_voxel_occupied(voxel_coords)
+            for voxel_coords in batch_voxel_coords
+        ])
         
     def batch_is_out_of_bounds_metres_xyz(
         self,
@@ -387,6 +432,7 @@ class Map:
         metres_xyz,
         collision_radius,
     ):
+        # Helper for a single item which just calls the batch version
         return self.batch_is_not_valid(np.array([metres_xyz]), collision_radius)[0]
 
     # ----------------------------------------------------------------
@@ -554,7 +600,7 @@ class Map:
                 #     plt.savefig(f"slice_at_z_{z}.png")
                 #     plt.close()
 
-                raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape}). As voxels: {a_voxel_coord} -> {b_voxel_coord}")
+                raise ValueError(f"No path found between start ({a_coord_metres} m) and finish ({b_coord_metres} m) in the occupancy grid (shape: {self.voxel_grid.shape}). As voxels: {a_voxel_coord} -> {b_voxel_coord}. Avoidance radius: {avoid_radius} m")
             
             outputs = np.array(path_metres)
             cacher.save(outputs)

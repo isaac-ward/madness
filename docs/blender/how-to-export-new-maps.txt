@@ -1,3 +1,4 @@
 1. Select object(s) that are to comprise the new map
 2. File -> Export -> Wavefront(.obj)
 3. Select options as shown in docs/blender/export-options.png
+4. If you want to mark a free space region as operable, and all else as inoperable/not-navigable, then create a file called filename.in with only 3 comma separated numbers in it, in the order -y, x, z based on the desired x, y, z coordinate as in the .blend file 

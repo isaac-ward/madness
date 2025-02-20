@@ -57,21 +57,24 @@ def batch_cost(
     flat_p = p.reshape((batch_size * H, 3))
     invalid_terms = xp.sum(map_.batch_is_not_valid(flat_p, collision_radius=1).reshape((batch_size, H)), axis=1)
 
-    # # Minimize velocity
-    # velocity_terms = xp.sum(xp.linalg.norm(v, axis=2), axis=1)
+    # Minimize velocity
+    velocity_terms = xp.sum(xp.linalg.norm(v, axis=2), axis=1)
 
     # # Minimize angular velocity
-    # angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
+    angular_velocity_terms = xp.sum(xp.linalg.norm(w, axis=2), axis=1)
 
     # Term for minimizing control effort
     control_effort_terms = xp.sum(xp.linalg.norm(action_trajectory_plans, axis=2), axis=1)
 
     # Assemble
+    # If this is zero we go extremely fast and collide a lot
     cost = \
         1000 * goal_p_terms + \
         100 * path_towards_goal_p_terms + \
         10 * path_towards_goal_v_terms + \
         10000 * invalid_terms + \
+        10 * angular_velocity_terms + \
+        100 * velocity_terms + \
         0 * goal_r_terms + \
         0 * goal_v_terms + \
         0 * goal_w_terms + \

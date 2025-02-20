@@ -19,6 +19,7 @@ from policies.simple import PolicyNothing, PolicyRandom, PolicyConstant
 from policies.mppi import PolicyMPPI
 import policies.samplers
 import standard
+from benchmarking.benchmarker import Benchmarker
 
 # TODO implement wandb to allow for more efficient grid searching of parameters
 
@@ -42,7 +43,9 @@ if __name__ == "__main__":
 
     # Create a map representation
     #map_ = standard.get_28x28x28_at_111()
-    map_ = standard.get_28x28x28_at_111_with_obstacles()
+    #map_ = standard.get_28x28x28_at_111_with_obstacles()
+    map_ = standard.get_tunnels()
+    #map_ = standard.get_chamber()
 
     # Start and goal states
     state_initial, state_goal = Environment.get_two_states_separated_by_distance(
@@ -50,19 +53,16 @@ if __name__ == "__main__":
         template=dyn.state_randomization_template(),
         min_distance=26,
     )
-    # state_initial, state_goal = np.asarray(dyn.zero_state().block_until_ready()).copy(), np.asarray(dyn.zero_state().block_until_ready()).copy()
-    # state_initial[0:3] = np.array([5, 5, 5])
-    # state_goal[0:3]    = np.array([25, 5, 5])
 
     # # Generate a path from the initial state to the goal state
     xyz_initial = state_initial[0:3]
     xyz_goal = state_goal[0:3]
     path_xyz = np.array([xyz_initial, xyz_goal])
-    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter)
+    #path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter)
     #path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz)
 
     # Create the environment
-    num_seconds = 16
+    num_seconds = 20
     num_steps = int(num_seconds / dyn.dt)
     environment = Environment(
         state_initial=state_initial,
@@ -75,7 +75,6 @@ if __name__ == "__main__":
     # Create the agent, which has an initial state and a policy
     K = 500
     H = 50 #int(0.5/dynamics.dt), # X second horizon
-    #action_sampler = policies.samplers.RandomActionSampler(K, H, dyn.action_ranges())
     action_sampler = policies.samplers.RolloverGaussianActionSampler(K, H, dyn.action_ranges())
     policy = PolicyMPPI(
         dynamics=copy.deepcopy(dyn),
@@ -97,55 +96,22 @@ if __name__ == "__main__":
         action_ranges=dyn.action_ranges(),
         zero_pad_state=dyn.zero_state(),
     ) 
-    #dyn.state_zero_with_quaternion_set_to_identity(),
 
     # ----------------------------------------------------------------
 
-    print(f"Task is to move from {np.round(xyz_initial,2)} to {np.round(xyz_goal,2)}")
-
-    # Run the simulation for some number of steps
-    pbar = tqdm(total=num_steps, desc="Running simulation")
-    continue_after_done_secs = 0.5
-    continue_after_done_steps = int(continue_after_done_secs / dyn.dt)    
-    for i in range(num_steps):
-        # Take an action (this is based on previous observations)
-        action = agent.act()
-        state, done_flag, done_message = environment.step(action)
-        pbar.update(1)
-
-        # If we're done exit the loop in X timesteps
-        if done_flag:
-            pbar.set_description(done_message)
-            continue_after_done_steps -= 1
-        if continue_after_done_steps == 0:
-            break
-
-        # Make new observations
-        agent.observe(state)
-
-        # Update the pbar with the current state and action
-        p_string = ", ".join([f"{x:<5.1f}" for x in state[0:3]])
-        v_string = f"{np.linalg.norm(state[6:9]):<4.1f}"
-        w_string = ", ".join([f"{x:<4.1f}" for x in state[9:12]])
-        a_string = ", ".join([f"{x:<4.1f}" for x in action])
-        dist_to_goal_string = f"{np.linalg.norm(state[0:3] - state_goal[0:3]):<4.1f}"
-        pbar.set_description(
-            f"t={(i+1)*dyn.dt:.2f}/{num_seconds:.2f} | d={dist_to_goal_string} | p=[{p_string}] | v={v_string} | w=[{w_string}] | a=[{a_string}] | gpu={'yes' if use_gpu_if_available else 'no'}")
-    # Close the bar
-    pbar.close()
+    # Create a benchmarker
+    Benchmarker.run_single_agent_single_environment(
+        agent=agent,
+        environment=environment,
+        state_initial=state_initial,
+        state_goal=state_goal,
+        log_folder=log_folder,
+        render_videos=False
+    )
 
     # ----------------------------------------------------------------
 
-    # Log everything of interest
-    agent.log(log_folder)
-    environment.log(log_folder)
-
-    # Render visuals
-    visual = Visual(log_folder)
-    visual.plot_histories()
-    visual.render_video(desired_fps=25)
-
-    # Clean up stored data 
+    # Clean up stored data for MPPI
     try:
         if not keep_policy_logs:
             policy.delete_logs()
