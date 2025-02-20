@@ -1,3 +1,4 @@
+import cvxpy as cp
 import numpy as np
 import matplotlib.pyplot as plt
 import heapq
@@ -271,6 +272,8 @@ def smooth_path_with_cvxpy(world, path, circles, lambda_smooth=1.0):
     optimized_path = X.value
     return optimized_path
 
+# Smooth the path
+optimized_path = smooth_path_with_cvxpy(world, path, circles, lambda_smooth=1.0)
 
 # ----------------------------------------------------------------
 
