@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import heapq
 from tqdm import tqdm
 from scipy.ndimage import binary_dilation
-import utils.general
+from utils.general import gradient_log_softmax, log_softmax
+import cvxpy as cp
 
 class World:
     def __init__(self, side_length, middle_obstacle_side_length, agent_radius):
@@ -148,12 +149,18 @@ class Circle:
         # 0 is the edge (at the radius)
         return 1 - np.linalg.norm([x - self.x, y - self.y]) / self.radius
 
+    def sdf_value_cp(self, x, y):
+        # Inside is positive, outside negative
+        # 1 is right in the middle,
+        # 0 is the edge (at the radius)
+        return 1 - cp.norm2([x - self.x, y - self.y]) / self.radius
+
     def __str__(self):
         return f"Circle c=({self.x}, {self.y}) r={self.radius}"
 
 class Plotter:
     @staticmethod
-    def plot_world(world, path, circles):
+    def plot_world(world, path, circles, path2=[]):
         # Plot the grid world, zeros are white, ones are black, twos are grey - explicitly
         white = np.array([1, 1, 1])
         black = np.array([0, 0, 0])
@@ -183,6 +190,9 @@ class Plotter:
         # Plot the path an orange line
         path = np.array(path)
         plt.plot(path[:, 0], path[:, 1], color="orange", label="Path")
+        if len(path2) > 0:
+            path2 = np.array(path2)
+            plt.plot(path2[:, 0], path2[:, 1], color="blue", label="CVX_Path")
         # Plot the circles in purple (centers are xs, and otuline)
         for i, circle in enumerate(circles):
             plt.scatter(circle.x, circle.y, color="purple", marker=".")
@@ -191,7 +201,7 @@ class Plotter:
             else:
                 circle_plot = plt.Circle((circle.x, circle.y), circle.radius, color="purple", fill=False, alpha=0.5, linestyle="-")
             plt.gca().add_artist(circle_plot)
-        #plt.legend()
+        plt.legend()
 
         # Title exaplins the 0,0 bottom left
         # plt.title("origin bottom left, x^, y->")
@@ -229,54 +239,92 @@ for circle in circles:
 # ----------------------------------------------------------------
     
 # This is where we get convex with it
+
+def sdf_values(path,circles):
+        
+    if len(path.shape) == 1:
+        path = path[np.newaxis, :]
     
-def smooth_path_with_cvxpy(world, path, circles, lambda_smooth=1.0):
+    d = np.zeros((path.shape[0], len(circles)))
+
+    for i in range(len(circles)):
+        for j in range(len(path)):
+            d[j,i] = circles[i].sdf_value(*path[j])
+    
+    return d
+
+def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=10, tol=1e-3):
     """
-    Smooths the A* path while ensuring each point remains inside at least one circle.
-    
+    Smooths a given path using Sequential Convex Programming (SCP) while ensuring each point 
+    remains inside at least one circle.
+
     world: World object
     path: List of (x, y) tuples from A*
     circles: List of Circle objects
     lambda_smooth: Weight for the smoothness penalty
+    lambda_inside: Weight for inside-circle constraint
+    max_iters: Maximum number of SCP iterations
+    tol: Convergence tolerance
     """
     path = np.array(path)
     num_points = len(path)
+    num_circles = len(circles)
 
-    # Define optimization variables (x, y coordinates for each path point)
-    X = cp.Variable((num_points, 2))
+    # Initialize the path
+    X_prev = np.copy(path)  # Initial guess (previous iteration's solution)
 
-    # Objective: Minimize second difference (curvature)
-    smoothness_cost = cp.sum_squares(X[:-2] - 2 * X[1:-1] + X[2:])
+    for iter in range(max_iters):
+        # Define optimization variables (x, y coordinates for each path point)
+        X = cp.Variable((num_points, 2))
+        slack_sdf = cp.Variable((num_points,num_circles))
 
-    # Constraints: 
-    constraints = []
+        # Constraints
+        constraints = []
+        constraints.append(X[0] == path[0])  # Fix start
+        constraints.append(X[-1] == path[-1])  # Fix goal
 
-    # Ensure the start and goal remain fixed
-    constraints.append(X[0] == path[0])
-    constraints.append(X[-1] == path[-1])
+        # slack sdf prev is going to be a matrix (num_timesteps, num_sdfs)
+        slack_sdf_prev = sdf_values(X_prev[:,:2],circles)
 
-    # Ensure each point is inside at least one circle
-    for i in range(num_points):
-        circle_constraints = [
-            cp.norm(X[i] - np.array([c.x, c.y])) <= c.radius for c in circles
-        ]
-        # The OR condition (inside at least one circle) is handled using cp.constraints.OR
-        constraints.append(cp.constraints.NonPos(cp.vstack(circle_constraints) - 0.0))
+        # G's shape is the same
+        G = gradient_log_softmax(sig, slack_sdf_prev)
 
-    # Solve the optimization problem
-    problem = cp.Problem(cp.Minimize(lambda_smooth * smoothness_cost), constraints)
-    problem.solve()
+        # # affine part of the assembled matrix form of the constraints
+        L0 = log_softmax(sig, slack_sdf_prev)
+        
+        constraints += [cp.diag( G @ (slack_sdf - slack_sdf_prev).T) + L0 >= 0]
 
-    # Extract the optimized path
-    optimized_path = X.value
-    return optimized_path
+        for i in range(num_circles):
+            constraints += [slack_sdf[k,i] <= 1 - (1/circles[i].radius)*cp.norm2(X[k] - np.array([circles[i].x,circles[i].y])) for k in range(num_points)]
 
+        # Solve the convex subproblem
+        objective = 0
+        distance_max = (cp.norm2(path[0] - path[-1]))**2 * (num_points - 1)
+        distance_objective = cp.sum([(cp.norm2(X[_k] - path[-1]))**2 for _k in range(num_points - 1)]) / distance_max
+        objective += distance_objective
+        sdf_objective = -eps_ss * cp.sum(slack_sdf)
+        objective += sdf_objective
+        problem = cp.Problem(cp.Minimize(objective), constraints)
+        problem.solve()
+
+        # Check convergence
+        if np.max(np.linalg.norm(X.value - X_prev, axis=0)) < tol:
+            break
+
+        # Update previous solution
+        X_prev = X.value
+
+    return X.value
+
+
+# Try to get convex path
+path2 = scp_smooth_path(world,path,circles).tolist()
 
 # ----------------------------------------------------------------
 
 
 
 # Plot everything
-Plotter.plot_world(world, path, circles)
+Plotter.plot_world(world, path, circles, path2)
 
 
