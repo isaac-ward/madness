@@ -104,10 +104,11 @@ class Circle:
     @staticmethod
     def get_largest_possible_circle(world, x, y):
         # Start at the largest possible circle and work our way down
-        reverse_size_list = list(range(world.side_length))[::-1]
+        reverse_size_list = list(range(world.side_length))[::-1][:-1]
+        #print(reverse_size_list)
         pbar = tqdm(reverse_size_list)
         for radius in pbar:
-            pbar.set_description(f"Trying radius {radius}")
+            pbar.set_description(f"Trying radius {radius} about ({x}, {y})")
             circle = Circle(x, y, radius)
             if circle.is_valid(world):
                 return circle
@@ -121,8 +122,8 @@ class Circle:
                 # Don't want every point in the square but in the radius
                 if np.linalg.norm([x - self.x, y - self.y]) <= self.radius:
                     if not world.is_free(x, y):
-                        print(f"Point ({x}, {y}) is not free")
                         return False
+        return True
                     
     def is_point_inside(self, x, y):
         return np.linalg.norm([x - self.x, y - self.y]) <= self.radius
@@ -138,8 +139,17 @@ class Circle:
                 break
         for i in range(first_inside_index, len(path)):
             if not self.is_point_inside(*path[i]):
-                # Now findthe largest circle at the previous point
+                # Now find the largest circle at the previous point
                 return Circle.get_largest_possible_circle(world, *path[i - 1])
+    
+    def sdf_value(self, x, y):
+        # Inside is positive, outside negative
+        # 1 is right in the middle,
+        # 0 is the edge (at the radius)
+        return 1 - np.linalg.norm([x - self.x, y - self.y]) / self.radius
+
+    def __str__(self):
+        return f"Circle c=({self.x}, {self.y}) r={self.radius}"
 
 class Plotter:
     @staticmethod
@@ -152,27 +162,39 @@ class Plotter:
         matrix[world.world == 0] = white
         matrix[world.world == 2] = grey
         matrix[world.world == 1] = black
+        # tranpose spatial
+        matrix = matrix.transpose(1, 0, 2)
         plt.imshow(matrix)
+        # for i in range(world.side_length):
+        #     for j in range(world.side_length):
+        #         if world.world[i, j] == 1:
+        #             plt.scatter(i, j, color="black", marker="o")
+        #         elif world.world[i, j] == 2:
+        #             plt.scatter(i, j, color="grey", marker="o")
+
 
         for i in range(world.side_length + 1):
-            plt.axhline(i - 0.5, color="black", linewidth=0.5)
-            plt.axvline(i - 0.5, color="black", linewidth=0.5)
+            plt.axhline(i - 0.5, color="black", linewidth=1, linestyle=":", alpha=0.5)
+            plt.axvline(i - 0.5, color="black", linewidth=1, linestyle=":" , alpha=0.5)
 
         # Plot the start and goal positions
-        plt.scatter(*world.start[::-1], color="red", label=f"Start {world.start}")
-        plt.scatter(*world.goal[::-1], color="green", label=f"Goal {world.goal}")
+        plt.scatter(*world.start, color="green", label=f"Start {world.start}", marker="o")
+        plt.scatter(*world.goal, color="red", label=f"Goal {world.goal}", marker="x")
         # Plot the path an orange line
         path = np.array(path)
-        plt.plot(path[:, 1], path[:, 0], color="orange", label="Path")
+        plt.plot(path[:, 0], path[:, 1], color="orange", label="Path")
         # Plot the circles in purple (centers are xs, and otuline)
-        for circle in circles:
-            plt.scatter(circle.y, circle.x, color="purple")
-            circle_plot = plt.Circle((circle.y, circle.x), circle.radius, color="purple", fill=False, label="Circle")
+        for i, circle in enumerate(circles):
+            plt.scatter(circle.x, circle.y, color="purple", marker=".")
+            if i == 0:
+                circle_plot = plt.Circle((circle.x, circle.y), circle.radius, color="purple", fill=False, label="Circle", alpha=0.5, linestyle="-")
+            else:
+                circle_plot = plt.Circle((circle.x, circle.y), circle.radius, color="purple", fill=False, alpha=0.5, linestyle="-")
             plt.gca().add_artist(circle_plot)
-        plt.legend()
+        #plt.legend()
 
         # Title exaplins the 0,0 bottom left
-        plt.title("origin bottom left, x^, y->")
+        # plt.title("origin bottom left, x^, y->")
 
         # Cut it off at the world size
         plt.xlim(-0.5, world.side_length - 0.5)
@@ -182,6 +204,9 @@ class Plotter:
         plt.xticks([])
         plt.yticks([])
 
+        # Flip axes y and x by transposing
+        plt.gca().invert_yaxis()
+
         # Save the plot  
         plt.savefig("world.png")
                 
@@ -189,18 +214,69 @@ class Plotter:
 world = World(side_length=40, middle_obstacle_side_length=20, agent_radius=2)
 path = world.a_star(world.start, world.goal)
 # Create a circle at the start
-try:
-    circles = [Circle.get_largest_possible_circle(world, *world.start)]
-except ValueError:
-    print("Start is not valid")
-    circles = []
-# # Get the furthest circle along the path until we contain the goal
-# attempts = 1000
-# for _ in range(attempts):
-#     circle = circles[-1].get_furthest_circle_along_path(world, path)
-#     circles.append(circle)
-#     if circle.is_point_inside(*world.goal):
-#         break
+circles = [Circle.get_largest_possible_circle(world, *world.start)]
+# Get the furthest circle along the path until we contain the goal
+attempts = 1000
+for _ in range(attempts):
+    circle = circles[-1].get_furthest_circle_along_path(world, path)
+    circles.append(circle)
+    if circle.is_point_inside(*world.goal):
+        break
+# Print them all out
+for circle in circles:
+    print(circle)
+
+# ----------------------------------------------------------------
+    
+# This is where we get convex with it
+    
+def smooth_path_with_cvxpy(world, path, circles, lambda_smooth=1.0):
+    """
+    Smooths the A* path while ensuring each point remains inside at least one circle.
+    
+    world: World object
+    path: List of (x, y) tuples from A*
+    circles: List of Circle objects
+    lambda_smooth: Weight for the smoothness penalty
+    """
+    path = np.array(path)
+    num_points = len(path)
+
+    # Define optimization variables (x, y coordinates for each path point)
+    X = cp.Variable((num_points, 2))
+
+    # Objective: Minimize second difference (curvature)
+    smoothness_cost = cp.sum_squares(X[:-2] - 2 * X[1:-1] + X[2:])
+
+    # Constraints: 
+    constraints = []
+
+    # Ensure the start and goal remain fixed
+    constraints.append(X[0] == path[0])
+    constraints.append(X[-1] == path[-1])
+
+    # Ensure each point is inside at least one circle
+    for i in range(num_points):
+        circle_constraints = [
+            cp.norm(X[i] - np.array([c.x, c.y])) <= c.radius for c in circles
+        ]
+        # The OR condition (inside at least one circle) is handled using cp.constraints.OR
+        constraints.append(cp.constraints.NonPos(cp.vstack(circle_constraints) - 0.0))
+
+    # Solve the optimization problem
+    problem = cp.Problem(cp.Minimize(lambda_smooth * smoothness_cost), constraints)
+    problem.solve()
+
+    # Extract the optimized path
+    optimized_path = X.value
+    return optimized_path
+
+
+# ----------------------------------------------------------------
+
+
+
+# Plot everything
 Plotter.plot_world(world, path, circles)
 
 
