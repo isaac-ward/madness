@@ -333,6 +333,7 @@ class Benchmarker:
 
         # Determine number of parallel workers (half of available CPU cores)
         max_workers = os.cpu_count() // 2 if os.cpu_count() else 2  # Fallback to 2 if unknown
+        max_workers = min(self.num_episodes,max_workers)
         print(f"Using {max_workers} workers for benchmarking")
 
         # Use ProcessPoolExecutor for parallel execution
