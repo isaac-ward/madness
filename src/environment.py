@@ -34,7 +34,7 @@ class Environment:
         # If we're this close to an obstacle or the goal, we're done
         self.close_enough_position = self.dynamics.diameter # m
         self.close_enough_orientation = 10000 # radians
-        self.close_enough_velocity = 5 # m/s
+        self.close_enough_velocity = 0.1 # m/s
         self.close_enough_angular_velocity = 10000 # rad/s
 
         # Keep track of the history of states and actions

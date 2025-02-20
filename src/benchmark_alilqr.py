@@ -59,19 +59,23 @@ if __name__ == "__main__":
             map_ = standard.get_chamber()
             # map_ = standard.get_tunnels()
 
-            # Start and goal states
-            state_initial, state_goal = Environment.get_two_states_separated_by_distance(
-                map_, 
-                template=dyn.state_randomization_template(),
-                min_distance=min_pt_dist,
-            )
-            # state_goal[:3] = state_initial[:3] + np.array([1,1,1])
+            while True:
+                try:
+                    # Start and goal states
+                    state_initial, state_goal = Environment.get_two_states_separated_by_distance(
+                        map_, 
+                        template=dyn.state_randomization_template(),
+                        min_distance=min_pt_dist,
+                    )
 
-            # Generate a path from the initial state to the goal state
-            xyz_initial = state_initial[0:3]
-            xyz_goal = state_goal[0:3]
-            path_xyz = np.array([xyz_initial, xyz_goal])
-            path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*safety_factor)
+                    # Generate a path from the initial state to the goal state
+                    xyz_initial = state_initial[0:3]
+                    xyz_goal = state_goal[0:3]
+                    path_xyz = np.array([xyz_initial, xyz_goal])
+                    path_xyz = map_.plan_path(xyz_initial, xyz_goal, dyn.diameter*safety_factor)
+                    break
+                except:
+                    print("Invalid start and end points, retrying...")
             try:
                 path_xyz_smooth = utils.geometric.smooth_path_same_endpoints(path_xyz, desired_points_per_meter=20)
             except Exception as e:
@@ -87,12 +91,23 @@ if __name__ == "__main__":
             # Get length of A* path
             K = path_xyz_smooth.shape[0] - 1
 
+            # Get SDFs 
+            # sdfs = Environment_SDF(dyn)
+            # sdfs.characterize_env_with_spheres_perturbations(
+            #     start_point_meters=xyz_initial,
+            #     end_point_meters=xyz_goal,
+            #     path_xyz=path_xyz_smooth,
+            #     map_env=map_,
+            #     max_spheres=500,
+            #     randomness_deg=45
+            # )
+
             # Create AL-iLQR policy
             Q = np.eye(n) * 1       # Cost for state error along trajectory
             Q[:3] = Q[:3] * 5
             R_cost = np.eye(m) * 1  # Cost for control input
-            QN = np.eye(n) * 10     # Cost for final state error
-            QN[:3] = QN[:3] * 10
+            QN = np.eye(n) * 5     # Cost for final state error
+            QN[:3] = QN[:3] * 4
             W = np.eye(m) * 0       # Control continuity cost
 
             # Create trajectory to track (A* path with 0s at other states)
@@ -198,6 +213,12 @@ if __name__ == "__main__":
                 path_xyz_smooth,
             )
 
+            # Log the SDF spheres
+            # utils.logging.pickle_to_filepath(
+            #     os.path.join(log_folder, "signed_distance_function.pkl"),
+            #     sdfs,
+            # )
+
             # Log the iLQR path
             utils.logging.save_to_npz(
                 os.path.join(log_folder, "al_ilqr", "al_ilqr.npz"),
@@ -213,4 +234,4 @@ if __name__ == "__main__":
             visual.render_video(desired_fps=25)
             run_complete = 1
     except KeyboardInterrupt:
-        print("YOU'VE DONE IT")
+        None

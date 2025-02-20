@@ -518,6 +518,12 @@ class PolicyALiLQR:
                 x_last = np.copy(x)
                 u_last = np.copy(u)
                 J_last = np.copy(J)
+
+            if abs(cost_improvement) > 1e9:
+                cost_labels = ["AL-iLQR Total Cost","iLQR Terminal Cost","AL Terminal Cost","iLQR Tracking Cost","AL Tracking Cost","Continuity Cost"]
+                cost_matrix = np.array(self.cost[-1])
+                for _z in range(len(cost_labels)):
+                    print(cost_labels[_z] + ": " + str(cost_matrix[-1,_z]))
             
             # Update AL variables
             c,_,_ = self.constraints(x,u)
@@ -759,15 +765,15 @@ class PolicyALiLQR:
         αinit = 1                   # Initial line search scale value
         α = np.copy(αinit)          # Line search scaling value
         γ = 0.5                     # Scale the line search scale value
-        β1 = 1e-4                   # Lower line search bound
-        β2 = 10                     # Upper line search bound
+        β1 = 1e-9                   # Lower line search bound
+        β2 = 1e3                     # Upper line search bound
         break_line_search = False   # Line search completed
         iteration_count = 0         # Total iterations of line search
         forward_err = 0             # 1 if line search fails to converge
 
-        # Upper and Lower control bounds
-        u_upper = np.array(dyn.action_ranges())[:,1]#*5
-        u_lower = np.array(dyn.action_ranges())[:,0]#*5
+        # Upper and Lower control bounds TODO debug AL
+        u_upper = np.array(dyn.action_ranges())[:,1]*5
+        u_lower = np.array(dyn.action_ranges())[:,0]*5
 
         pbar = tqdm(range(max_iters), desc="Optimizing alpha", total=max_iters, leave=False)
 
@@ -805,7 +811,7 @@ class PolicyALiLQR:
             z = (J_last - J) / (-1 * np.sum([α * deltaV[_k,0] + (α**2) * deltaV[_k,1] for _k in range(0,N-1)]))
 
             # Evaluate line search
-            if 1:#(z >= β1) and (z <= β2):
+            if (z >= β1) and (z <= β2):
                 break_line_search = True
             else:
                 # If values not within line search range, increment alpha and loop
@@ -931,6 +937,9 @@ class PolicyALiLQR:
         
         # Update lagrange multiplier (λ)
         λ = np.maximum(0,λ+μ*c)
+        
+        # If constraint satisfied, don't blow up
+        λ[c <= 0] = 0
         
         return λ
     
