@@ -1,6 +1,7 @@
 from dynamics import DynamicsQuadcopter3D 
 from dynamics_linear import DynamicsQuadcopter3DLinear
 from mapping import Map
+import numpy as np
 
 def _dynamics_arguments():
     return {
@@ -61,13 +62,13 @@ def get_28x28x28_at_111_with_obstacles():
 
 def get_tunnels():
     return Map(
-        map_filepath="/workspace/assets/maps/tunnels.obj",
-        voxel_per_x_metres=0.05,
-        extents_metres_xyz=[
+        map_filepath="/workspace/assets/maps/tunnels2.obj",
+        voxel_per_x_metres=0.1,
+        extents_metres_xyz=2*np.array([
             [0, 60], 
             [0, 35], 
-            [0, 8]
-        ],
+            [-1, 7]
+        ]),
     )
 
 def get_chamber():

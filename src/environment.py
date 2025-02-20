@@ -33,9 +33,6 @@ class Environment:
 
         # If we're this close to an obstacle or the goal, we're done
         self.close_enough_position = self.dynamics.diameter # m
-        self.close_enough_orientation = 10000 # radians
-        self.close_enough_velocity = 0.1 # m/s
-        self.close_enough_angular_velocity = 10000 # rad/s
 
         # Keep track of the history of states and actions
         self.state_history_tracker  = ItemHistoryTracker(item_shape=(self.dynamics.state_size(),))
@@ -60,13 +57,13 @@ class Environment:
         def is_goal_met(new_state):
             # Is position close enough?
             is_position_goal_met = np.linalg.norm(new_state[0:3] - self.state_goal[0:3]) < self.close_enough_position
-            # Is orientation close enough?
-            is_orientation_goal_met = np.linalg.norm(new_state[3:6] - self.state_goal[3:6]) < self.close_enough_orientation 
-            # Is velocity close enough?
-            is_velocity_goal_met = np.linalg.norm(new_state[6:9] - self.state_goal[6:9]) < self.close_enough_velocity
-            # Is angular velocity close enough?
-            is_angular_velocity_goal_met = np.linalg.norm(new_state[9:12] - self.state_goal[9:12]) < self.close_enough_angular_velocity
-            return is_position_goal_met and is_orientation_goal_met and is_velocity_goal_met and is_angular_velocity_goal_met
+            # # Is orientation close enough?
+            # is_orientation_goal_met = np.linalg.norm(new_state[3:6] - self.state_goal[3:6]) < self.close_enough_orientation 
+            # # Is velocity close enough?
+            # is_velocity_goal_met = np.linalg.norm(new_state[6:9] - self.state_goal[6:9]) < self.close_enough_velocity
+            # # Is angular velocity close enough?
+            # is_angular_velocity_goal_met = np.linalg.norm(new_state[9:12] - self.state_goal[9:12]) < self.close_enough_angular_velocity
+            return is_position_goal_met
 
         # Are we done? If we're out of time or in an invalid state, we're done
         done_flag = False
@@ -81,9 +78,9 @@ class Environment:
             done_flag = True
             done_message = f"Reached the goal state to within:\n"
             done_message += f"\t-position {self.close_enough_position} m\n"
-            done_message += f"\t-orientation {self.close_enough_orientation} rad\n"
-            done_message += f"\t-velocity {self.close_enough_velocity} m/s\n"
-            done_message += f"\t-angular velocity {self.close_enough_angular_velocity} rad/s"
+            # done_message += f"\t-orientation {self.close_enough_orientation} rad\n"
+            # done_message += f"\t-velocity {self.close_enough_velocity} m/s\n"
+            # done_message += f"\t-angular velocity {self.close_enough_angular_velocity} rad/s"
         return new_state, done_flag, done_message
 
     @staticmethod
@@ -129,8 +126,22 @@ class Environment:
                     state[i] = item
             return state
         
-        allowed_attempts = 1000
+        allowed_attempts = 100000
         pbar = tqdm(total=allowed_attempts, desc="Finding start and goal states")
+
+        # # There's a buffer here:
+        # # Create a copy of the voxel grid
+        # voxel_grid_expanded = np.copy(map_.voxel_grid)
+        # # Create a spherical structuring element
+        # radius_voxels = int(avoid_radius / self.voxel_per_x_metres)
+        # structuring_element = np.zeros((2*radius_voxels+1, 2*radius_voxels+1, 2*radius_voxels+1))
+        # for i in range(2*radius_voxels+1):
+        #     for j in range(2*radius_voxels+1):
+        #         for k in range(2*radius_voxels+1):
+        #             if np.linalg.norm([i-radius_voxels, j-radius_voxels, k-radius_voxels]) <= radius_voxels:
+        #                 structuring_element[i, j, k] = 1
+        # # Dilate the voxel grid
+        # voxel_grid_expanded = scipy.ndimage.binary_dilation(voxel_grid_expanded, structure=structuring_element)
         
         # Get a random goal state that is at least min_distance away
         def _far_apart_enough(state_goal, state_initial, min_distance):
@@ -171,6 +182,8 @@ class Environment:
             state_initial = get_random_state(extents)
             state_goal = get_random_state(extents)
             pbar.update(1)
+
+        assert _satisfied(state_goal, state_initial, min_distance), f"Couldn't find valid start and goal states after {allowed_attempts} attempts - it may be impossible to meet separation and non-collision constraints for this map file"
 
         return state_initial, state_goal
     
