@@ -325,6 +325,7 @@ class Visual:
         # For plot environment to work correctly we need the following
         # - signed_distance_function.pkl
         # - map.pkl
+        print("VISUAL FOLDER " + str(self.run_folder))
 
         # Create a figure
         fig = plt.figure(figsize=(24, 24))

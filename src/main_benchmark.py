@@ -30,10 +30,10 @@ if __name__ == "__main__":
 
     # Create a map representation
     maps = [
-        #standard.get_chamber(),
+        standard.get_chamber(),
         # standard.get_tunnels(),
         #standard.get_28x28x28_at_111(),
-        standard.get_28x28x28_at_111_with_obstacles(),
+        # standard.get_28x28x28_at_111_with_obstacles(),
     ]
 
     # So we'll start with the simplest map, and t yellow hen we'll

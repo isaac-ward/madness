@@ -246,7 +246,7 @@ class Environment_SDF:
                     r = self.sdf_list[i].radius_metres
                     # print("center: ", c)
                     # print("relative vectors: ", r_xyz - c[np.newaxis, :])
-                    d[:,i] = 1 - (1/r)*np.linalg.norm(r_xyz - c[np.newaxis,:], axis=-1) 
+                    d[:,i] = 1 - (1/r)*np.linalg.norm(r_xyz - c[np.newaxis,:], axis=-1) # Inside positive, outside negative
                 case 1:
                     # NOT TESTED
                     s = self.sdf.sdf_list[i].diagonal_metres

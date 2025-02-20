@@ -148,6 +148,10 @@ class Benchmarker:
             zero_pad_state=None
         ) 
 
+        # Attaching useful objects to agent
+        agent.path_xyz_smooth = path_xyz_smooth
+        agent.path_xyz = path_xyz
+
         return agent
 
     @staticmethod
@@ -192,16 +196,20 @@ class Benchmarker:
         timer_environment = Timer()
         steps_to_done = 0
 
+        # iLQR trajectory
+        ilqr_traj = [state_initial[:3]]
+
         pbar = tqdm(total=num_steps, desc="Running simulation")
         for i in range(num_steps):
             # Take an action (this is based on previous observations)
             timer_agent.start()
             action = agent.act()
             timer_agent.stop()
-
+            
             timer_environment.start()
             state, done_flag, _ = environment.step(action)
             timer_environment.stop()
+            ilqr_traj.append(state[:3])
 
             if done_flag and not done_task_flag:
                 done_message = _
@@ -267,9 +275,32 @@ class Benchmarker:
             # Header
             f.write("Policy,Success,Agent Time Precompute,Agent Time,Environment Time,Avg Vel,Path Length,Avg Control Effort\n")
             f.write(f"{agent.policy.__class__.__name__},{success},{instantiation_time_s},{agent_time},{environment_time},{avg_vel},{path_length},{avg_control_effort}\n")
+        
+        # Create visual
+        visual = Visual(log_folder)
+
+        # If AL-iLQR is agent, special plotting
+        if isinstance(agent.policy,PolicyALiLQR):
+            # Log the A* path
+            utils.logging.save_to_npz(
+                os.path.join(log_folder, "a_star", "start_to_goal.npz"),
+                agent.path_xyz,
+            )
+
+            # Log the smooth A* path
+            utils.logging.save_to_npz(
+                os.path.join(log_folder, "a_star", "start_to_goal_smooth.npz"),
+                agent.path_xyz_smooth,
+            )
+
+            # Log the iLQR path
+            utils.logging.save_to_npz(
+                os.path.join(log_folder, "al_ilqr", "al_ilqr.npz"),
+                ilqr_traj,
+            )
+            visual.plot_environment()
 
         # Render visuals
-        visual = Visual(log_folder)
         visual.plot_histories()
         if render_videos:
             visual.render_video(desired_fps=25)
