@@ -180,8 +180,8 @@ class Plotter:
         
         # Grid lines with axlines
         for i in range(world.side_length + 1):
-            plt.axvline(i - 0.6, color="black", linestyle="--", linewidth=0.5)
-            plt.axhline(i - 0.6, color="black", linestyle="--", linewidth=0.5)
+            plt.axvline(i - 0.5, color="black", linestyle="--", linewidth=0.5)
+            plt.axhline(i - 0.5, color="black", linestyle="--", linewidth=0.5)
 
         # Plot the start and goal positions
         plt.scatter(*world.start, color="green", label=f"Start {world.start}", marker="o", s=100)
