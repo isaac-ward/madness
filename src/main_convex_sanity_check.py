@@ -240,7 +240,7 @@ for circle in circles:
 num_points_original = len(path)
 path_length = np.sum(np.linalg.norm(path[1:] - path[:-1], axis=1))
 actual_points_per_unit = num_points_original / path_length
-desired_points_per_unit = 8
+desired_points_per_unit = 2
 sample_factor = desired_points_per_unit / actual_points_per_unit
 # TODO use scipy
 path = interp1d(np.arange(num_points_original), path, axis=0)(np.linspace(0, num_points_original - 1, int(num_points_original * sample_factor)))
@@ -248,9 +248,6 @@ path = interp1d(np.arange(num_points_original), path, axis=0)(np.linspace(0, num
 # ----------------------------------------------------------------
     
 # This is where we get convex with it
-
-# Lets have some dynamics
-dynamics = DynamicsTiny(dt=0.1)
 
 def sdf_values(path, circles):
     # If it's 1 point long make it 2d
@@ -265,7 +262,7 @@ def sdf_values(path, circles):
             d[i,j] = circles[j].sdf_value(*path[i])
     return d
 
-def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol=1e-3):
+def scp_smooth_path(world, dynamics, path_init, action_init, circles, sig=50, eps_ss=1e-4, eps_dyn_slack=1e-2, eps_dyn=1e-5, max_iters=15, tol=1e-3):
     """
     Smooths a given path using Sequential Convex Programming (SCP) while ensuring each point 
     remains inside at least one circle.
@@ -278,18 +275,21 @@ def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol
     max_iters: Maximum number of SCP iterations
     tol: Convergence tolerance
     """
-    path = np.array(path)
-    num_points = len(path)
+    path_init = np.array(path_init)
+    num_points = len(path_init)
     num_circles = len(circles)
 
     # Initialize the path
-    X_prev = np.copy(path)  # Initial guess (previous iteration's solution)
+    states_prev = np.copy(path_init)  # Initial guess (previous iteration's solution)
+    actions_prev = np.copy(action_init)
 
     for iter in tqdm(range(max_iters), desc="SCP Iteration"):
 
         # Define optimization variables (x, y coordinates for each path point)
-        X = cp.Variable((num_points, 2))
-        slack_sdf = cp.Variable((num_points,num_circles))
+        states = cp.Variable((num_points, 2))
+        actions = cp.Variable((num_points-1, 2))
+        slack_sdf = cp.Variable((num_points, num_circles))
+        nu = cp.Variable((num_points-1, 2))
 
         # ----------------------------------------------------------------
 
@@ -299,13 +299,13 @@ def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol
         # ~~~~ Start and end constraints ~~~~
 
         # Start and end
-        constraints.append(X[0] == path[0])  # Fix start
-        constraints.append(X[-1] == path[-1])  # Fix goal
+        constraints.append(states[0] == path_init[0])  # Fix start
+        constraints.append(states[-1] == path_init[-1])  # Fix goal
 
         # ~~~~ SDF constraints ~~~~
 
         # slack sdf prev is going to be a matrix (num_timesteps, num_sdfs)
-        slack_sdf_prev = sdf_values(X_prev[:,:2],circles)
+        slack_sdf_prev = sdf_values(states_prev[:,:2],circles)
 
         # G's shape is the same
         G = gradient_log_softmax(sig, slack_sdf_prev)
@@ -318,26 +318,29 @@ def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol
         constraints += [cp.diag( G @ (slack_sdf - slack_sdf_prev).T) + L0 >= 0]
         # This set of constraints ensures that the slack is always less than the true sdf values
         for i in range(num_circles):
-            constraints += [slack_sdf[k,i] <= 1 - (1/circles[i].radius)*cp.norm2(X[k] - np.array([circles[i].x,circles[i].y])) for k in range(num_points)]
+            constraints += [slack_sdf[k,i] <= 1 - (1/circles[i].radius)*cp.norm2(states[k] - np.array([circles[i].x,circles[i].y])) for k in range(num_points)]
 
         # ~~~~ Dynamics constraints ~~~~
             
-        # # Get affinized dynamics about the current point. We do this
-        # # in a batch so we actually have multiple A's and B's and C's\
-        # # here
-        # A, B, C = dynamics.affinize(X_prev[:-1], U_prev)
-        # A, B, C = np.array(A),np.array(B),np.array(C)
+        # Get affinized dynamics about the current point. We do this
+        # in a batch so we actually have multiple A's and B's and C's\
+        # here
+        A, B, C = dynamics.affinize(states_prev[:-1], actions_prev)
+        A, B, C = np.array(A),np.array(B),np.array(C)
 
-        # # Create virtual control term (recommended to be identity matrix)
-        # E = np.eye(2)
+        # Create virtual control term (recommended to be identity matrix)
+        E = np.eye(2)
 
-        # # From the prior solution
-        # nu_max = 1
+        # From the prior solution
+        nu_max = 1
 
-        # # Construct the dynamic feasibility constraint
-        # constraints += [x[k+1] == A[k] @ x[k] + B[k] @ u[k] + C[k] + E @ nu[k] for k in range(self.N - 1)]
+        # Construct the dynamic feasibility constraint
+        constraints += [states[k+1] == A[k] @ states[k] + B[k] @ actions[k] + C[k] + E @ nu[k] for k in range(num_points - 1)]
+        constraints += [cp.max(cp.abs(nu)) <= nu_max]
 
-        # constraints += [cp.max(cp.abs(nu)) <= nu_max]
+        # Constrain action inputs
+        constraints += [actions[k] >= dynamics.action_ranges()[:,0] for k in range(num_points - 1)]
+        constraints += [actions[k] <= dynamics.action_ranges()[:,1] for k in range(num_points - 1)]
 
         # ----------------------------------------------------------------
 
@@ -345,13 +348,17 @@ def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol
         objective = 0
 
         # The distance objective is the sum of the squared distances between consecutive points (normalized)
-        distance_max = (cp.norm2(path[0] - path[-1]))**2 * (num_points - 1)
-        distance_objective = cp.sum([(cp.norm2(X[_k] - path[-1]))**2 for _k in range(num_points - 1)]) / distance_max
+        distance_max = (cp.norm2(path_init[0] - path_init[-1]))**2 * (num_points - 1)
+        distance_objective = cp.sum([(cp.norm2(states[_k] - path_init[-1]))**2 for _k in range(num_points - 1)]) / distance_max
         objective += distance_objective
 
         # The SDF objective attempts to minimize the slack
         sdf_objective = -eps_ss * cp.sum(slack_sdf)
         objective += sdf_objective
+
+        # Minimize dynamic slack variables and control inputs
+        dynamics_objective = eps_dyn_slack * cp.sum(nu**2) + eps_dyn * cp.sum(actions**2)
+        objective += dynamics_objective
 
         # ----------------------------------------------------------------
 
@@ -360,17 +367,28 @@ def scp_smooth_path(world, path, circles, sig=50, eps_ss=1e-4, max_iters=15, tol
         problem.solve()
 
         # Check convergence
-        if np.max(np.linalg.norm(X.value - X_prev, axis=0)) < tol:
+        if np.max(np.linalg.norm(states.value - states_prev, axis=0)) < tol:
             break
 
         # Update previous solution
-        X_prev = X.value
+        states_prev = states.value
+        actions_prev = actions.value
 
-    return X.value
+    return states.value, actions.value
 
+# Create dynamics
+dynamics = DynamicsTiny(dt=0.01)
 
 # Try to get convex path
-path_smooth = scp_smooth_path(world,path,circles).tolist()
+path_smooth,action_smooth = scp_smooth_path(
+    world=world,
+    dynamics=dynamics,
+    path_init=path,
+    action_init=[np.zeros(2)]*(len(path)-1),
+    circles=circles
+)
+path_smooth = path_smooth.tolist()
+action_smooth = action_smooth.tolist()
 
 # ----------------------------------------------------------------
 

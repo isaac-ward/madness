@@ -41,8 +41,8 @@ class DynamicsTiny:
     
     def action_ranges(self):
         return jnp.array([
-            [-1, 1],
-            [-1, 1],
+            [-0.25, 0.25],
+            [-0.25, 0.25],
         ]) 
     
     def state_delta(self, state, action):
