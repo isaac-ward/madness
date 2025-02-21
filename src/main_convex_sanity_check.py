@@ -145,7 +145,11 @@ class Circle:
         for i in range(first_inside_index, len(path)):
             if not self.is_point_inside(*path[i]):
                 # Now find the largest circle at the previous point
-                return Circle.get_largest_possible_circle(world, *path[i - 1])
+                circle = Circle.get_largest_possible_circle(world, *path[i - 1])
+                # Make it some factor smaller in radius
+                factor = 0.5
+                circle.radius *= factor
+                return circle
     
     def sdf_value(self, x, y):
         # Inside is positive, outside negative
