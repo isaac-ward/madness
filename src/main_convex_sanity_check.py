@@ -6,6 +6,7 @@ from tqdm import tqdm
 from scipy.ndimage import binary_dilation
 from scipy.interpolate import interp1d
 from utils.general import gradient_log_softmax, log_softmax
+import utils.logging
 import cvxpy as cp
 from dynamics_tiny import DynamicsTiny
 
@@ -163,7 +164,7 @@ class Circle:
 
 class Plotter:
     @staticmethod
-    def plot_world(world, path, path_smooth, circles):
+    def plot_world(world, path, path_smooth, circles, log_folder):
         # Plot the grid world, zeros are white, ones are black, twos are grey - explicitly
         white = np.array([1, 1, 1])
         black = np.array([0, 0, 0])
@@ -218,7 +219,27 @@ class Plotter:
         plt.gca().invert_yaxis()
 
         # Save the plot , save it big
-        plt.savefig("world.png", dpi=600, bbox_inches="tight")
+        plt.savefig(log_folder + "/world.png", dpi=600, bbox_inches="tight")
+    
+    def plot_iterations(values,filename):
+        """
+        Plots a list of float values against their iteration index and saves the plot.
+
+        Args:
+        - values (list of float): The values to plot.
+        - filename (str): Name of the file to save the plot (default: "plot.png").
+        """
+        iterations = range(len(values))  # X-axis: iteration indices
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(iterations, values, marker='o', linestyle='-', color='b', label="Value per Iteration")
+        
+        plt.xlabel("Iteration")
+        plt.ylabel("Value")
+        plt.title(filename)
+        plt.grid(True)
+
+        plt.savefig(filename + ".png", dpi=300)  # Save as PNG with high resolution
                 
 # Create a world, and get the path of circles from the start to the end
 world = World(side_length=40, middle_obstacle_side_length=20, agent_radius=2)
@@ -262,7 +283,7 @@ def sdf_values(path, circles):
             d[i,j] = circles[j].sdf_value(*path[i])
     return d
 
-def scp_smooth_path(world, dynamics, path_init, action_init, circles, sig=50, eps_ss=1e-4, eps_dyn_slack=1e-2, eps_dyn=1e-5, max_iters=15, tol=1e-3):
+def scp_smooth_path(world, dynamics, path_init, action_init, circles, sig=50, eps_ss=1e-4, eps_dyn_slack=1e-1, eps_dyn=1e-5, max_iters=15, tol=1e-5):
     """
     Smooths a given path using Sequential Convex Programming (SCP) while ensuring each point 
     remains inside at least one circle.
@@ -275,6 +296,11 @@ def scp_smooth_path(world, dynamics, path_init, action_init, circles, sig=50, ep
     max_iters: Maximum number of SCP iterations
     tol: Convergence tolerance
     """
+    # Debugging variables
+    total_dynamic_slack = []
+    total_sdf_slack = []
+
+    # Variables
     path_init = np.array(path_init)
     num_points = len(path_init)
     num_circles = len(circles)
@@ -282,6 +308,7 @@ def scp_smooth_path(world, dynamics, path_init, action_init, circles, sig=50, ep
     # Initialize the path
     states_prev = np.copy(path_init)  # Initial guess (previous iteration's solution)
     actions_prev = np.copy(action_init)
+    cost_prev = np.inf
 
     for iter in tqdm(range(max_iters), desc="SCP Iteration"):
 
@@ -366,33 +393,45 @@ def scp_smooth_path(world, dynamics, path_init, action_init, circles, sig=50, ep
         problem = cp.Problem(cp.Minimize(objective), constraints)
         problem.solve()
 
+        # Log values
+        total_dynamic_slack.append(np.sum(np.abs(nu.value)))
+        total_sdf_slack.append(np.sum(slack_sdf.value))
+
         # Check convergence
-        if np.max(np.linalg.norm(states.value - states_prev, axis=0)) < tol:
+        if abs(cost_prev - problem.value) < tol:
             break
 
         # Update previous solution
         states_prev = states.value
         actions_prev = actions.value
+        cost_prev = problem.value
 
-    return states.value, actions.value
+    return states.value, actions.value, total_dynamic_slack, total_sdf_slack
 
 # Create dynamics
 dynamics = DynamicsTiny(dt=0.01)
 
 # Try to get convex path
-path_smooth,action_smooth = scp_smooth_path(
+path_smooth,action_smooth,total_dynamic_slack,total_sdf_slack = scp_smooth_path(
     world=world,
     dynamics=dynamics,
     path_init=path,
     action_init=[np.zeros(2)]*(len(path)-1),
-    circles=circles
+    circles=circles,
+    max_iters=100
 )
 path_smooth = path_smooth.tolist()
 action_smooth = action_smooth.tolist()
 
+dist_from_end = []
+for _i in range(len(path_smooth)):
+    dist_from_end.append(np.linalg.norm(path_smooth[_i] - path[-1]))
+
 # ----------------------------------------------------------------
 
 # Plot everything
-Plotter.plot_world(world, path, path_smooth, circles)
-
-
+log_folder = utils.logging.make_log_folder(name="run")
+Plotter.plot_world(world, path, path_smooth, circles, log_folder)
+Plotter.plot_iterations(total_dynamic_slack,log_folder + "/dynamic_slack")
+Plotter.plot_iterations(total_sdf_slack,log_folder + "/sdf_slack")
+Plotter.plot_iterations(dist_from_end,log_folder + "/dist_from_end")

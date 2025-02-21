@@ -40,9 +40,9 @@ class DynamicsTiny:
         return ["x jump", "y jump"]
     
     def action_ranges(self):
-        return jnp.array([
-            [-0.25, 0.25],
-            [-0.25, 0.25],
+        return 0.25*jnp.array([
+            [-1, 1],
+            [-1, 1],
         ]) 
     
     def state_delta(self, state, action):
