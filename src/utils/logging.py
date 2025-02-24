@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 import warnings
 from utils.general import get_logs_dir, get_timestamp
+import moviepy.editor as mpy
 
 def make_log_folder(name="run", make_handy_subfolders=True):
     folder_name = f"{name}_{get_timestamp()}"
@@ -135,3 +136,27 @@ def load_state_and_action_trajectories(
     state_trajectories = np.load(os.path.join(folder_load, f"state_trajectories{suffix}.npz"), allow_pickle=True)["arr_0"]
     action_trajectories = np.load(os.path.join(folder_load, f"action_trajectories{suffix}.npz"), allow_pickle=True)["arr_0"]
     return state_trajectories, action_trajectories
+
+def save_video_from_images(
+    filepath_out,
+    filepath_images_ordered,
+    fps=25,
+):
+    """
+    Save a video from a list of images
+    """
+
+    # Ensure that all files exist
+    for filepath in filepath_images_ordered:
+        if not os.path.exists(filepath):
+            raise ValueError(f"File does not exist at filepath: {filepath}")
+    
+    # Load the images
+    duration_per_frame = 1/fps
+    images = [mpy.ImageClip(img).set_duration(duration_per_frame) for img in filepath_images_ordered]
+
+    # Make the video
+    video = mpy.concatenate_videoclips(images, method="compose")
+
+    # Write the video
+    video.write_videofile(filepath_out, fps=fps)

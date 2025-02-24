@@ -14,6 +14,7 @@ import utils.logging
 import warnings
 import os
 import matplotlib.pyplot as plt
+import cvxpy
 
 
 def test_nothing():
@@ -609,3 +610,124 @@ class Map:
         path_length = np.sum(np.linalg.norm(np.diff(outputs, axis=0), axis=1))
         print(f"Path found with {len(outputs)} points and length {path_length:.2f} m")
         return outputs
+
+    # ----------------------------------------------------------------
+
+    def compute_spheres_along_path(self, path, avoid_radius):
+        """
+        In this function we're given a path in 3d. We want to return a list of spheres, the
+        first of which is centered at the first point in the path, and the last of which 
+        contains the last point in the path. All intermediate spheres are centered at points
+        along the path, and have the largest radius possible without colliding with the map 
+        (including the avoidance radius). Adjacent spheres should overlap
+        """
+
+        class Sphere:
+            def __init__(self, center, radius):
+                self.center = center # 3-tuple, metres
+                self.radius = radius # float, metres
+
+            @staticmethod   
+            def get_largest_non_colliding_sphere_at_xyz(xyz, map_, avoid_radius):
+                # Start with the largest radius possible
+                largest_map_extent = np.max(map_.extents_metres_xyz)
+                largest_radius_possible = largest_map_extent / 4
+                # We'll decrement x times to zero
+                decrement = largest_radius_possible / 100
+                pbar = tqdm(
+                    np.arange(largest_radius_possible, 0, -decrement), 
+                    desc=f"Finding non-colliding sphere: center={[float(f'{f:.2f}') for f in xyz]}, radius_max={largest_radius_possible:.2f} m, decrement={decrement:.2f} m", 
+                    leave=False
+                )
+                for radius in pbar:
+                    pbar.set_postfix({"radius": f"{radius:.2f} m"})
+                    attempt = Sphere(xyz, radius)
+                    if attempt.are_all_internal_points_valid(map_=map_, step_size_m=1):
+                        # Return a slightly smaller one to really avoid hitting stuff:
+                        return attempt.shrink(0.75)
+                # If we can't find a non-colliding sphere, throw an error
+                raise ValueError(f"Couldn't find a non-colliding sphere at {xyz} m, trying to decrement from {largest_radius_possible} m in decrements of {decrement} m")
+            
+            def is_point_inside(self, point):
+                return np.linalg.norm(np.array(point) - np.array(self.center)) < self.radius
+            
+            def are_all_internal_points_valid(self, map_, step_size_m):
+                step = step_size_m
+                points = []
+                for x in np.arange(self.center[0] - self.radius, self.center[0] + self.radius, step):
+                    for y in np.arange(self.center[1] - self.radius, self.center[1] + self.radius, step):
+                        for z in np.arange(self.center[2] - self.radius, self.center[2] + self.radius, step):
+                            if self.is_point_inside([x, y, z]):
+                                points.append([x, y, z])
+                #print(f"Checking {len(points)} points inside sphere")
+                return not map_.batch_is_not_valid(np.array(points), avoid_radius).any()
+
+            def find_furthest_point_along_path_in_sphere(self, path):
+                # Go along the path from the start and the first point in the sphere
+                for i, point in enumerate(path):
+                    if self.is_point_inside(point):
+                        first_point_idx = i
+                        break
+
+                # Now we go along the path from the first point until we leave the sphere
+                for i, point in enumerate(path[first_point_idx:]):
+                    if not self.is_point_inside(point):
+                        # We found a point outside the sphere, so return the previous
+                        # one with respect to the path's total indexing
+                        return path[first_point_idx + i - 1]
+                    
+                # If we never leave the sphere, return the last point in the path
+                return path[-1]
+                    
+            def shrink(self, shrinkage_factor):
+                return Sphere(self.center, self.radius * shrinkage_factor)
+    
+            def sdf_value(self, xyz):
+                # Inside is positive, outside negative
+                # 1 is right in the middle,
+                # 0 is the edge (at the radius)
+                return 1 - np.linalg.norm(np.array(xyz) - np.array(self.center)) / self.radius
+            
+            def sdf_value_cvx(self, xyz):
+                return 1 - cvxpy.norm2(xyz - np.array(self.center)) / self.radius
+            
+            def __str__(self):
+                return f"Sphere(center={self.center}, radius={self.radius})"
+                    
+        # Now we take the path, and create the largest non-colliding sphere at
+        # the starting point
+        print(f"Computing navigable spheres along path with {len(path)} points")
+        spheres = [Sphere.get_largest_non_colliding_sphere_at_xyz(path[0], self, avoid_radius)]
+        # Now we enter a loop where we find the furthest point along the path in the last
+        # sphere, and then create a new sphere at that point, and then repeat until the
+        # last sphere contains the last point in the path
+        max_iterations = 256
+        pbar = tqdm(range(max_iterations), desc="Computing spheres along path")
+        for i in pbar:
+            furthest_point = spheres[-1].find_furthest_point_along_path_in_sphere(path)
+            # If the furthest point is the last point in the path, we're done
+            if np.allclose(furthest_point, path[-1]):
+                #print (f"Found the last point in the path in the last sphere after {i} iterations")
+                break
+            # Otherwise, create a new sphere at the furthest point
+            spheres.append(Sphere.get_largest_non_colliding_sphere_at_xyz(furthest_point, self, avoid_radius))
+            # Report in the pbar the distance to goal point
+            pbar.set_postfix({"distance_to_goal": np.linalg.norm(furthest_point - path[-1])})
+        else:
+            raise ValueError(f"Couldn't find a non-colliding sphere for the last point in the path after {max_iterations} iterations")
+        
+        # We did it! Report in ascii the number of spheres (start)->o->O->o->(end) where we have
+        # as many os as there are spheres found. Randomly capitalize for fun
+        start_rounded = [round(float(x), 1) for x in path[0]]
+        end_rounded = [round(float(x), 1) for x in path[-1]]
+        def random_oO():
+            return 'o' if np.random.rand() < 0.5 else 'O'
+        print(f"Solution contains {len(spheres)} spheres! ({start_rounded})->{'->'.join([random_oO() for i in range(len(spheres)-2)])}->({end_rounded})")
+        print(f"\t-only navigable space included ... ✓")
+        print(f"\t-includes start and end points ... ✓")
+        print(f"\t-spheres overlap ... ✓")
+
+        return spheres
+            
+
+                

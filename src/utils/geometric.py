@@ -99,7 +99,7 @@ def forwardness_of_path_a_wrt_path_b(path_a, path_b):
     
     return forwardness_measure
 
-def smooth_path_same_endpoints(original_path, desired_points_per_meter=50):
+def resample_path_to_some_points_per_meter(original_path, desired_points_per_meter=50):
     N = original_path.shape[0]
 
     # Get the path's length and the number of points per meter
@@ -117,6 +117,15 @@ def smooth_path_same_endpoints(original_path, desired_points_per_meter=50):
     new_indices = np.linspace(0, 1, new_N)
     interpolator = interp1d(original_indices, original_path, axis=0, kind='linear')
     resampled_path = interpolator(new_indices)
+
+    actual_points_per_meter = resampled_path.shape[0] / np.sum(np.linalg.norm(np.diff(resampled_path, axis=0), axis=1))
+    print(f"Resampled path has {resampled_path.shape[0]} points and length {np.sum(np.linalg.norm(np.diff(resampled_path, axis=0), axis=1)):.2f} m, for {actual_points_per_meter} points per meter")
+
+    return resampled_path
+
+def smooth_path_same_endpoints(original_path, desired_points_per_meter=50):
+    
+    resampled_path = resample_path_to_some_points_per_meter(original_path, desired_points_per_meter)
     
     # Variables to optimize: the new path
     new_path = cp.Variable((N, 3))

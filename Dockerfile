@@ -50,6 +50,7 @@ RUN /bin/bash -c "source /opt/conda/bin/activate && \
     # pip install jax && \
     pip install jax[cuda] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html && \
     conda install -c conda-forge cupy -y && \
+    conda install -c conda-forge moviepy -y && \
     conda clean -ya"
 
 # Explicitly use CPU jax "export JAX_PLATFORMS=cpu"

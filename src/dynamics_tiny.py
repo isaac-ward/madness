@@ -40,13 +40,14 @@ class DynamicsTiny:
         return ["x jump", "y jump"]
     
     def action_ranges(self):
-        return 0.25*jnp.array([
+        return 0.5*jnp.array([
             [-1, 1],
             [-1, 1],
         ]) 
     
     def state_delta(self, state, action):
-        return action
+        # Some nonlinearity for testing purposes
+        return action ** 3
     
     def linearize(self, states, actions):
         """

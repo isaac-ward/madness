@@ -281,12 +281,12 @@ class Visual:
                 z = radius * np.outer(np.ones(np.size(u)), np.cos(v)) + center[2]
 
                 # Plot the surface
-                ax.plot_surface(x, y, z, color='purple', alpha=0.15)
+                ax.plot_surface(x, y, z, color='purple', alpha=0.075)
 
             # In 3D, plot the SDFs
-            for sdf in sdfs.sdf_list:
+            for sdf in sdfs:
                 # Plot the sphere
-                plot_sphere(ax, sdf.center_metres_xyz, sdf.radius_metres)
+                plot_sphere(ax, sdf.center, sdf.radius)
 
             # In 3D, plot the path and smooth paths in 
             def plot_path(path, color, style, label=None):
@@ -296,23 +296,35 @@ class Visual:
                     path[:, 2],
                     color=color,
                     linestyle=style,
-                    alpha=1,
+                    alpha=0.666,
                     linewidth=2,
                     label=label,
+                    marker='x',
                 )
 
             if path_flag: plot_path(path_xyz, 'grey', ':', 'A* path')
             if path_smooth_flag: plot_path(path_xyz_smooth, 'orange', '-', 'optimized A* path')
             if path_cvx_flag: plot_path(path_xyz_cvx, 'cyan', '-', 'convex optimal')
-            if path_propagated_flag: plot_path(path_propagated, 'green', '-', 'convex propagated')
+            if path_propagated_flag: plot_path(path_propagated, 'green', '--', 'convex propagated')
             if path_al_ilqr_flag: plot_path(path_al_ilqr, 'purple', '-', 'AL-iLQR')
 
-            # make a legend
-            ax.legend()
+            # Put a big red x at the end and a big green o at the start
+            if path_flag:
+                ax.scatter(path_xyz[0, 0], path_xyz[0, 1], path_xyz[0, 2], color='g', marker='o', s=100)
+                ax.scatter(path_xyz[-1, 0], path_xyz[-1, 1], path_xyz[-1, 2], color='r', marker='x', s=100)
+
+            # make a legend, not using loc='best' because it's slow with
+            # large amounts of data
+            ax.legend(loc='upper right')
+
+        # Ensure the folder exists
+        filepath = os.path.join(self.visuals_folder, save_filename)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
         # Save the figure
         #plt.tight_layout()
         fig.savefig(os.path.join(self.visuals_folder, f"{save_filename}"))  
+        print(f"Saved to {filepath}")
 
         plt.close() 
 
