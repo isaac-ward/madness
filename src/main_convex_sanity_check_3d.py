@@ -429,11 +429,11 @@ else:
 # Create AL-iLQR policy
 n = dyn.state_size()
 m = dyn.action_size()
-Q = np.eye(n) * 1       # Cost for state error along trajectory
-Q[:3] = Q[:3] * 5
+Q = np.eye(n) * 10       # Cost for state error along trajectory
+Q[:3] = Q[:3] * 2
 R_cost = np.eye(m) * 1  # Cost for control input
-QN = np.eye(n) * 10     # Cost for final state error
-QN[:3] = QN[:3] * 10
+QN = np.eye(n) * 50     # Cost for final state error
+QN[:3] = QN[:3] * 2
 W = np.eye(m) * 0       # Control continuity cost
 
 # Solve AL-iLQR policy
@@ -447,7 +447,7 @@ policy = PolicyALiLQR(
     u_track=results_per_iteration[-1]["actions"],
     segments=1,
     eps=1e-1,
-    max_iters=300,
+    max_iters=30,
     verbose=True,
     run_folder=log_folder,
 )
