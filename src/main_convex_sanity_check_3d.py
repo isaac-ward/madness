@@ -6,6 +6,7 @@ from tqdm import tqdm
 from scipy.ndimage import binary_dilation
 from scipy.interpolate import interp1d
 from utils.general import gradient_log_softmax, log_softmax
+from utils.general import Cacher
 import utils.geometric
 import utils.general
 import utils.logging
@@ -17,28 +18,46 @@ from visual import Visual
 import os
 import time
 import glob
+from policies.ilqr import PolicyALiLQR
+from agent import Agent
+import copy 
+from benchmarking.benchmarker import Benchmarker
 
 utils.general.random_seed(42)
 
 # Here's where we'll save everything
 log_folder = utils.logging.make_log_folder(name="cvx")
+v = Visual(run_folder=log_folder)
 
 # Load up a map, get two points, get the path joining them, get the
 # spheres along the path
 map_ = standard.get_28x28x28_at_111_with_obstacles()
-#dyn = standard.get_standard_dynamics()
-dyn = standard.get_standard_dynamics_linear()
+dyn = standard.get_standard_dynamics()
+#dyn = standard.get_standard_dynamics_linear()
 state_initial, state_goal = Environment.get_two_states_separated_by_distance(
     map_, 
     template=dyn.state_randomization_template(),
-    min_distance=26,
+    min_distance=5,
 )
-#state_initial = np.array([5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-#state_goal = np.array([10, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+state_initial = np.array([16.2, 27.4, 22.9, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+state_goal = np.array([18, 4.4, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 avoid_radius = 2*dyn.diameter
 path = map_.plan_path(state_initial[:3], state_goal[:3], avoid_radius)
-path = utils.geometric.resample_path_to_some_points_per_meter(path, desired_points_per_meter=2)
-spheres = map_.compute_spheres_along_path(path, avoid_radius)
+path = utils.geometric.resample_path_to_some_points_per_meter(path, desired_points_per_meter=5)
+cacher = Cacher(computation_inputs=(path, avoid_radius))
+if cacher.exists():
+    spheres = cacher.load()
+else:
+    spheres = map_.compute_spheres_along_path(path, avoid_radius)
+    cacher.save(spheres)
+
+# If any sphere could be contained by a larger sphere, replace it
+# with the larger sphere
+    
+# If a sphere is not covering any points uniquely, remove it
+
+# If there are any two spheres that could be contained by one sphere, continually
+# reduce them
 
 # ----------------------------------------------------------------
     
@@ -56,6 +75,14 @@ def sdf_matrix(path, spheres):
         for j in range(len(spheres)):
             d[i,j] = spheres[j].sdf_value(path[i][:3])
     return d
+
+def propagate_states(initial_state, actions, dynamics):
+    num_states = len(actions) + 1
+    states = np.zeros((num_states, dynamics.state_size()))
+    states[0] = initial_state
+    for k in range(num_states - 1):
+        states[k+1] = dynamics.step(states[k], actions[k])
+    return states
 
 def plan_trajectory_with_scp(
     path, 
@@ -81,22 +108,43 @@ def plan_trajectory_with_scp(
 
     # Store this for iterative improvement
     states_prev = np.zeros((num_states, dynamics.state_size()))
-    states_prev[:, :3] = path # Initial guess is just the path
-    actions_prev = np.zeros((num_actions, dynamics.action_size())) # Initial guess is zero
+    # Initial guess is just the path
+    states_prev[:, :3] = path 
+    actions_prev = np.zeros((num_actions, dynamics.action_size()))
+    # Initial guess is just hover for every timestep
+    for k in range(num_actions):
+        actions_prev[k] = dynamics.action_hover() 
     objective_prev = np.inf
 
+    # Plot the initial solution
+    v.plot_environment_from_objects(
+        map_=map_,
+        sdfs=spheres,
+        path_xyz=path,
+        path_xyz_smooth=None,
+        path_xyz_cvx=states_prev[:,:3],
+        path_propagated=propagate_states(states_prev[0], actions_prev, dyn)[:,:3],
+        path_al_ilqr=None,
+        save_filename=os.path.join("cvx", f"sol_0.png"),
+    )
+
     # Trust region constraint
-    trust_region_radius = 1
-    trust_decay = 0.9
+    trust_region_radius_state = 10
+    trust_decay_state = 0.95
+    trust_region_radius_min_state = 1e-1
+    trust_region_radius_action = 10
+    trust_decay_action = 0.95
+    trust_region_radius_min_action = 1e-1
 
     # Dynamics relaxation
     # Start with enough slack to get an initial solution
     # This is the max any given state element can be off by in the dynamics constraint
-    nu_max = 0
-    # Set a minimum threshold to avoid infeasibility
-    nu_min = 1e-4 
-    # Reduce nu_max by this factor per iteration (multiply)
-    nu_decay = 0.95
+    nu_max = 1
+    # Reduce nu_max to the latest nu_max actually found, multiplied 
+    # by this factor per iteration. i.e. we always have to be better
+    # than the last solution by this factor
+    nu_decay = 0.5 #0.3
+    nu_min = 1e-3
 
     print(f"Planning trajectory with {num_iters} iterations, over {num_states} states and {num_actions} actions, with {num_spheres} spheres")
 
@@ -133,7 +181,9 @@ def plan_trajectory_with_scp(
         # ~~~~ Trust region constraint ~~~~
 
         # Sum of absolute values of the difference between the states must be less than the radius
-        #constraints += [cp.norm2(states[k] - states_prev[k]) <= trust_region_radius for k in range(num_states)]
+        constraints += [cp.norm2(states[k] - states_prev[k]) <= trust_region_radius_state for k in range(num_states)]
+        # and on the actions
+        #constraints += [cp.norm2(actions[k] - actions_prev[k]) <= trust_region_radius_action for k in range(num_actions)]
 
         # ~~~~ 'Stay in the spheres' constraints ~~~~
 
@@ -229,7 +279,8 @@ def plan_trajectory_with_scp(
         # Don't allow for too much relaxation. This is the 'budget' of 'dynamics
         # rule breaking' that we allow. If this is zero, then the propagated 
         # path should exactly equal the solution path
-        constraints += [cp.max(cp.abs(nu)) <= nu_max]
+        max_abs_nu = cp.max(cp.abs(nu))
+        constraints += [max_abs_nu <= nu_max]
 
         # Constrain action inputs to be in the allowed range - note that it needs to be scaled by dynamics
         constraints += [actions[k] * dynamics.dt >= dynamics.action_ranges()[:,0] for k in range(num_actions)]
@@ -253,7 +304,7 @@ def plan_trajectory_with_scp(
         objective += obj_control_sum
         # 4. the sum of the dynamics slack variables should be minimized 
         # (want to minimize the amount of dynamics rule breaking)
-        obj_dynamics_slack = w_dyn_slack * cp.sum(nu**2)
+        obj_dynamics_slack = w_dyn_slack * max_abs_nu # cp.sum(nu**2)
         objective += obj_dynamics_slack
 
         # ----------------------------------------------------------------
@@ -287,48 +338,60 @@ def plan_trajectory_with_scp(
             "obj_total": problem.value,
         })
 
+        # What is the propagated path?
+        path_propagated = propagate_states(results_per_iteration[-1]["states"][0], results_per_iteration[-1]["actions"], dyn)[:,:3]
+
         # Report via tqdm
-        change = problem.value - objective_prev # -ve is good
+        change = problem.value - objective_prev # -ve is good (reducing cost, more optimal)
         pbar.set_postfix({
-            "stat.": problem.status,
+            "stat.": problem.status[:3],
             "obj": problem.value,
+            "Δobj": change,
             "o_path_d": obj_normalized_path_distance.value,
-            "o_slack_sph": obj_slack_sum.value,
+            "o_slk_sph": obj_slack_sum.value,
             "o_ctrl": obj_control_sum.value,
-            "o_slack_dyn": obj_dynamics_slack.value,
-            "o_change": change,
+            "o_slk_dyn": obj_dynamics_slack.value,
         })
 
-        # Check convergence criteria - have we improved from last time?
-        if abs(change) < tol:
-            print(f"Converged after {i} iterations, abs(improvement)={abs(change):.6f} < tol={tol}")
-            break
-
-        # Reduce constraints 
+        # ~~~~ Reduce constraints ~~~~
+            
         # Trust region must get smaller
-        trust_region_radius *= trust_decay
+        old_trust_region_radius_state = trust_region_radius_state
+        trust_region_radius_state = max(trust_region_radius_min_state, trust_region_radius_state * trust_decay_state)
+        print(f"trust_region_radius_state: {old_trust_region_radius_state:.6f} -> {trust_region_radius_state:.6f}")
+        old_trust_region_radius_action = trust_region_radius_action
+        trust_region_radius_action = max(trust_region_radius_min_action, trust_region_radius_action * trust_decay_action)
+        print(f"trust_region_radius_action: {old_trust_region_radius_action:.6f} -> {trust_region_radius_action:.6f}")
+
         # Gradually reduce the allowance for dynamics slack
-        nu_max = max(nu_max * nu_decay, nu_min)  
+        nu_old = nu_max
+        nu_max = max(nu_min, nu_max * nu_decay)
+        print(f"nu_max: {nu_old:.6f} -> {nu_max:.6f}")
+        print(f"max_abs_nu this iteration: {max_abs_nu.value:.6f}")
 
         # Plot the solution
-        v = Visual(run_folder=log_folder)
-        # Propagate the states and actions with the dynamics
-        r = results_per_iteration[-1]
-        states_propagated = np.zeros((num_states, dyn.state_size()))
-        states_propagated[0] = r["states"][0]
-        for k in range(num_actions):
-            states_propagated[k+1] = dyn.step(states_propagated[k], r["actions"][k])
+        save_filename = os.path.join("cvx", f"sol_{i+1}.png")
         v.plot_environment_from_objects(
             map_=map_,
             sdfs=spheres,
             path_xyz=path,
             path_xyz_smooth=None,
             path_xyz_cvx=states.value[:,:3],
-            path_propagated=states_propagated[:,:3],
+            path_propagated=path_propagated,
             path_al_ilqr=None,
-            save_filename=os.path.join("cvx", f"sol_{i}.png"),
+            save_filename=save_filename,
         )
-        #time.sleep(1)
+
+        # Check convergence criteria - have we improved from last time? Or is the propagated path ending
+        # at the goal?
+        if abs(change) < tol:
+            print(f"Converged after {i} iterations, abs(improvement)={abs(change):.6f} < tol={tol}")
+            break
+        final_state_delta = np.linalg.norm(path_propagated[-1][:3] - path[-1][:3])
+        #print(f"Final state delta: {final_state_delta:.4f}, diameter: {dyn.diameter:.4f}")
+        if final_state_delta < dyn.diameter:
+            print(f"Converged after {i} iterations, propagated path ends at goal")
+            break
 
         # Update previous solution
         states_prev = states.value
@@ -338,27 +401,88 @@ def plan_trajectory_with_scp(
 
     return results_per_iteration
 
-# Try to get convex path
-num_iters = 10
-results_per_iteration = plan_trajectory_with_scp(
-    path, 
-    spheres, 
-    dynamics=dyn, 
-    num_iters=num_iters,
-    softmax_sigma=50,  # higher is sharper, used for navigation slack
-    w_dist_to_goal=1,
-    w_nav_slack=0.1, 
-    w_ctrl=0.01, 
-    w_dyn_slack=1, 
-    tol=1e-3
-)
+num_iters = 128
+convex_arguments = {
+    "path": path,
+    "spheres": spheres,
+    "dynamics": dyn,
+    "num_iters": num_iters,
+    "softmax_sigma": 50,  # higher is sharper, used for navigation slack
+    "w_dist_to_goal": 0.1,
+    "w_nav_slack": 0.01, 
+    "w_ctrl": 0.1,
+    "w_dyn_slack": 10000, 
+    "tol": 1e-3
+}
 
-# last_results = results_per_iteration[-1]
-# print(last_results["states"])
-# print(last_results["actions"])
+# Try to get convex path if it has not been computed before
+cacher = Cacher(computation_inputs=convex_arguments)
+if cacher.exists():
+    results_per_iteration = cacher.load()
+else:
+    results_per_iteration = plan_trajectory_with_scp(**convex_arguments)
+    cacher.save(results_per_iteration)
 
 # ----------------------------------------------------------------
+    
+# Execute tracking with al-ilqr
+# Create AL-iLQR policy
+n = dyn.state_size()
+m = dyn.action_size()
+Q = np.eye(n) * 1       # Cost for state error along trajectory
+Q[:3] = Q[:3] * 5
+R_cost = np.eye(m) * 1  # Cost for control input
+QN = np.eye(n) * 10     # Cost for final state error
+QN[:3] = QN[:3] * 10
+W = np.eye(m) * 0       # Control continuity cost
 
+# Solve AL-iLQR policy
+policy = PolicyALiLQR(
+    dynamics=copy.deepcopy(dyn),
+    Q=Q,
+    R=R_cost,
+    QN=QN,
+    W=W,
+    x_track=results_per_iteration[-1]["states"],
+    u_track=results_per_iteration[-1]["actions"],
+    segments=1,
+    eps=1e-1,
+    max_iters=300,
+    verbose=True,
+    run_folder=log_folder,
+)
+
+# Create an agent
+agent = Agent(
+    state_initial=results_per_iteration[-1]["states"][0],
+    policy=policy,
+    state_size=dyn.state_size(),
+    action_ranges=dyn.action_ranges(),
+    zero_pad_state=None
+) 
+
+# Create an environment
+environment = Environment(
+    state_initial=state_initial,
+    state_goal=state_goal,
+    dynamics=dyn,
+    map_=map_,
+    episode_length=len(results_per_iteration[-1]["actions"]),
+)
+
+# Benchmark it
+Benchmarker.run_single_agent_single_environment(
+    agent=agent,
+    environment=environment,
+    state_initial=state_initial,
+    state_goal=state_goal,
+    log_folder=os.path.join(log_folder, "al_ilqr"),
+    instantiation_time_s=0,
+    suffix="",
+    render_videos=True,
+)
+
+# ----------------------------------------------------------------
 
 # Pickle the results dictionary
 utils.logging.pickle_to_filepath(
@@ -391,6 +515,8 @@ def plot_objective_values(results_per_iteration, log_folder, filename="cvx_objec
     for ax, (key, label) in zip(axes, objective_keys.items()):
         values = obj_values[key]
         ax.plot(values, marker="x", label=label, linestyle="-")
+        # Log scale on y axis
+        ax.set_yscale("log")
 
         for x, y in enumerate(values):
             # TypeError: unsupported format string passed to NoneType.__format__
@@ -414,8 +540,8 @@ image_filepaths = glob.glob(os.path.join(log_folder, "visuals", "cvx", "*.png"))
 # Sory by the iteration number sol_x.png
 image_filepaths = sorted(image_filepaths, key=lambda x: int(x.split("_")[-1].split(".")[0]))
 utils.logging.save_video_from_images(
-    os.path.join(log_folder, "visuals", "cvx_video.mp4"), 
+    os.path.join(log_folder, "visuals", "cvx", "solution_evolution.mp4"), 
     image_filepaths,
-    fps=5
+    fps=12
 )
 

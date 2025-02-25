@@ -155,6 +155,13 @@ class DynamicsQuadcopter3D:
             [-magnitude_lo, +magnitude_hi],
         ]) 
     
+    def action_hover(self):
+        k = self.thrust_coef
+        m = self.mass
+        g = self.g
+        w_trim = sqrt(m*g/(4*k))
+        return jnp.array([w_trim, w_trim, w_trim, w_trim])
+    
     def state_delta(self, state, action):
         """
         Function to calculate the continuous nonlinear state derivative given a particular

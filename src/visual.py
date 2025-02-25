@@ -300,6 +300,7 @@ class Visual:
                     linewidth=2,
                     label=label,
                     marker='x',
+                    markersize=4,
                 )
 
             if path_flag: plot_path(path_xyz, 'grey', ':', 'A* path')
@@ -321,9 +322,11 @@ class Visual:
         filepath = os.path.join(self.visuals_folder, save_filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
+
+
         # Save the figure
         #plt.tight_layout()
-        fig.savefig(os.path.join(self.visuals_folder, f"{save_filename}"))  
+        fig.savefig(os.path.join(self.visuals_folder, f"{save_filename}"), bbox_inches='tight')
         print(f"Saved to {filepath}")
 
         plt.close() 
