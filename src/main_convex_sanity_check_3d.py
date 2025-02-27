@@ -283,8 +283,8 @@ def plan_trajectory_with_scp(
         constraints += [max_abs_nu <= nu_max]
 
         # Constrain action inputs to be in the allowed range - note that it needs to be scaled by dynamics
-        constraints += [actions[k] * dynamics.dt >= dynamics.action_ranges()[:,0] for k in range(num_actions)]
-        constraints += [actions[k] * dynamics.dt <= dynamics.action_ranges()[:,1] for k in range(num_actions)]
+        constraints += [actions[k] >= dynamics.action_ranges()[:,0] for k in range(num_actions)]
+        constraints += [actions[k] <= dynamics.action_ranges()[:,1] for k in range(num_actions)]
 
         # ----------------------------------------------------------------
 
@@ -423,6 +423,65 @@ else:
     results_per_iteration = plan_trajectory_with_scp(**convex_arguments)
     cacher.save(results_per_iteration)
 
+    # Convert the images in log_folder/visuals/cvx to a video 
+    image_filepaths = glob.glob(os.path.join(log_folder, "visuals", "cvx", "*.png"))
+    # Sory by the iteration number sol_x.png
+    image_filepaths = sorted(image_filepaths, key=lambda x: int(x.split("_")[-1].split(".")[0]))
+    utils.logging.save_video_from_images(
+        os.path.join(log_folder, "visuals", "cvx", "solution_evolution.mp4"), 
+        image_filepaths,
+        fps=12
+    )
+
+# Extract states and actions
+states = results_per_iteration[-1]["states"]
+actions = results_per_iteration[-1]["actions"]
+
+# Get time indices
+timesteps = np.arange(states.shape[0])
+
+# Number of states and actions
+num_states = states.shape[1]
+num_actions = actions.shape[1]
+
+# Create subplots for states and actions
+fig, axes = plt.subplots(num_states + num_actions, 1, figsize=(10, 2 * (num_states + num_actions)), sharex=True)
+
+# Plot states
+for i in range(num_states):
+    axes[i].plot(timesteps, states[:, i], label=f"State {i}")
+    axes[i].set_ylabel(f"State {i}")
+    axes[i].legend()
+    axes[i].grid()
+
+# Plot actions
+for i in range(num_actions):
+    axes[num_states + i].plot(timesteps[: actions.shape[0]], actions[:, i], label=f"Action {i}", color="r")
+    axes[num_states + i].set_ylabel(f"Action {i}")
+    axes[num_states + i].legend()
+    axes[num_states + i].grid()
+
+# Set common x-axis label
+axes[-1].set_xlabel("Timesteps")
+
+# Adjust layout and save
+plt.tight_layout()
+plt.savefig(f"{log_folder}/states_actions_subplots.png", dpi=300)
+plt.show()
+
+# And we'll also plot the open loop propagation
+# Plot the initial solution
+v.plot_environment_from_objects(
+    map_=map_,
+    sdfs=spheres,
+    path_xyz=path,
+    path_xyz_smooth=None,
+    path_xyz_cvx=states[:,:3],
+    path_propagated=propagate_states(states[0], actions, dyn)[:,:3],
+    path_al_ilqr=None,
+    save_filename=os.path.join("cvx", f"sol_final.png"),
+)
+
 # ----------------------------------------------------------------
     
 # Execute tracking with al-ilqr
@@ -534,14 +593,4 @@ def plot_objective_values(results_per_iteration, log_folder, filename="cvx_objec
     plt.savefig(os.path.join(log_folder, filename), bbox_inches="tight")
     plt.close()
 plot_objective_values(results_per_iteration, log_folder)
-
-# Convert the images in log_folder/visuals/cvx to a video 
-image_filepaths = glob.glob(os.path.join(log_folder, "visuals", "cvx", "*.png"))
-# Sory by the iteration number sol_x.png
-image_filepaths = sorted(image_filepaths, key=lambda x: int(x.split("_")[-1].split(".")[0]))
-utils.logging.save_video_from_images(
-    os.path.join(log_folder, "visuals", "cvx", "solution_evolution.mp4"), 
-    image_filepaths,
-    fps=12
-)
 
