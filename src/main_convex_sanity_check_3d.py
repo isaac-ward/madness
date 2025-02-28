@@ -388,7 +388,7 @@ def plan_trajectory_with_scp(
             print(f"Converged after {i} iterations, abs(improvement)={abs(change):.6f} < tol={tol}")
             break
         final_state_delta = np.linalg.norm(path_propagated[-1][:3] - path[-1][:3])
-        #print(f"Final state delta: {final_state_delta:.4f}, diameter: {dyn.diameter:.4f}")
+        print(f"Final state delta: {final_state_delta:.4f} (goal is < diameter: {dyn.diameter:.4f})")
         if final_state_delta < dyn.diameter:
             print(f"Converged after {i} iterations, propagated path ends at goal")
             break
@@ -467,7 +467,6 @@ axes[-1].set_xlabel("Timesteps")
 # Adjust layout and save
 plt.tight_layout()
 plt.savefig(f"{log_folder}/states_actions_subplots.png", dpi=300)
-plt.show()
 
 # And we'll also plot the open loop propagation
 # Plot the initial solution
