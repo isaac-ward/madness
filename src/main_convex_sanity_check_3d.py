@@ -487,12 +487,23 @@ v.plot_environment_from_objects(
 # Create AL-iLQR policy
 n = dyn.state_size()
 m = dyn.action_size()
-Q = np.eye(n) * 10       # Cost for state error along trajectory
+Q = np.eye(n) * 20       # Cost for state error along trajectory
 Q[:3] = Q[:3] * 2
 R_cost = np.eye(m) * 1  # Cost for control input
 QN = np.eye(n) * 50     # Cost for final state error
 QN[:3] = QN[:3] * 2
 W = np.eye(m) * 0       # Control continuity cost
+
+# Duplicate vector
+last_state = results_per_iteration[-1]["states"][-1]  # Get the last vector
+last_action = np.ones(m) * np.sqrt(dyn.mass*dyn.g/(4*dyn.thrust_coef)) # hover
+duplicate = 100  # Number of times to duplicate
+
+# Stack the duplicated vectors
+duplicated_states = np.vstack([results_per_iteration[-1]["states"]] + [last_state] * duplicate)
+duplicated_actions = np.vstack([results_per_iteration[-1]["actions"]] + [last_action] * duplicate)
+
+print(duplicated_states)
 
 # Solve AL-iLQR policy
 policy = PolicyALiLQR(
@@ -503,9 +514,11 @@ policy = PolicyALiLQR(
     W=W,
     x_track=results_per_iteration[-1]["states"],
     u_track=results_per_iteration[-1]["actions"],
+    # x_track=duplicated_states,
+    # u_track=duplicated_actions,
     segments=1,
-    eps=1e-1,
-    max_iters=30,
+    eps=1e-3,
+    max_iters=1000,
     verbose=True,
     run_folder=log_folder,
 )

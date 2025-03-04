@@ -766,7 +766,7 @@ class PolicyALiLQR:
         αinit = 1                   # Initial line search scale value
         α = np.copy(αinit)          # Line search scaling value
         γ = 0.5                     # Scale the line search scale value
-        β1 = 1e-9                   # Lower line search bound
+        β1 = 1e-5                   # Lower line search bound
         β2 = 1e3                     # Upper line search bound
         break_line_search = False   # Line search completed
         iteration_count = 0         # Total iterations of line search
